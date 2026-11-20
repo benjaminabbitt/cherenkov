@@ -1139,3 +1139,19 @@ fn test_a_snapshot_stored_under_the_rules_before_the_vocabulary_is_passed_over()
         assert!(!catalog.snapshot_usable(domain, &at("0.1.0")), "{domain}");
     }
 }
+
+#[test]
+fn register_puts_both_aggregates_in_a_registry() {
+    let mut registry = Registry::new();
+    register(&mut registry).unwrap();
+    let mut domains: Vec<&str> = registry.catalog().domains().collect();
+    domains.sort_unstable();
+    assert_eq!(domains, [MUTANT_DOMAIN, RUN_DOMAIN]);
+}
+
+#[test]
+fn registering_twice_is_refused() {
+    let mut registry = Registry::new();
+    register(&mut registry).unwrap();
+    assert!(register(&mut registry).is_err());
+}

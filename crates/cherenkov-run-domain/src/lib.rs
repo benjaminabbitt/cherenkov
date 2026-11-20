@@ -86,6 +86,17 @@ pub const RUN_DOMAIN: &str = "cherenkov-run";
 /// The mutant domain: a stream per mutant.
 pub const MUTANT_DOMAIN: &str = "cherenkov-mutant";
 
+/// Register the run and the mutant aggregates in `registry`: what a host
+/// of the run layer does once, before it starts. A second registration of
+/// either is refused.
+pub fn register(
+    registry: &mut angzarr_embedded::Registry,
+) -> Result<(), angzarr_embedded::Misconfigured> {
+    registry.aggregate::<Run>(Run::default)?;
+    registry.aggregate::<Mutant>(Mutant::default)?;
+    Ok(())
+}
+
 /// The root of mutant `id`'s stream: derived from the id alone, so every
 /// run that plans the mutant finds the same stream.
 pub fn mutant_root(id: &str) -> Result<Uuid, UnderivableRoot> {
