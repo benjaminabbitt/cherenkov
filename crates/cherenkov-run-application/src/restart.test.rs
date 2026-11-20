@@ -4,27 +4,27 @@
 //! adds the store; the code is the same): nothing a runner finished is run
 //! again, nothing a policy owed is lost, and the run ends as it would have.
 
+use crate::testing::{Core, new_core, new_run};
+use cherenkov_run_ports::Edge;
+
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use angzarr_embedded::angzarr_ports::memory::MemoryStore;
 use angzarr_embedded::v1::Uuid;
 use cherenkov_core::execution::{Budget, ExecError, MutantExecutor, RawOutcome, Tier};
 use cherenkov_core::plan::MutantPlan;
 use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, run_event};
 use cherenkov_run_domain::{PlanRun, RunStatus};
 
-use crate::core::{RunCore, mutant_cover, new_run, run_cover};
+use crate::covers::{mutant_cover, run_cover};
 use crate::host;
 use crate::live::LiveRuns;
 use crate::runner::Runner;
 use crate::test_plans::{executables, many, prepared};
 use crate::workers::{Killer, Worker};
-
-type Core = RunCore<MemoryStore>;
 
 const MUTANTS: usize = 6;
 
@@ -97,7 +97,7 @@ fn runner(
     ledger: &Arc<Ledger>,
     hold: usize,
     gate: &Arc<Mutex<Receiver<()>>>,
-) -> Runner<MemoryStore> {
+) -> Runner<Core> {
     let executor: Box<dyn MutantExecutor + Send> = Box::new(Executor {
         ledger: ledger.clone(),
         hold,
@@ -155,7 +155,7 @@ async fn until(mut done: impl FnMut() -> bool) {
 #[tokio::test]
 async fn test_a_serve_stopped_half_way_is_finished_by_a_new_bus_with_no_mutant_run_twice_and_none_lost()
  {
-    let core = Arc::new(RunCore::new(MemoryStore::new()).unwrap());
+    let core = Arc::new(new_core().await);
     let (run, plans) = ready_run(&core).await;
     let ledger = Arc::new(Ledger::default());
     let (release, gate): (Sender<()>, Receiver<()>) = channel();
@@ -166,7 +166,7 @@ async fn test_a_serve_stopped_half_way_is_finished_by_a_new_bus_with_no_mutant_r
     let hold = 4;
     let first_live = LiveRuns::default();
     let first = host::serve(
-        &core,
+        core.as_ref(),
         runner(&core, &ledger, hold, &gate),
         instances,
         &first_live,
@@ -202,7 +202,7 @@ async fn test_a_serve_stopped_half_way_is_finished_by_a_new_bus_with_no_mutant_r
     let second_live = LiveRuns::default();
     let ended = second_live.clone();
     host::serve(
-        &core,
+        core.as_ref(),
         runner(&core, &ledger, usize::MAX, &gate),
         instances,
         &second_live,
@@ -245,7 +245,7 @@ async fn test_a_serve_stopped_half_way_is_finished_by_a_new_bus_with_no_mutant_r
 
 /// The bus follows a store through its change feed, so a run's store must
 /// have one: this does not compile for a `RunStore` without it.
-fn change_feed_of<S: crate::core::RunStore>(
+fn change_feed_of<S: cherenkov_embedded_edge::RunStore>(
     store: &S,
 ) -> &dyn angzarr_embedded::angzarr_bus::ChangeSource {
     store
@@ -253,7 +253,7 @@ fn change_feed_of<S: crate::core::RunStore>(
 
 #[tokio::test]
 async fn test_a_run_on_the_bus_completes_following_the_stores_change_feed() {
-    let core = Arc::new(RunCore::new(MemoryStore::new()).unwrap());
+    let core = Arc::new(new_core().await);
     let _feed = change_feed_of(core.store());
     let (run, _plans) = ready_run(&core).await;
     let live = LiveRuns::default();
@@ -262,7 +262,7 @@ async fn test_a_run_on_the_bus_completes_following_the_stores_change_feed() {
     let (_release, gate): (Sender<()>, Receiver<()>) = channel();
     let gate = Arc::new(Mutex::new(gate));
     host::serve(
-        &core,
+        core.as_ref(),
         runner(&core, &ledger, usize::MAX, &gate),
         NonZeroUsize::MIN,
         &live,

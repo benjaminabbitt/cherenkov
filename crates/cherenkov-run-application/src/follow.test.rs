@@ -1,10 +1,10 @@
-use angzarr_embedded::angzarr_ports::memory::MemoryStore;
-
 use super::*;
-use crate::core::{new_run, run_cover};
+use crate::covers::run_cover;
+use crate::testing::{new_core, new_run};
 use cherenkov_core::execution::{RawOutcome, Tier};
 use cherenkov_run_domain::observation;
 use cherenkov_run_domain::{PlanRun, PreparationReported, Selection};
+use cherenkov_run_ports::Edge;
 
 fn preparation() -> PreparationReported {
     PreparationReported {
@@ -34,7 +34,7 @@ fn plan() -> PlanRun {
 
 #[tokio::test]
 async fn test_following_a_stream_reads_each_page_once_in_sequence_order() {
-    let core = RunCore::new(MemoryStore::new()).unwrap();
+    let core = new_core().await;
     let run = new_run();
     let mut follow = Follow::new(run_cover(&run));
     assert!(follow.next(&core).await.unwrap().is_empty());
@@ -64,7 +64,7 @@ async fn test_following_a_stream_reads_each_page_once_in_sequence_order() {
 
 #[tokio::test]
 async fn test_following_one_stream_reads_nothing_of_another() {
-    let core = RunCore::new(MemoryStore::new()).unwrap();
+    let core = new_core().await;
     let (ours, theirs) = (new_run(), new_run());
     let mut follow = Follow::new(run_cover(&ours));
     core.command(run_cover(&theirs), &plan()).await.unwrap();

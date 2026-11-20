@@ -1,20 +1,20 @@
 //! Plans the tests run: two `aor` mutants, in `a` and in `b`.
 
+use crate::testing::Core;
+
 use std::num::NonZeroUsize;
 use std::path::Path;
 use std::sync::Arc;
 
-use angzarr_embedded::angzarr_bus::{Bus as _, Following, Subscription};
-use angzarr_embedded::angzarr_ports::memory::MemoryStore;
-use angzarr_embedded::{Bus, BusPolicy, Host};
+use angzarr_embedded::BusPolicy;
+use angzarr_embedded::angzarr_bus::Subscription;
 use cherenkov_core::operator::catalog;
 use cherenkov_core::plan::{MutantPlan, plan_file};
 use cherenkov_core::ports::SyntaxPort;
 use cherenkov_core::syntax::LanguageId;
+use cherenkov_run_ports::Serving;
 use cherenkov_syntax::TreeSitterSyntax;
 
-use crate::core::{RunCore, now};
-use crate::host::{POLL, TokioWait};
 use crate::policies::{FanIn, FanOut};
 
 pub fn plans() -> Vec<MutantPlan> {
@@ -72,23 +72,12 @@ pub fn executables(plans: &[MutantPlan]) -> Vec<cherenkov_run_domain::Executable
 
 /// Serve both policies on a bus over `core`'s store until it is idle: one
 /// pass of what they owe. A bus built here is a process starting.
-pub async fn serve_policies(core: &RunCore<MemoryStore>) {
-    let kernel = core.kernel();
-    let host = Host::new(
-        core.store(),
-        &kernel,
-        &now,
-        &TokioWait,
-        POLL,
-        Following::Changes(core.store()),
-    )
-    .pushed_by(core.store());
-    let mut bus = Bus::new(host);
-    for policy in [BusPolicy::new(FanOut), BusPolicy::new(FanIn)] {
-        bus.subscribe(Subscription::policy(NonZeroUsize::MIN, policy))
-            .unwrap();
-    }
-    bus.serve(|_| false).await.unwrap();
+pub async fn serve_policies(core: &Core) {
+    let policies = vec![
+        Subscription::policy(NonZeroUsize::MIN, BusPolicy::new(FanOut)),
+        Subscription::policy(NonZeroUsize::MIN, BusPolicy::new(FanIn)),
+    ];
+    core.serve(policies, &mut |_| false).await.unwrap();
 }
 
 /// `n` mutants, each a copy of one of the two plans under an id of its own:

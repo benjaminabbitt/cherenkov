@@ -421,6 +421,7 @@ dependencies = [
  "cherenkov-run-store",
  "cherenkov-run-wire",
  "cherenkov-syntax",
+ "cherenkov-wiring",
  "clap",
  "cli-support",
  "serde",
@@ -506,7 +507,9 @@ dependencies = [
  "angzarr-embedded-macros",
  "angzarr-ports",
  "cherenkov-core",
+ "cherenkov-embedded-edge",
  "cherenkov-run-domain",
+ "cherenkov-run-ports",
  "cherenkov-run-wire",
  "cherenkov-syntax",
  "serde_json",
@@ -574,6 +577,22 @@ dependencies = [
  "tree-sitter-go",
  "tree-sitter-python",
  "tree-sitter-rust",
+]
+
+[[package]]
+name = "cherenkov-wiring"
+version = "0.1.0"
+dependencies = [
+ "angzarr-embedded",
+ "angzarr-ports",
+ "cherenkov-core",
+ "cherenkov-embedded-edge",
+ "cherenkov-run-application",
+ "cherenkov-run-domain",
+ "cherenkov-run-ports",
+ "cherenkov-syntax",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

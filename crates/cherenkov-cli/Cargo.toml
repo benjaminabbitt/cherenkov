@@ -22,6 +22,7 @@ cherenkov-fs.workspace = true
 cherenkov-run-application.workspace = true
 cherenkov-run-wire.workspace = true
 cherenkov-run-store.workspace = true
+cherenkov-wiring.workspace = true
 cherenkov-syntax.workspace = true
 clap.workspace = true
 serde.workspace = true

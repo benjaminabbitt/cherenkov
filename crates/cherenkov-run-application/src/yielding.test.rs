@@ -10,9 +10,9 @@ use angzarr_embedded::angzarr_ports::memory::{MemoryRead, MemoryStore};
 use angzarr_embedded::angzarr_ports::{ChangeCursor, Changed, Changes};
 use angzarr_embedded::v1::{Cover, EventPage, Snapshot};
 use angzarr_embedded::{
-    ChangeToken, CommitNotify, CommitWait, EventStore, Outbox, OutboxEntry, PositionKey,
-    PositionStore, Processed, ReadStore, Slice, SnapshotStore, StoreError, StreamRef, Watch, Write,
-    Written,
+    ChangeToken, CommitNotify, CommitWait, EventStore, ListStreams, Outbox, OutboxEntry,
+    PositionKey, PositionStore, Processed, ReadStore, Slice, SnapshotStore, StoreError, StreamRef,
+    Watch, Write, Written,
 };
 
 #[derive(Clone, Default)]
@@ -96,6 +96,13 @@ impl ReadStore for Yielding {
     async fn begin_read(&self) -> Result<MemoryRead, StoreError> {
         yielded().await;
         self.inner.begin_read().await
+    }
+}
+
+impl ListStreams for Yielding {
+    async fn list_streams(&self) -> Result<Vec<Cover>, StoreError> {
+        yielded().await;
+        self.inner.list_streams().await
     }
 }
 

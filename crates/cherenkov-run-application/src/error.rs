@@ -11,13 +11,11 @@ pub enum RunLayerError {
     Kernel { cause: Report },
     /// The run's kernel or bus did not take what the run registers.
     Misconfigured { cause: Report },
-    /// The run's async runtime did not start.
+    /// The run's async runtime did not start (the root's).
     Runtime { reason: String },
     /// The workers could not run the mutants (a test program that does
     /// not prepare, a debugger missing).
     Workers { reason: String },
-    /// Steps a call set off were dead-lettered, never recorded.
-    Undelivered { letters: u64 },
     /// Nothing is left to serve, and the run has not finished: `owed`
     /// mutants are planned and undecided, ones the bus gave up on.
     Stalled { owed: u64 },
@@ -29,6 +27,13 @@ impl RunLayerError {
         RunLayerError::Kernel {
             cause: Report::of(cause),
         }
+    }
+}
+
+/// What the core answered with a failure, as the run layer's.
+impl From<Report> for RunLayerError {
+    fn from(cause: Report) -> RunLayerError {
+        RunLayerError::Kernel { cause }
     }
 }
 
@@ -47,7 +52,6 @@ impl Diagnostic for RunLayerError {
             RunLayerError::Misconfigured { .. } => code!("misconfigured"),
             RunLayerError::Runtime { .. } => code!("runtime"),
             RunLayerError::Workers { .. } => code!("workers"),
-            RunLayerError::Undelivered { .. } => code!("undelivered"),
             RunLayerError::Stalled { .. } => code!("stalled"),
         }
     }
@@ -60,7 +64,6 @@ impl Diagnostic for RunLayerError {
             RunLayerError::Runtime { reason } | RunLayerError::Workers { reason } => {
                 vec![("reason", reason.as_str().into())]
             }
-            RunLayerError::Undelivered { letters } => vec![("letters", (*letters).into())],
             RunLayerError::Stalled { owed } => vec![("owed", (*owed).into())],
         }
     }
@@ -91,7 +94,6 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(RunLayerError::Misconfigured { cause: cause() }),
         Box::new(RunLayerError::Runtime { reason: "r".into() }),
         Box::new(RunLayerError::Workers { reason: "r".into() }),
-        Box::new(RunLayerError::Undelivered { letters: 2 }),
         Box::new(RunLayerError::Stalled { owed: 3 }),
     ]
 }

@@ -1,0 +1,25 @@
+[package]
+name = "cherenkov-wiring"
+description = "The composition root of the run layer: the clock and ids, the async runtime, the store, and angzarr's App with the bus hosted on it, under the application."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+angzarr-embedded.workspace = true
+cherenkov-core.workspace = true
+cherenkov-embedded-edge.workspace = true
+cherenkov-run-application.workspace = true
+cherenkov-run-domain.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+angzarr-ports.workspace = true
+cherenkov-run-ports.workspace = true
+cherenkov-syntax.workspace = true
+
+[lints]
+workspace = true

@@ -2,7 +2,9 @@
 //! no way to be called but to be handed an event, so these tests hand it
 //! events by serving a bus over a store that holds them.
 
-use angzarr_embedded::angzarr_ports::memory::MemoryStore;
+use crate::testing::{Core, new_core, new_run};
+use cherenkov_run_ports::Edge;
+
 use angzarr_embedded::v1::Uuid;
 use cherenkov_core::execution::{RawOutcome, Tier};
 use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, run_event};
@@ -11,10 +13,8 @@ use cherenkov_run_domain::{
     PlanRun, ProgramRun, ProgramRunReported, ProgramRunResult, Ran, RunId, Verdict,
 };
 
-use crate::core::{RunCore, mutant_cover, new_run, run_cover};
+use crate::covers::{mutant_cover, run_cover};
 use crate::test_plans::{prepared, serve_policies};
-
-type Core = RunCore<MemoryStore>;
 
 /// A plan of `ids` for a run of one test program.
 fn plan(ids: &[&str]) -> PlanRun {
@@ -50,7 +50,7 @@ async fn ready_run(core: &Core) -> Uuid {
 
 #[tokio::test]
 async fn test_a_run_ready_plans_each_mutant_on_its_own_stream_naming_the_run_once_served() {
-    let core = RunCore::new(MemoryStore::new()).unwrap();
+    let core = new_core().await;
     let run = ready_run(&core).await;
     for id in ["a", "b"] {
         assert!(
@@ -74,7 +74,7 @@ async fn test_a_run_ready_plans_each_mutant_on_its_own_stream_naming_the_run_onc
 async fn test_a_bus_served_again_plans_nothing_twice() {
     // The positions are in the store: a new bus is handed only what the
     // last did not finish, here nothing.
-    let core = RunCore::new(MemoryStore::new()).unwrap();
+    let core = new_core().await;
     ready_run(&core).await;
     serve_policies(&core).await;
     serve_policies(&core).await;
@@ -119,7 +119,7 @@ async fn decisions(core: &Core, run: &Uuid) -> Vec<(String, Verdict)> {
 
 #[tokio::test]
 async fn test_a_mutant_s_decision_is_recorded_on_the_run_that_asked_once_however_often_served() {
-    let core = RunCore::new(MemoryStore::new()).unwrap();
+    let core = new_core().await;
     let run = ready_run(&core).await;
     serve_policies(&core).await;
     killed_a(&core, &run).await;
@@ -134,7 +134,7 @@ async fn test_a_mutant_s_decision_is_recorded_on_the_run_that_asked_once_however
 
 #[tokio::test]
 async fn test_the_fan_in_passes_over_a_mutant_planned() {
-    let core = RunCore::new(MemoryStore::new()).unwrap();
+    let core = new_core().await;
     let run = ready_run(&core).await;
     serve_policies(&core).await;
     assert!(decisions(&core, &run).await.is_empty());

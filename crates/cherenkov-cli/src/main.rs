@@ -26,7 +26,7 @@ use cherenkov_core::plan::{Diagnostics, SkipReason};
 use cherenkov_core::profile::Profile;
 use cherenkov_core::session::{FileProblem, ProjectPlan, plan_project};
 use cherenkov_fs::FsSourceReader;
-use cherenkov_run_application::layer::{self, Settings};
+use cherenkov_run_application::layer::Settings;
 use cherenkov_syntax::TreeSitterSyntax;
 use clap::{Parser, Subcommand, ValueEnum};
 use cli_support::{Failure, usage_exit};
@@ -315,7 +315,7 @@ fn plan(
         jobs: 0,
     };
     let mut sink = output::sink(format, Listed::Planned, None);
-    layer::run(
+    cherenkov_wiring::run(
         cherenkov_run_store::open(),
         &plans,
         &settings,

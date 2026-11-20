@@ -13,13 +13,13 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
-use angzarr_embedded::OnRetryable;
 use angzarr_embedded::v1::{EventPage, Uuid};
 use cherenkov_core::execution::MutantExecutor;
 use cherenkov_core::plan::MutantPlan;
+use cherenkov_run_ports::{Edge, Serving};
 use tokio::sync::mpsc::unbounded_channel;
 
-use crate::core::{RunCore, RunStore, mutant_cover, new_run, run_cover};
+use crate::covers::{mutant_cover, run_cover};
 use crate::error::RunLayerError;
 use crate::follow::Follow;
 use crate::host;
@@ -36,7 +36,7 @@ use cherenkov_run_domain::{
 use cherenkov_run_wire::output::Document;
 
 /// How often the follower looks at the store when no commit woke it.
-const POLL: Duration = host::POLL;
+const POLL: Duration = Duration::from_millis(20);
 
 /// What a run is planned with.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -73,76 +73,48 @@ impl<W: Write> Sink for JsonLines<W> {
     }
 }
 
-/// Plan `plans` as a run with `settings` on `store` and, given `workers`,
-/// run it; with none, a dry run: planned, never run. Hands every event of
-/// the run to `sink`; returns the status the run finished with, none for a
-/// run that has not finished (a dry run). A test program that
+/// Plan `plans` as the run `run` with `settings` on `core` and, given
+/// `workers`, run it; with none, a dry run: planned, never run. Hands every
+/// event of the run to `sink`; returns the status the run finished with,
+/// none for a run that has not finished (a dry run). A test program that
 /// does not prepare is recorded (the program, the run finished as failed)
 /// before its error is returned.
-pub fn run<S: RunStore>(
-    store: S,
+pub async fn run<C: Serving + 'static>(
+    core: &Arc<C>,
+    run: Uuid,
     plans: &[MutantPlan],
     settings: &Settings,
     workers: Option<Workers>,
     sink: &mut dyn Sink,
 ) -> Result<Option<RunStatus>, RunLayerError> {
-    run_retrying(
-        store,
-        OnRetryable::default(),
-        plans,
-        settings,
-        workers,
-        sink,
-    )
-}
-
-/// [`run`], the kernel retrying as `retry` says.
-pub fn run_retrying<S: RunStore>(
-    store: S,
-    retry: OnRetryable,
-    plans: &[MutantPlan],
-    settings: &Settings,
-    workers: Option<Workers>,
-    sink: &mut dyn Sink,
-) -> Result<Option<RunStatus>, RunLayerError> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_time()
-        .build()
-        .map_err(|e| RunLayerError::Runtime {
-            reason: e.to_string(),
-        })?;
-    runtime.block_on(async {
-        let core = Arc::new(RunCore::new(store)?.retrying(retry));
-        let run = new_run();
-        let programs = workers
-            .as_ref()
-            .map_or(0, |w| w.sets.first().map_or(0, Vec::len));
-        core.command(run_cover(&run), &plan_run(plans, settings, programs))
-            .await?;
-        let mut printer = Printer::new(run.clone(), sink);
-        let Some(workers) = workers else {
-            printer.catch_up(&core).await?;
-            return Ok(printer.status);
-        };
-        let stopped = Cell::new(false);
-        let live = LiveRuns::default();
-        let work = async {
-            let worked = work(&core, &run, plans, workers, &live).await;
-            stopped.set(true);
-            worked
-        };
-        let (worked, followed) = tokio::join!(work, printer.follow(&core, &stopped));
-        followed?;
-        worked?;
-        Ok(printer.status)
-    })
+    let programs = workers
+        .as_ref()
+        .map_or(0, |w| w.sets.first().map_or(0, Vec::len));
+    core.command(run_cover(&run), &plan_run(plans, settings, programs))
+        .await?;
+    let mut printer = Printer::new(run.clone(), sink);
+    let Some(workers) = workers else {
+        printer.catch_up(core.as_ref()).await?;
+        return Ok(printer.status);
+    };
+    let stopped = Cell::new(false);
+    let live = LiveRuns::default();
+    let work = async {
+        let worked = work(core, &run, plans, workers, &live).await;
+        stopped.set(true);
+        worked
+    };
+    let (worked, followed) = tokio::join!(work, printer.follow(core.as_ref(), &stopped));
+    followed?;
+    worked?;
+    Ok(printer.status)
 }
 
 /// Prepare the run's test programs, recording each on the run, which
 /// judges them and, with the last, is ready, handing its mutants on; then
 /// serve the bus until the run is `finished`.
-async fn work<S: RunStore>(
-    core: &Arc<RunCore<S>>,
+async fn work<C: Serving + 'static>(
+    core: &Arc<C>,
     run: &Uuid,
     plans: &[MutantPlan],
     workers: Workers,
@@ -161,7 +133,7 @@ async fn work<S: RunStore>(
             reason: "no workers".to_string(),
         });
     }
-    let first = prepare_programs(core, run, plans, sets.remove(0), jobs, explain).await?;
+    let first = prepare_programs(core.as_ref(), run, plans, sets.remove(0), jobs, explain).await?;
     sets.insert(0, first);
     let instances = NonZeroUsize::new(sets.len()).unwrap_or(NonZeroUsize::MIN);
     let workers = sets.into_iter().map(Worker::new).collect();
@@ -173,8 +145,8 @@ async fn work<S: RunStore>(
 /// recording each on the run as it is ready; the set comes back. A program
 /// the run refuses (its unmutated tests fail) or that could not be
 /// prepared finishes the run, failed, and is this call's error.
-async fn prepare_programs<S: RunStore>(
-    core: &Arc<RunCore<S>>,
+async fn prepare_programs<E: Edge>(
+    core: &E,
     run: &Uuid,
     plans: &[MutantPlan],
     mut first: Vec<Box<dyn MutantExecutor + Send>>,
@@ -207,8 +179,8 @@ async fn prepare_programs<S: RunStore>(
 }
 
 /// Tell the run what preparing one program found.
-async fn report_prepared<S: RunStore>(
-    core: &Arc<RunCore<S>>,
+async fn report_prepared<E: Edge>(
+    core: &E,
     run: &Uuid,
     plans: &[MutantPlan],
     preparation: Preparation,
@@ -220,7 +192,7 @@ async fn report_prepared<S: RunStore>(
 }
 
 /// The run's error, if its stream says a program did not prepare.
-async fn refused<S: RunStore>(core: &RunCore<S>, run: &Uuid) -> Result<(), RunLayerError> {
+async fn refused<E: Edge>(core: &E, run: &Uuid) -> Result<(), RunLayerError> {
     let failed = core
         .events(&run_cover(run), 0)
         .await?
@@ -242,17 +214,17 @@ async fn refused<S: RunStore>(core: &RunCore<S>, run: &Uuid) -> Result<(), RunLa
 /// it can (a failure it holds and retries, a step to come); or it served
 /// nothing at all, and nothing will: a mutant the bus gave up on (a dead
 /// letter) is owed by the run for good.
-async fn serve<S: RunStore>(
-    core: &Arc<RunCore<S>>,
+async fn serve<C: Serving + 'static>(
+    core: &Arc<C>,
     run: &Uuid,
-    runner: Runner<S>,
+    runner: Runner<C>,
     instances: NonZeroUsize,
     live: &LiveRuns,
 ) -> Result<(), RunLayerError> {
     let mut failures = Vec::new();
     let ended = live.clone();
     let asking = run.clone();
-    host::serve(core, runner, instances, live, |served| {
+    host::serve(core.as_ref(), runner, instances, live, |served| {
         failures.extend(served.failures().iter().cloned());
         ended.status(&asking).is_none() && !served.is_empty()
     })
@@ -335,14 +307,14 @@ impl<'a> Printer<'a> {
 
     /// Print what the run recorded since the last look, until it finishes
     /// or the work `stopped`. Woken by each commit, and by the poll.
-    async fn follow<S: RunStore>(
+    async fn follow<E: Edge>(
         &mut self,
-        core: &RunCore<S>,
+        core: &E,
         stopped: &Cell<bool>,
     ) -> Result<(), RunLayerError> {
         loop {
             // Armed before reading: a commit after this resolves it.
-            let commit = core.store().next_commit();
+            let commit = core.next_commit();
             let stop = stopped.get();
             self.catch_up(core).await?;
             if self.finished || stop {
@@ -356,7 +328,7 @@ impl<'a> Printer<'a> {
     }
 
     /// Print what the run recorded since the last look.
-    async fn catch_up<S: RunStore>(&mut self, core: &RunCore<S>) -> Result<(), RunLayerError> {
+    async fn catch_up<E: Edge>(&mut self, core: &E) -> Result<(), RunLayerError> {
         for page in self.follow.next(core).await? {
             match run_event(&page) {
                 Some(RunEvent::DecisionRecorded(decided)) => {
@@ -376,9 +348,9 @@ impl<'a> Printer<'a> {
     }
 
     /// The page of mutant `id`'s stream that decides it for this run.
-    async fn decision<S: RunStore>(
+    async fn decision<E: Edge>(
         &self,
-        core: &RunCore<S>,
+        core: &E,
         id: &str,
     ) -> Result<Option<EventPage>, RunLayerError> {
         let pages = core.events(&mutant_cover(id)?, 0).await?;

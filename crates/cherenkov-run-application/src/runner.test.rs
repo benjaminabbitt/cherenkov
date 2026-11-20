@@ -1,17 +1,16 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use angzarr_embedded::angzarr_ports::memory::MemoryStore;
 use angzarr_embedded::v1::{Cover, EventBook, EventPage};
 use cherenkov_core::execution::{Budget, ExecError, MutantExecutor, RawOutcome, Tier};
 
 use super::*;
-use crate::core::{mutant_cover, new_run, run_cover};
+use crate::covers::{mutant_cover, run_cover};
 use crate::test_plans::plans;
+use crate::testing::{Core, new_core, new_run};
 use crate::workers::{self, Killer};
 use cherenkov_run_domain::{PlanMutant, PlanRun, ProgramRunReported, Verdict};
-
-type Core = RunCore<MemoryStore>;
+use cherenkov_run_ports::Edge;
 
 /// Kills `a`'s mutant; `b`'s survives. Counts its runs.
 struct Fake {
@@ -62,12 +61,9 @@ fn request(stream: &Cover, page: EventPage) -> ProjectRequest {
 /// A run of the two plans, planned and ready (its `programs` programs
 /// prepared), and a projector on one worker that holds nothing but the
 /// store. The planned mutants are on their streams.
-async fn projector(
-    runs: &Arc<AtomicUsize>,
-    programs: usize,
-) -> (Arc<Core>, Uuid, Runner<MemoryStore>) {
+async fn projector(runs: &Arc<AtomicUsize>, programs: usize) -> (Arc<Core>, Uuid, Runner<Core>) {
     let plans = plans();
-    let core = Arc::new(RunCore::new(MemoryStore::new()).unwrap());
+    let core = Arc::new(new_core().await);
     let run = new_run();
     let plan = PlanRun {
         programs: u32::try_from(programs).unwrap(),
@@ -95,7 +91,7 @@ async fn projector(
 }
 
 /// Hand `projector` the event that planned mutant `id`, as the bus does.
-async fn handed_planned(projector: &Runner<MemoryStore>, core: &Core, id: &str) {
+async fn handed_planned(projector: &Runner<Core>, core: &Core, id: &str) {
     let planned = pages(core, id).await;
     projector
         .dispatch(&request(&mutant_cover(id).unwrap(), planned[0].clone()))
@@ -291,7 +287,7 @@ async fn test_a_mutant_planned_for_a_run_that_prepared_no_program_is_a_bug() {
 async fn test_a_ready_run_hands_its_mutants_on_with_their_plans_and_not_before() {
     // No `MutantPlanned` is on any mutant's stream before its run's
     // `RunReady`: a mutant exists only once its programs do.
-    let core = Arc::new(RunCore::new(MemoryStore::new()).unwrap());
+    let core = Arc::new(new_core().await);
     let run = new_run();
     let plan = PlanRun {
         programs: 1,

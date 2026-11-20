@@ -20,7 +20,7 @@ use cherenkov_exec_dap::toolchain::{
     cargo_workspace_prefix, go_test_args, rust_code_files_with, rust_test_args, rustup_toolchain,
 };
 use cherenkov_fs::FsSourceReader;
-use cherenkov_run_application::layer::{self, Settings, Workers};
+use cherenkov_run_application::layer::{Settings, Workers};
 use cherenkov_run_application::workers::{Killer, SESSIONS_PER_WORKER};
 use cherenkov_syntax::TreeSitterSyntax;
 
@@ -255,7 +255,7 @@ fn on_run_layer(
         None => None,
     };
     let mut sink = output::sink(asked.format, Listed::Decided, log);
-    layer::run(
+    cherenkov_wiring::run(
         cherenkov_run_store::open(),
         plans,
         &settings,

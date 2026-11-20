@@ -1,12 +1,13 @@
-use angzarr_embedded::angzarr_ports::memory::MemoryStore;
 use angzarr_embedded::v1::{EventBook, EventPage};
 use cherenkov_core::execution::{RawOutcome, Tier};
 use cherenkov_run_domain::observation;
 use cherenkov_run_domain::{DecisionReported, PlanRun, PreparationReported, Selection, Verdict};
 
 use super::*;
-use crate::core::{RunCore, new_run, run_cover};
+use crate::covers::run_cover;
 use crate::test_plans::executable;
+use crate::testing::{Core, new_core, new_run};
+use cherenkov_run_ports::Edge;
 
 fn request(root: &Uuid, pages: Vec<EventPage>) -> ProjectRequest {
     ProjectRequest {
@@ -40,8 +41,8 @@ fn prepared() -> PreparationReported {
 
 /// A run of `a` and `b` planned and ready, and its stream's pages. No
 /// policy is served, so no mutant is planned on its stream.
-async fn ready_run() -> (Uuid, Vec<EventPage>, RunCore<MemoryStore>) {
-    let core = RunCore::new(MemoryStore::new()).unwrap();
+async fn ready_run() -> (Uuid, Vec<EventPage>, Core) {
+    let core = new_core().await;
     let run = new_run();
     let plan = PlanRun {
         programs: 1,
@@ -56,7 +57,7 @@ async fn ready_run() -> (Uuid, Vec<EventPage>, RunCore<MemoryStore>) {
     (run, pages, core)
 }
 
-async fn decide(core: &RunCore<MemoryStore>, run: &Uuid, id: &str) {
+async fn decide(core: &Core, run: &Uuid, id: &str) {
     let fact = DecisionReported {
         mutant: id.to_string(),
         verdict: Verdict::Killed,
@@ -111,7 +112,7 @@ async fn test_a_run_whose_stream_is_gone_is_forgotten() {
 
 #[tokio::test]
 async fn test_a_run_whose_program_does_not_prepare_ends_failed() {
-    let core = RunCore::new(MemoryStore::new()).unwrap();
+    let core = new_core().await;
     let run = new_run();
     let plan = PlanRun {
         programs: 1,

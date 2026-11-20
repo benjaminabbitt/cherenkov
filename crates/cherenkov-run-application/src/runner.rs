@@ -18,13 +18,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use angzarr_embedded::ProjectorHandler;
 use angzarr_embedded::angzarr_router::error::CodedError;
 use angzarr_embedded::angzarr_router::hpb::{ProjectRequest, ProjectResponse};
 use angzarr_embedded::v1::{Cover, EventPage, Uuid};
-use angzarr_embedded::{ProjectorHandler, Store};
 use cherenkov_core::plan::MutantPlan;
+use cherenkov_run_ports::Edge;
 
-use crate::core::{RunCore, run_cover};
+use crate::covers::run_cover;
 use crate::error::RunLayerError;
 use crate::policies::{handed, handler_error};
 use crate::programs;
@@ -42,8 +43,8 @@ pub const RUNNER: &str = "runner";
 
 /// The runner: its workers, each held by one instance while it runs a
 /// mutant in one program.
-pub struct Runner<S> {
-    core: Arc<RunCore<S>>,
+pub struct Runner<E> {
+    core: Arc<E>,
     explain: Explain,
     /// The workers no instance holds. There are as many as instances, so an
     /// instance handed a mutant always finds one.
@@ -62,10 +63,10 @@ struct Done {
     programs: BTreeSet<u32>,
 }
 
-impl<S> Runner<S> {
+impl<E> Runner<E> {
     /// The runner over `core`'s streams, on `workers`: subscribe it with
     /// one instance per worker.
-    pub fn new(core: Arc<RunCore<S>>, explain: Explain, workers: Vec<Worker>) -> Runner<S> {
+    pub fn new(core: Arc<E>, explain: Explain, workers: Vec<Worker>) -> Runner<E> {
         Runner {
             core,
             explain,
@@ -113,7 +114,7 @@ impl<S> Runner<S> {
     }
 }
 
-impl<S: Store> Runner<S> {
+impl<E: Edge> Runner<E> {
     /// What `run` prepared: read from its stream the first time, then kept.
     async fn programs_of(&self, run: &Uuid) -> Result<Arc<Programs>, RunLayerError> {
         let key = run.to_string();
@@ -150,7 +151,7 @@ impl<S: Store> Runner<S> {
     }
 }
 
-impl<S: Store> Runner<S> {
+impl<E: Edge> Runner<E> {
     /// What the mutant's stream already says of `run`'s asking.
     async fn done(&self, cover: &Cover, run: &Uuid) -> Result<Done, RunLayerError> {
         let mut done = Done::default();
@@ -258,7 +259,7 @@ fn killed(killer: crate::workers::Killer) -> KilledBy {
     }
 }
 
-impl<S: Store + Send + Sync + 'static> ProjectorHandler for Runner<S> {
+impl<E: Edge + 'static> ProjectorHandler for Runner<E> {
     fn name(&self) -> &str {
         RUNNER
     }

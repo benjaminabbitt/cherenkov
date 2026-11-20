@@ -16,7 +16,7 @@
 //! and prints each event as one JSON document per line. A dry run plans the
 //! run and runs nothing. [`layer::run`] runs one end to end.
 
-pub mod core;
+pub mod covers;
 pub mod error;
 pub mod follow;
 pub mod host;
@@ -27,6 +27,9 @@ pub mod programs;
 pub mod render;
 pub mod runner;
 pub mod workers;
+
+#[cfg(test)]
+mod testing;
 
 #[cfg(test)]
 #[path = "plans.test.rs"]

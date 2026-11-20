@@ -5,11 +5,52 @@ use std::time::Duration;
 use cherenkov_core::execution::{Budget, ExecError, RawOutcome, Tier};
 use serde_json::Value;
 
+use angzarr_embedded::OnRetryable;
 use angzarr_embedded::angzarr_ports::memory::MemoryStore;
+use cherenkov_embedded_edge::RunStore;
 
 use super::*;
 use crate::test_plans::{many, plans};
+use crate::testing::{new_core, new_core_on, new_run};
 use crate::workers::Killer;
+use cherenkov_run_ports::Edge;
+
+/// [`super::run`] on a runtime of its own, over `store`, as a process does.
+fn run<S: RunStore>(
+    store: S,
+    plans: &[MutantPlan],
+    settings: &Settings,
+    workers: Option<Workers>,
+    sink: &mut dyn Sink,
+) -> Result<Option<RunStatus>, RunLayerError> {
+    run_retrying(
+        store,
+        OnRetryable::default(),
+        plans,
+        settings,
+        workers,
+        sink,
+    )
+}
+
+/// [`run`], the kernel retrying as `retry` says.
+fn run_retrying<S: RunStore>(
+    store: S,
+    retry: OnRetryable,
+    plans: &[MutantPlan],
+    settings: &Settings,
+    workers: Option<Workers>,
+    sink: &mut dyn Sink,
+) -> Result<Option<RunStatus>, RunLayerError> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        let core = Arc::new(new_core_on(store, retry).await);
+        super::run(&core, new_run(), plans, settings, workers, sink).await
+    })
+}
 
 /// Kills `a`'s mutant (`test_a` fails); `b`'s survives. Counts its runs.
 struct Fake {
@@ -483,7 +524,7 @@ fn test_measure_the_fan_in_s_cost_as_the_run_s_stream_grows() {
         .unwrap();
     let ids: Vec<String> = many(n).iter().map(|p| p.id.0.clone()).collect();
     runtime.block_on(async {
-        let core = RunCore::new(MemoryStore::new()).unwrap();
+        let core = new_core().await;
         let run = new_run();
         let plan = plan_run(&many(n), &settings(), 1);
         let planning = std::time::Instant::now();
