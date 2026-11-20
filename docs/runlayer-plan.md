@@ -13,16 +13,13 @@ the runners), resume after a crash, incremental runs, and a committed
 verdict file that diffs as one line per changed verdict.
 
 ## Where it stands
-After 5.5 the root hosts the core (below); after 5.4 the aggregates decide (the Mutant its own verdict, from the facts
+After 5.6 the output and the verdict file are projectors on the bus and after 5.5 the root hosts the core (below); after 5.4 the aggregates decide (the Mutant its own verdict, from the facts
 of its programs' runs), the streams can be executed (a runner needs the
 streams alone), and the run is served by angzarr's bus: the runners, both
 policies and the live-runs read model, built in one place
 (`cherenkov-run-application/src/host.rs`). The system around them still
 works its own way:
 
-- **The read side is a loop**: the follower re-reads a mutant's whole
-  stream per decision to print it (`layer.rs`, `Printer::decision`), and
-  `Follow` polls. 5.6 makes the output a projector.
 - **Each process mints a new run id**, and the store is in memory. There is
   nothing to resume from yet. 5.7.
 - **The executor port returns raw outcomes**, and the CLI hands the
@@ -607,22 +604,59 @@ above were taken at a load of 2.6 to 3.8, so not comparable).
 Unblocks: 5.6, 5.7.
 
 **5.6 Projectors for the output and the verdict projection; live runs.**
-Goal: output and run state are read models. Changes:
-- live runs, folded from the run streams: which runs are unfinished (for
-  resume), completion, and each run's programs' preparation, which the
-  runner reads (owed mutants need no read model: the bus's positions are
-  the owed work);
-- the output projector in the CLI renders each event from the page it is
-  handed, with no re-read; `Printer`, `Follow`, `render.rs`, `Sink` and
-  `serde_json` leave the application;
-- completion is the run's `RunFinished`, seen by the live-runs read model;
-  `stalled` goes (nothing owed and unfinished is a dead letter or a held
-  failure, reported as one); a failing handler is served again;
-- the verdict projection, written at a run's end from its own message's
-  generated serde.
+Done. Goal: output and run state are read models. What was done:
+- **The run records each decision whole.** `DecisionReported` and
+  `DecisionRecorded` carry the mutant's `MutantDecided` (field 3, optional:
+  the mutant as planned, its outcome with killers, the run and the programs),
+  copied by the fan-in. The run's stream alone then holds every mutant's
+  verdict and killers, in the order the run recorded them: the output needs
+  no re-read of the mutant's stream, and `run.finished` cannot be printed
+  before the last `mutant.decided`, which two subscriptions over two domains
+  could not promise. Wire change; `encodings.txt` gained the two lines of the
+  populated messages (the old two are unchanged). The run's state and folds
+  are unchanged, so `cherenkov-run-domain` stays 0.4.
+- **Live runs** also fold the programs' preparation (`LiveRuns::programs`,
+  known once the run is ready); the runner reads it from there and falls back
+  to the run's stream (a runner is handed a mutant by a different
+  subscription than the one that folds the run, so the model may not have
+  seen the run ready yet).
+- **The output is a projector** the caller hands in (`host::Readers`): in
+  the CLI, `output::printing`, an ephemeral projector over the run domain
+  that renders each page it is handed (`render.rs`, moved to the CLI with its
+  tests) to a `Sink`. `Printer`, `Follow`, `render.rs`, `Sink`, `JsonLines`
+  and `serde_json` left the application. The bus is served from the start (the
+  first worker prepares the programs while the others are the runner's; a
+  `Pool` makes a runner instance wait for a worker until the first is given
+  back), so documents appear as they happen; a dry run serves the output and
+  the live runs alone.
+- **Completion** is `RunFinished` seen by the live runs model. The bus is
+  asked whether to go on when idle: it goes on until the run ends, stops when
+  the bus has given up on a delivery (a dead letter, reported as that
+  failure), and `Stalled` remains only for a bus that ended with neither. The
+  earlier rule (stop when nothing was served since the last ask) was a race:
+  the bus can be idle just before a commit, and a held retry is idle too.
+- **A failing handler is served again.** `Edge` errors carry their recovery
+  (`EdgeError`); one worth making again is `RunLayerError::Unavailable`, which
+  the runner answers as a retryable bug, so the bus holds it and serves it
+  after `RETRY`'s delay; any other is a bug the bus dead-letters. Tests: a run
+  whose first read of a mutant's stream fails for now completes; one that
+  fails for good ends reporting that failure.
+- **The verdict projection**: `cherenkov.output.v1.VerdictLine` (id, verdict,
+  file, line, column, function, operator, original, mutated, killing tests'
+  names sorted; its JSON is generated like the documents'), and
+  `VerdictProjection`, an ephemeral projector that, when a run finishes
+  complete, hands a `VerdictFile` its lines sorted by id (a run that failed
+  writes nothing, so the last good file stays). The CLI writes JSON lines
+  to the path of `cherenkov run --verdicts FILE`, whole beside the file and
+  renamed over it. Two runs of the same fixture write identical files
+  (a test through the wiring).
+- **Owner's to decide**: whether `run` writes `.cherenkov/verdicts.jsonl` by
+  default. It is opt-in now (`--verdicts`), because a default would put a file
+  in every project a test or a trial runs on, the fixtures included.
 
-Upstream: none. Exit: the output tests (`jq` round trip, text
-order-independent) pass unchanged; a constant number of store reads per
+Upstream: none. Exit: the output tests (the `jq` round trip, text
+order-independent, the documents' order) pass unchanged; one read of the run's
+stream (none, once the model knows the run) and none of the mutant's per
 decision; a run whose handler fails once completes; two runs of a fixture
 write identical verdict files. Unblocks: 5.7.
 
