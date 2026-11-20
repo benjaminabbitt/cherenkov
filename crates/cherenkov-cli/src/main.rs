@@ -11,7 +11,11 @@
 
 mod error;
 mod output;
+mod render;
 mod run;
+#[cfg(test)]
+#[path = "run_output.test.rs"]
+mod run_output;
 
 use std::collections::BTreeMap;
 use std::io::IsTerminal;
@@ -26,9 +30,10 @@ use cherenkov_core::plan::{Diagnostics, SkipReason};
 use cherenkov_core::profile::Profile;
 use cherenkov_core::session::{FileProblem, ProjectPlan, plan_project};
 use cherenkov_fs::FsSourceReader;
+use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::Settings;
 use cherenkov_syntax::TreeSitterSyntax;
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use cli_support::{Failure, usage_exit};
 
 use crate::error::CliError;
@@ -72,61 +77,72 @@ enum Command {
     },
     /// Run every mutant of a Go package (Delve) or Cargo project (GDB) and
     /// print each verdict as it is decided.
-    Run {
-        dir: PathBuf,
-        /// json: one event per line; text: each mutant's verdict and
-        /// details. Default: text on a terminal, json otherwise.
-        #[arg(long, value_enum)]
-        format: Option<FormatArg>,
-        /// Path to dlv (default: PATH, then $HOME/go/bin).
-        #[arg(long)]
-        dlv: Option<PathBuf>,
-        /// Path to go (default: PATH, then $HOME/go/bin).
-        #[arg(long)]
-        go: Option<PathBuf>,
-        /// Path to gdb, 14 or later (default: PATH).
-        #[arg(long)]
-        gdb: Option<PathBuf>,
-        /// Path to cargo (default: PATH).
-        #[arg(long)]
-        cargo: Option<PathBuf>,
-        /// Also skip files matching this glob, relative to DIR (repeatable).
-        #[arg(long)]
-        exclude: Vec<String>,
-        /// The named operator set to use (see `cherenkov sets`).
-        #[arg(long, default_value = "breadth")]
-        operators: String,
-        /// Run only this test, by the runner's own name for it (repeatable).
-        /// Rust: the libtest name (`module::test_name`); Go: `TestName` or
-        /// `TestName/subtest`. Default: every test.
-        #[arg(long = "test", value_name = "NAME")]
-        tests: Vec<String>,
-        /// Workers running mutants at once, and test programs prepared at
-        /// once. Each worker has its own debugger sessions; a project whose
-        /// test programs share files or ports may need 1. Default: as many
-        /// as the machine's cores and memory allow.
-        #[arg(long)]
-        jobs: Option<usize>,
-        /// An argument for cargo when it builds and checks the tests, as the
-        /// project's own mutation runs pass them (repeatable): `--lib`,
-        /// `--features=test-utils`.
-        #[arg(long = "cargo-arg", value_name = "ARG", allow_hyphen_values = true)]
-        cargo_args: Vec<String>,
-        /// Write each mutant that could not be run (unsupported) to FILE,
-        /// one JSON document a line, with a `reason_code` and its reason:
-        /// what the run accepted. The same lines are in the event stream.
-        #[arg(long = "deficiency-log", value_name = "FILE")]
-        deficiency_log: Option<PathBuf>,
-        /// Judge only the lines a unified diff adds (as cargo-mutants'
-        /// `--in-diff`): a mutant stays when its span touches one.
-        #[arg(long = "in-diff", value_name = "FILE")]
-        in_diff: Option<PathBuf>,
-    },
+    Run(Box<RunArgs>),
     /// List the named operator sets, their sources, and what each does not cover yet.
     Sets,
     /// List every named mutation, where its definition came from, and peers
     /// that have the same or a similar mutation.
     Mutations,
+}
+
+/// What `cherenkov run` is asked: boxed in the command, which would
+/// otherwise be as large as it.
+#[derive(Args)]
+struct RunArgs {
+    dir: PathBuf,
+    /// json: one event per line; text: each mutant's verdict and
+    /// details. Default: text on a terminal, json otherwise.
+    #[arg(long, value_enum)]
+    format: Option<FormatArg>,
+    /// Path to dlv (default: PATH, then $HOME/go/bin).
+    #[arg(long)]
+    dlv: Option<PathBuf>,
+    /// Path to go (default: PATH, then $HOME/go/bin).
+    #[arg(long)]
+    go: Option<PathBuf>,
+    /// Path to gdb, 14 or later (default: PATH).
+    #[arg(long)]
+    gdb: Option<PathBuf>,
+    /// Path to cargo (default: PATH).
+    #[arg(long)]
+    cargo: Option<PathBuf>,
+    /// Also skip files matching this glob, relative to DIR (repeatable).
+    #[arg(long)]
+    exclude: Vec<String>,
+    /// The named operator set to use (see `cherenkov sets`).
+    #[arg(long, default_value = "breadth")]
+    operators: String,
+    /// Run only this test, by the runner's own name for it (repeatable).
+    /// Rust: the libtest name (`module::test_name`); Go: `TestName` or
+    /// `TestName/subtest`. Default: every test.
+    #[arg(long = "test", value_name = "NAME")]
+    tests: Vec<String>,
+    /// Workers running mutants at once, and test programs prepared at
+    /// once. Each worker has its own debugger sessions; a project whose
+    /// test programs share files or ports may need 1. Default: as many
+    /// as the machine's cores and memory allow.
+    #[arg(long)]
+    jobs: Option<usize>,
+    /// An argument for cargo when it builds and checks the tests, as the
+    /// project's own mutation runs pass them (repeatable): `--lib`,
+    /// `--features=test-utils`.
+    #[arg(long = "cargo-arg", value_name = "ARG", allow_hyphen_values = true)]
+    cargo_args: Vec<String>,
+    /// Write each mutant that could not be run (unsupported) to FILE,
+    /// one JSON document a line, with a `reason_code` and its reason:
+    /// what the run accepted. The same lines are in the event stream.
+    #[arg(long = "deficiency-log", value_name = "FILE")]
+    deficiency_log: Option<PathBuf>,
+    /// Write the finished run's verdicts to FILE (conventionally
+    /// `.cherenkov/verdicts.jsonl`, committed): one JSON line for each
+    /// mutant, sorted by id, holding no time or run id, so it diffs as
+    /// one line for each changed verdict. A run that fails writes nothing.
+    #[arg(long = "verdicts", value_name = "FILE")]
+    verdict_file: Option<PathBuf>,
+    /// Judge only the lines a unified diff adds (as cargo-mutants'
+    /// `--in-diff`): a mutant stays when its span touches one.
+    #[arg(long = "in-diff", value_name = "FILE")]
+    in_diff: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -179,21 +195,23 @@ fn main() -> ExitCode {
                 .and_then(|set| plan(&dir, format, &exclude, &set, in_diff.as_deref()));
             (format, result)
         }
-        Command::Run {
-            dir,
-            format,
-            dlv,
-            go,
-            gdb,
-            cargo,
-            exclude,
-            operators,
-            tests,
-            jobs,
-            cargo_args,
-            in_diff,
-            deficiency_log,
-        } => {
+        Command::Run(args) => {
+            let RunArgs {
+                dir,
+                format,
+                dlv,
+                go,
+                gdb,
+                cargo,
+                exclude,
+                operators,
+                tests,
+                jobs,
+                cargo_args,
+                in_diff,
+                deficiency_log,
+                verdict_file,
+            } = *args;
             let format = chosen(format);
             let result = operator_set(&operators).and_then(|set| {
                 run::run(
@@ -207,6 +225,7 @@ fn main() -> ExitCode {
                         cargo_args,
                         in_diff,
                         deficiency_log,
+                        verdict_file,
                     },
                     &exclude,
                     &set,
@@ -314,13 +333,13 @@ fn plan(
         operators: set.name.to_string(),
         jobs: 0,
     };
-    let mut sink = output::sink(format, Listed::Planned, None);
+    let sink = output::sink(format, Listed::Planned, None);
     cherenkov_wiring::run(
         cherenkov_run_store::open(),
         &plans,
         &settings,
         None,
-        sink.as_mut(),
+        Readers::printing(output::printing(sink)),
     )
     .map_err(|e| CliError::run(&e))?;
     summarize(&project);

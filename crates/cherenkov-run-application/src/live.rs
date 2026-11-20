@@ -19,8 +19,11 @@ use angzarr_embedded::ProjectorHandler;
 use angzarr_embedded::angzarr_router::error::CodedError;
 use angzarr_embedded::angzarr_router::hpb::{ProjectRequest, ProjectResponse};
 use angzarr_embedded::v1::Uuid;
-use cherenkov_run_domain::RunStatus;
 use cherenkov_run_domain::events::{RunEvent, run_event};
+use cherenkov_run_domain::{ProgramPrepared, RunStatus};
+
+use crate::programs;
+use crate::workers::Programs;
 
 /// The projector's name. Its positions are not stored, so nothing is kept
 /// under it.
@@ -33,6 +36,8 @@ struct Live {
     planned: BTreeSet<String>,
     /// Whether every test program is prepared: the mutants can run.
     ready: bool,
+    /// The programs prepared, by their order.
+    prepared: BTreeMap<u32, ProgramPrepared>,
     /// The ids of the mutants decided.
     decided: BTreeSet<String>,
     /// How it ended; none while it is live.
@@ -56,8 +61,10 @@ impl Live {
                 self.decided.insert(decision.mutant);
             }
             RunEvent::RunFinished(finished) => self.status = Some(finished.status),
-            RunEvent::RunStarted(_) | RunEvent::ProgramPrepared(_) | RunEvent::ProgramFailed(_) => {
+            RunEvent::ProgramPrepared(program) => {
+                self.prepared.insert(program.index, program);
             }
+            RunEvent::RunStarted(_) | RunEvent::ProgramFailed(_) => {}
         }
     }
 }
@@ -94,6 +101,16 @@ impl LiveRuns {
             .filter(|(_, live)| live.status.is_none())
             .map(|(run, _)| run.clone())
             .collect()
+    }
+
+    /// What `run` prepared, as a runner runs its mutants with it: known once
+    /// the run is ready (its programs all prepared), and not before.
+    pub fn programs(&self, run: &Uuid) -> Option<Programs> {
+        let runs = self.lock();
+        let live = runs.get(&run.to_string()).filter(|live| live.ready)?;
+        Some(programs::programs(
+            live.prepared.values().cloned().collect(),
+        ))
     }
 
     /// Whether `run`'s programs are all prepared.

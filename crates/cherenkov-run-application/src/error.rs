@@ -4,11 +4,15 @@
 use std::fmt;
 
 use angzarr_diagnostic::{Arg, Diagnostic, Report, code};
+use cherenkov_run_ports::EdgeError;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RunLayerError {
     /// The kernel or its store failed, or refused what the run sent it.
     Kernel { cause: Report },
+    /// The core could not take a call for now (its store down, a write that
+    /// lost its race): worth making again.
+    Unavailable { cause: Report },
     /// The run's kernel or bus did not take what the run registers.
     Misconfigured { cause: Report },
     /// The run's async runtime did not start (the root's).
@@ -30,10 +34,14 @@ impl RunLayerError {
     }
 }
 
-/// What the core answered with a failure, as the run layer's.
-impl From<Report> for RunLayerError {
-    fn from(cause: Report) -> RunLayerError {
-        RunLayerError::Kernel { cause }
+/// What the core answered with a failure, as the run layer's: one worth
+/// making again is `Unavailable`.
+impl From<EdgeError> for RunLayerError {
+    fn from(error: EdgeError) -> RunLayerError {
+        match error.retryable() {
+            true => RunLayerError::Unavailable { cause: error.cause },
+            false => RunLayerError::Kernel { cause: error.cause },
+        }
     }
 }
 
@@ -49,6 +57,7 @@ impl Diagnostic for RunLayerError {
     fn code(&self) -> &str {
         match self {
             RunLayerError::Kernel { .. } => code!("kernel"),
+            RunLayerError::Unavailable { .. } => code!("unavailable"),
             RunLayerError::Misconfigured { .. } => code!("misconfigured"),
             RunLayerError::Runtime { .. } => code!("runtime"),
             RunLayerError::Workers { .. } => code!("workers"),
@@ -58,7 +67,9 @@ impl Diagnostic for RunLayerError {
 
     fn args(&self) -> Vec<(&str, Arg)> {
         match self {
-            RunLayerError::Kernel { cause } | RunLayerError::Misconfigured { cause } => {
+            RunLayerError::Kernel { cause }
+            | RunLayerError::Unavailable { cause }
+            | RunLayerError::Misconfigured { cause } => {
                 vec![("cause", Arg::nested(cause))]
             }
             RunLayerError::Runtime { reason } | RunLayerError::Workers { reason } => {
@@ -91,6 +102,7 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
     let cause = || Report::new("angzarr-embedded-x");
     vec![
         Box::new(RunLayerError::Kernel { cause: cause() }),
+        Box::new(RunLayerError::Unavailable { cause: cause() }),
         Box::new(RunLayerError::Misconfigured { cause: cause() }),
         Box::new(RunLayerError::Runtime { reason: "r".into() }),
         Box::new(RunLayerError::Workers { reason: "r".into() }),

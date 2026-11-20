@@ -60,6 +60,19 @@ fn json_of(docs: &[Document]) -> Vec<Value> {
         .collect()
 }
 
+/// The run's record of `decision`, whole.
+fn recorded(decision: MutantDecided) -> Any {
+    let (id, verdict) = match (&decision.mutant, &decision.verdict) {
+        (Some(mutant), Some(outcome)) => (mutant.id.clone(), outcome.verdict),
+        _ => (String::new(), Verdict::Killed),
+    };
+    pack_message(&DecisionRecorded {
+        mutant: id,
+        verdict,
+        decision: Some(decision),
+    })
+}
+
 fn one(any: Any) -> Value {
     let docs = json_of(&documents(&run(), &page(any)));
     assert_eq!(docs.len(), 1, "{docs:?}");
@@ -108,7 +121,7 @@ fn test_the_mutants_planned_are_one_document_each() {
 
 #[test]
 fn test_a_killed_mutant_s_document_holds_the_mutant_and_every_test_that_killed_it() {
-    let doc = one(pack_message(&MutantDecided {
+    let doc = one(recorded(MutantDecided {
         mutant: Some(mutant()),
         verdict: Some(Outcome {
             verdict: Verdict::Killed,
@@ -160,17 +173,14 @@ fn test_a_survivor_names_the_tests_that_executed_it_and_a_refusal_its_reason() {
         }),
         ..MutantDecided::default()
     };
-    let survived = one(pack_message(&decided(Verdict::Survived, None)));
+    let survived = one(recorded(decided(Verdict::Survived, None)));
     assert_eq!(survived["executed_by"], json!(["test_total"]));
     assert!(survived.get("killed_by").is_none());
     assert!(survived.get("tier").is_none(), "no tier when none is said");
-    let unsupported = one(pack_message(&decided(
-        Verdict::Unsupported,
-        Some("no rule"),
-    )));
+    let unsupported = one(recorded(decided(Verdict::Unsupported, Some("no rule"))));
     assert_eq!(unsupported["reason"], "no rule");
     assert_eq!(unsupported["reason_code"], "other");
-    let inlined = one(pack_message(&decided(
+    let inlined = one(recorded(decided(
         Verdict::Unsupported,
         Some(
             "the evaluator cannot apply the mutant: Can not force return from an inlined function.",
@@ -184,13 +194,25 @@ fn test_a_survivor_names_the_tests_that_executed_it_and_a_refusal_its_reason() {
 }
 
 #[test]
-fn test_the_run_s_record_of_a_decision_prints_nothing_of_its_own() {
-    // The mutant's own stream holds the decision a reader prints.
+fn test_a_record_of_a_decision_holding_none_prints_nothing() {
     let record = DecisionRecorded {
         mutant: "0123456789abcdef".to_string(),
         verdict: Verdict::Killed,
+        decision: None,
     };
     assert!(documents(&run(), &page(pack_message(&record))).is_empty());
+    // A decision with no outcome is no document either.
+    let bare = recorded(MutantDecided::default());
+    assert!(documents(&run(), &page(bare)).is_empty());
+}
+
+#[test]
+fn test_a_mutant_s_own_event_prints_nothing() {
+    let decided = MutantDecided {
+        mutant: Some(mutant()),
+        ..MutantDecided::default()
+    };
+    assert!(documents(&run(), &page(pack_message(&decided))).is_empty());
 }
 
 #[test]

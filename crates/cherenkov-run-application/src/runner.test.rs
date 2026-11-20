@@ -6,8 +6,10 @@ use cherenkov_core::execution::{Budget, ExecError, MutantExecutor, RawOutcome, T
 
 use super::*;
 use crate::covers::{mutant_cover, run_cover};
+use crate::pool::Pool;
 use crate::test_plans::plans;
 use crate::testing::{Core, new_core, new_run};
+use crate::workers::Worker;
 use crate::workers::{self, Killer};
 use cherenkov_run_domain::{PlanMutant, PlanRun, ProgramRunReported, Verdict};
 use cherenkov_run_ports::Edge;
@@ -86,7 +88,7 @@ async fn projector(runs: &Arc<AtomicUsize>, programs: usize) -> (Arc<Core>, Uuid
             .unwrap();
     }
     crate::test_plans::serve_policies(&core).await;
-    let projector = Runner::new(core.clone(), explain, vec![Worker::new(set)]);
+    let projector = Runner::new(core.clone(), explain, Pool::new(vec![Worker::new(set)]));
     (core, run, projector)
 }
 
@@ -317,4 +319,90 @@ async fn test_a_ready_run_hands_its_mutants_on_with_their_plans_and_not_before()
         let decoded = cherenkov_run_domain::plan::decode(planned.mutant.unwrap().plan.unwrap());
         assert_eq!(decoded, Ok(p));
     }
+}
+
+/// The core, counting the reads of runs' streams.
+struct Counting {
+    inner: Arc<Core>,
+    run_reads: AtomicUsize,
+}
+
+impl Edge for Counting {
+    async fn handle(
+        &self,
+        book: angzarr_embedded::v1::CommandBook,
+    ) -> Result<cherenkov_run_ports::Reported, cherenkov_run_ports::EdgeError> {
+        self.inner.handle(book).await
+    }
+
+    async fn events(
+        &self,
+        stream: &Cover,
+        from: u64,
+    ) -> Result<Vec<EventPage>, cherenkov_run_ports::EdgeError> {
+        if stream.domain == cherenkov_run_domain::RUN_DOMAIN {
+            self.run_reads.fetch_add(1, Ordering::SeqCst);
+        }
+        self.inner.events(stream, from).await
+    }
+
+    fn next_commit(&self) -> angzarr_embedded::angzarr_ports::CommitWait {
+        self.inner.next_commit()
+    }
+}
+
+/// Run mutant `a` of a ready run on a runner over a new core (counted),
+/// which knows `live` as it is given `run`'s events; how many times the
+/// run's stream was read.
+async fn run_a(known: Known) -> usize {
+    let runs = Arc::new(AtomicUsize::new(0));
+    let (core, run, _) = projector(&runs, 1).await;
+    let counting = Arc::new(Counting {
+        inner: core.clone(),
+        run_reads: AtomicUsize::new(0),
+    });
+    let set: Vec<Box<dyn MutantExecutor + Send>> = vec![Box::new(Fake { runs })];
+    let mut runner = Runner::new(counting.clone(), explain, Pool::new(vec![Worker::new(set)]));
+    if let Known::Nothing | Known::Run = known {
+        let live = LiveRuns::default();
+        if let Known::Run = known {
+            let seen = core.events(&run_cover(&run), 0).await.unwrap();
+            let book = EventBook {
+                cover: Some(run_cover(&run)),
+                next_sequence: seen.len() as u64,
+                pages: seen,
+                snapshot: None,
+            };
+            live.dispatch(&ProjectRequest { events: Some(book) })
+                .await
+                .unwrap();
+        }
+        runner = runner.knowing(live);
+    }
+    let a = plans()[0].id.0.clone();
+    let planned = pages(&core, &a).await;
+    runner
+        .dispatch(&request(&mutant_cover(&a).unwrap(), planned[0].clone()))
+        .await
+        .unwrap();
+    assert_eq!(decided(&pages(&core, &a).await).len(), 1, "it ran");
+    counting.run_reads.load(Ordering::SeqCst)
+}
+
+/// What the live runs model a runner is given has seen.
+#[derive(Clone, Copy)]
+enum Known {
+    /// No model at all.
+    Unasked,
+    /// A model that has seen nothing.
+    Nothing,
+    /// A model that has seen the run ready.
+    Run,
+}
+
+#[tokio::test]
+async fn test_a_runner_reads_what_a_run_prepared_from_the_live_runs_model_when_it_knows_it() {
+    assert_eq!(run_a(Known::Unasked).await, 1, "from the run's stream");
+    assert_eq!(run_a(Known::Nothing).await, 1, "a model that knows nothing");
+    assert_eq!(run_a(Known::Run).await, 0, "from the model");
 }

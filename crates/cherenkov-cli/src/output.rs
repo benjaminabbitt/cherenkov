@@ -8,14 +8,112 @@
 //! goes to stderr.
 
 use std::io::Write;
+use std::path::PathBuf;
+use std::sync::{Mutex, PoisonError};
 
+use crate::render::documents;
+use angzarr_diagnostic::Report;
+use angzarr_embedded::ProjectorHandler;
+use angzarr_embedded::angzarr_router::error::CodedError;
+use angzarr_embedded::angzarr_router::hpb::{ProjectRequest, ProjectResponse};
 use angzarr_presentation::Format;
-use cherenkov_run_application::layer::{JsonLines, Sink};
+use cherenkov_run_application::host::Output;
+use cherenkov_run_application::verdicts::VerdictFile;
 use cherenkov_run_wire::names;
+use cherenkov_run_wire::output::VerdictLine;
 use cherenkov_run_wire::output::{Decided, Document, Finished, Prepared, Started, document::Event};
 use cherenkov_run_wire::{KilledBy, PlannedMutant};
 use cherenkov_run_wire::{RunStatus, Selection, Verdict};
 use cli_support::Exit;
+
+/// Where a run's documents go, each as soon as it is recorded.
+pub trait Sink: Send {
+    fn document(&mut self, doc: &Document);
+}
+
+/// A sink writing each document as one line of JSON, flushed.
+pub struct JsonLines<W: Write + Send>(pub W);
+
+impl<W: Write + Send> Sink for JsonLines<W> {
+    fn document(&mut self, doc: &Document) {
+        if let Ok(line) = serde_json::to_string(doc) {
+            let _ = writeln!(self.0, "{line}");
+        }
+        let _ = self.0.flush();
+    }
+}
+
+/// The output projector's name.
+pub const OUTPUT: &str = "output";
+
+/// The projector that prints a run: each event of the run's stream the bus
+/// hands it, as the documents it renders to, to its sink. It reads nothing
+/// else: the run records each decision whole.
+struct Printing {
+    sink: Mutex<Box<dyn Sink>>,
+}
+
+impl ProjectorHandler for Printing {
+    fn name(&self) -> &str {
+        OUTPUT
+    }
+
+    async fn dispatch(&self, request: &ProjectRequest) -> Result<ProjectResponse, CodedError> {
+        let Some(book) = &request.events else {
+            return Ok(ProjectResponse::default());
+        };
+        let Some(run) = book.cover.as_ref().and_then(|cover| cover.root.as_ref()) else {
+            return Ok(ProjectResponse::default());
+        };
+        let mut sink = self.sink.lock().unwrap_or_else(PoisonError::into_inner);
+        for doc in book.pages.iter().flat_map(|page| documents(run, page)) {
+            sink.document(&doc);
+        }
+        Ok(ProjectResponse::default())
+    }
+}
+
+/// The verdict file: one JSON line for each mutant (the generated serde of
+/// `VerdictLine`), written whole beside the file and renamed over it, so a
+/// reader never sees half a file.
+pub struct JsonVerdictFile {
+    path: PathBuf,
+}
+
+impl JsonVerdictFile {
+    pub fn new(path: PathBuf) -> JsonVerdictFile {
+        JsonVerdictFile { path }
+    }
+
+    fn unwritable(&self, reason: &dyn std::fmt::Display) -> Report {
+        Report::new("cherenkov-cli-unreadable")
+            .arg("path", self.path.display().to_string())
+            .arg("reason", reason.to_string())
+    }
+}
+
+impl VerdictFile for JsonVerdictFile {
+    fn write(&self, lines: &[VerdictLine]) -> Result<(), Report> {
+        let mut text = String::new();
+        for line in lines {
+            text.push_str(&serde_json::to_string(line).map_err(|e| self.unwritable(&e))?);
+            text.push('\n');
+        }
+        if let Some(dir) = self.path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| self.unwritable(&e))?;
+        }
+        let beside = self.path.with_extension("jsonl.tmp");
+        std::fs::write(&beside, text).map_err(|e| self.unwritable(&e))?;
+        std::fs::rename(&beside, &self.path).map_err(|e| self.unwritable(&e))
+    }
+}
+
+/// The output of a run that prints to `sink`.
+pub fn printing(sink: Box<dyn Sink>) -> Output {
+    Box::new(Printing {
+        sink: Mutex::new(sink),
+    })
+}
 
 /// Which mutants text lists on stdout: the planned ones (a plan) or the
 /// decided ones (a run).
@@ -28,7 +126,7 @@ pub enum Listed {
 /// The sink a command prints its run with, on the process's streams. With a
 /// `log`, every mutant that could not be run is also written to it, one
 /// JSON document a line.
-pub fn sink(format: Format, listed: Listed, log: Option<Box<dyn Write>>) -> Box<dyn Sink> {
+pub fn sink(format: Format, listed: Listed, log: Option<Box<dyn Write + Send>>) -> Box<dyn Sink> {
     let printer: Box<dyn Sink> = match format {
         Format::Json => Box::new(JsonLines(std::io::stdout())),
         Format::Text => Box::new(Text::new(std::io::stdout(), std::io::stderr(), listed)),
@@ -59,13 +157,13 @@ pub fn exit_code(status: RunStatus) -> i32 {
 /// mutant's `reason_code`, writes it to the log, and adds the counts to the
 /// run's `run.finished` as `deficiencies`, with the exit code its status
 /// says. Every document goes on unchanged but that one.
-pub struct Deficiencies<W: Write> {
+pub struct Deficiencies<W: Write + Send> {
     inner: Box<dyn Sink>,
     log: Option<W>,
     counts: std::collections::BTreeMap<String, u32>,
 }
 
-impl<W: Write> Deficiencies<W> {
+impl<W: Write + Send> Deficiencies<W> {
     pub fn new(inner: impl Sink + 'static, log: Option<W>) -> Self {
         Deficiencies {
             inner: Box::new(inner),
@@ -75,7 +173,7 @@ impl<W: Write> Deficiencies<W> {
     }
 }
 
-impl<W: Write> Sink for Deficiencies<W> {
+impl<W: Write + Send> Sink for Deficiencies<W> {
     fn document(&mut self, doc: &Document) {
         match &doc.event {
             Some(Event::Decided(d)) if d.verdict() == Verdict::Unsupported => {
@@ -103,14 +201,14 @@ impl<W: Write> Sink for Deficiencies<W> {
 }
 
 /// Text for a person: [`render`] each document, written and flushed at once.
-pub struct Text<O: Write, E: Write> {
+pub struct Text<O: Write + Send, E: Write + Send> {
     out: O,
     err: E,
     listed: Listed,
     started: Option<Started>,
 }
 
-impl<O: Write, E: Write> Text<O, E> {
+impl<O: Write + Send, E: Write + Send> Text<O, E> {
     pub fn new(out: O, err: E, listed: Listed) -> Self {
         Text {
             out,
@@ -121,7 +219,7 @@ impl<O: Write, E: Write> Text<O, E> {
     }
 }
 
-impl<O: Write, E: Write> Sink for Text<O, E> {
+impl<O: Write + Send, E: Write + Send> Sink for Text<O, E> {
     fn document(&mut self, doc: &Document) {
         if let Some(Event::Started(started)) = &doc.event {
             self.started = Some(started.clone());

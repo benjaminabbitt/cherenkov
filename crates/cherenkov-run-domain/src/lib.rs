@@ -389,6 +389,7 @@ impl Run {
         let decided = pack_message(&DecisionRecorded {
             mutant: fact.mutant,
             verdict: fact.verdict,
+            decision: fact.decision,
         });
         Ok(match last {
             true => FactEmit::of([

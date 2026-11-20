@@ -173,8 +173,9 @@ message PreparationFailed {
 }
 
 // A mutant's decision, reported to the run that asked for it: the mutant's
-// id and its verdict's name. Recorded once for each of the run's undecided
-// mutants while it is live, and the last finishes the run.
+// id, its verdict, and the decision whole as the mutant recorded it, which
+// the run's readers print and keep. Recorded once for each of the run's
+// undecided mutants while it is live, and the last finishes the run.
 message DecisionReported {
   option (io.angzarr.v1.fact) = {
     component: "cherenkov.run.v1.RunSnapshot"
@@ -183,6 +184,7 @@ message DecisionReported {
 
   string mutant = 1;
   cherenkov.mutant.v1.Verdict verdict = 2;
+  optional cherenkov.mutant.v1.MutantDecided decision = 3;
 }
 
 // endregion facts
@@ -245,13 +247,16 @@ message ProgramFailed {
   string reason = 2;
 }
 
-// One of the run's mutants decided, counted in its tallies. Its detail is on
-// the mutant's own stream.
+// One of the run's mutants decided, counted in its tallies, with the
+// decision whole as the mutant recorded it: a reader of the run's stream
+// alone has every mutant's verdict, killers and site, in the order the run
+// recorded them.
 message DecisionRecorded {
   option (io.angzarr.v1.event) = {component: "cherenkov.run.v1.RunSnapshot"};
 
   string mutant = 1;
   cherenkov.mutant.v1.Verdict verdict = 2;
+  optional cherenkov.mutant.v1.MutantDecided decision = 3;
 }
 
 // The run is over: how many mutants got each verdict, in ascending order of

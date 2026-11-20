@@ -2,6 +2,7 @@
 # begins with the crate's name; the variables are its args.
 
 cherenkov-run-application-kernel = the run's kernel failed: { $cause }
+cherenkov-run-application-unavailable = the run's core could not take a call for now: { $cause }
 cherenkov-run-application-misconfigured = the run's kernel or bus did not take what the run registers: { $cause }
 cherenkov-run-application-runtime = the run's runtime did not start: { $reason }
 cherenkov-run-application-workers = the mutants could not run: { $reason }

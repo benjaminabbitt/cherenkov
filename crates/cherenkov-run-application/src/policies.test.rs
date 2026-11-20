@@ -14,6 +14,8 @@ use cherenkov_run_domain::{
 };
 
 use crate::covers::{mutant_cover, run_cover};
+use crate::error::RunLayerError;
+use crate::policies::handler_error;
 use crate::test_plans::{prepared, serve_policies};
 
 /// A plan of `ids` for a run of one test program.
@@ -133,9 +135,59 @@ async fn test_a_mutant_s_decision_is_recorded_on_the_run_that_asked_once_however
 }
 
 #[tokio::test]
+async fn test_the_decision_is_recorded_on_the_run_whole_as_the_mutant_recorded_it() {
+    let core = new_core().await;
+    let run = ready_run(&core).await;
+    serve_policies(&core).await;
+    killed_a(&core, &run).await;
+    serve_policies(&core).await;
+    let on_mutant = core
+        .events(&mutant_cover("a").unwrap(), 0)
+        .await
+        .unwrap()
+        .iter()
+        .find_map(|p| match mutant_event(p) {
+            Some(MutantEvent::MutantDecided(d)) => Some(d),
+            _ => None,
+        })
+        .unwrap();
+    let on_run = core
+        .events(&run_cover(&run), 0)
+        .await
+        .unwrap()
+        .iter()
+        .find_map(|p| match run_event(p) {
+            Some(RunEvent::DecisionRecorded(d)) => d.decision,
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(on_run, on_mutant);
+}
+
+#[tokio::test]
 async fn test_the_fan_in_passes_over_a_mutant_planned() {
     let core = new_core().await;
     let run = ready_run(&core).await;
     serve_policies(&core).await;
     assert!(decisions(&core, &run).await.is_empty());
+}
+
+#[test]
+fn test_a_failure_worth_making_again_is_a_retryable_handler_error_and_others_are_not() {
+    use angzarr_embedded::{Class, class};
+    let cause = angzarr_diagnostic::Report::new("angzarr-embedded-x");
+    let class_of = |error: RunLayerError| class(handler_error(&error).grpc as i32);
+    assert_eq!(
+        class_of(RunLayerError::Unavailable {
+            cause: cause.clone()
+        }),
+        Class::BugRetryable
+    );
+    assert_eq!(class_of(RunLayerError::Kernel { cause }), Class::BugFatal);
+    assert_eq!(
+        class_of(RunLayerError::Workers {
+            reason: "r".to_string()
+        }),
+        Class::BugFatal
+    );
 }

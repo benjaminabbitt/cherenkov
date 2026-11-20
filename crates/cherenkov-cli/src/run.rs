@@ -3,6 +3,7 @@
 //! is recorded (`output.rs`).
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use angzarr_presentation::Format;
 
@@ -20,7 +21,9 @@ use cherenkov_exec_dap::toolchain::{
     cargo_workspace_prefix, go_test_args, rust_code_files_with, rust_test_args, rustup_toolchain,
 };
 use cherenkov_fs::FsSourceReader;
+use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::{Settings, Workers};
+use cherenkov_run_application::verdicts::VerdictFile;
 use cherenkov_run_application::workers::{Killer, SESSIONS_PER_WORKER};
 use cherenkov_syntax::TreeSitterSyntax;
 
@@ -40,6 +43,9 @@ pub struct Tools {
     pub in_diff: Option<PathBuf>,
     /// A file the mutants that could not be run are written to.
     pub deficiency_log: Option<PathBuf>,
+    /// A file the finished run's verdicts are written to, one JSON line for
+    /// each mutant, sorted by id.
+    pub verdict_file: Option<PathBuf>,
 }
 
 /// The plans whose spans touch a line the unified diff in `file` adds. The
@@ -250,17 +256,24 @@ fn on_run_layer(
     let log = match &asked.tools.deficiency_log {
         Some(path) => {
             let file = std::fs::File::create(path).map_err(|e| unreadable(path, &e))?;
-            Some(Box::new(file) as Box<dyn std::io::Write>)
+            Some(Box::new(file) as Box<dyn std::io::Write + Send>)
         }
         None => None,
     };
-    let mut sink = output::sink(asked.format, Listed::Decided, log);
+    let sink = output::sink(asked.format, Listed::Decided, log);
     cherenkov_wiring::run(
         cherenkov_run_store::open(),
         plans,
         &settings,
         Some(workers),
-        sink.as_mut(),
+        Readers {
+            output: output::printing(sink),
+            verdicts: asked
+                .tools
+                .verdict_file
+                .clone()
+                .map(|path| Arc::new(output::JsonVerdictFile::new(path)) as Arc<dyn VerdictFile>),
+        },
     )
     .map(drop)
     .map_err(|e| CliError::run(&e))

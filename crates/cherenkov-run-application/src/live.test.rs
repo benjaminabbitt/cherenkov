@@ -61,6 +61,7 @@ async fn decide(core: &Core, run: &Uuid, id: &str) {
     let fact = DecisionReported {
         mutant: id.to_string(),
         verdict: Verdict::Killed,
+        decision: None,
     };
     core.report(run_cover(run), &fact, id).await.unwrap();
 }
@@ -132,4 +133,26 @@ async fn test_a_run_whose_program_does_not_prepare_ends_failed() {
     live.dispatch(&request(&run, pages)).await.unwrap();
     assert_eq!(live.status(&run), Some(RunStatus::Failed));
     assert!(!live.ready(&run));
+}
+
+#[tokio::test]
+async fn test_the_programs_a_run_prepared_are_known_once_it_is_ready_and_not_before() {
+    let (run, pages, _core) = ready_run().await;
+    let live = LiveRuns::default();
+    assert!(live.programs(&run).is_none(), "not seen");
+    // The run's start and its mutants planned: no program prepared yet.
+    live.dispatch(&request(&run, pages[..2].to_vec()))
+        .await
+        .unwrap();
+    assert!(live.programs(&run).is_none(), "not ready");
+    // The preparation, and readiness.
+    live.dispatch(&request(&run, pages[2..].to_vec()))
+        .await
+        .unwrap();
+    let programs = live.programs(&run).unwrap();
+    assert_eq!(programs.len(), 1);
+    assert_eq!(programs.name(0), Some("calc-1"));
+    // Handed again: still the one program.
+    live.dispatch(&request(&run, pages)).await.unwrap();
+    assert_eq!(live.programs(&run).unwrap().len(), 1);
 }

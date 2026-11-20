@@ -1,15 +1,20 @@
 use std::path::Path;
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use angzarr_embedded::OnRetryable;
+use angzarr_embedded::angzarr_router::error::CodedError;
+use angzarr_embedded::angzarr_router::hpb::{ProjectRequest, ProjectResponse};
+use angzarr_embedded::{OnRetryable, ProjectorHandler};
 use angzarr_ports::memory::MemoryStore;
 use cherenkov_core::operator::catalog;
 use cherenkov_core::plan::plan_file;
 use cherenkov_core::ports::SyntaxPort;
 use cherenkov_core::syntax::LanguageId;
 use cherenkov_run_application::covers::run_cover;
-use cherenkov_run_application::layer::{JsonLines, Settings};
+use cherenkov_run_application::host::Readers;
+use cherenkov_run_application::layer::Settings;
 use cherenkov_run_domain::PlanRun;
+use cherenkov_run_domain::events::{RunEvent, run_event};
 use cherenkov_run_ports::Edge;
 use cherenkov_syntax::TreeSitterSyntax;
 
@@ -77,6 +82,22 @@ async fn the_core_stamps_what_it_records_at_the_clock() {
     assert!(at.seconds >= before && at.seconds <= now_seconds());
 }
 
+/// An output that keeps the events of the run it is handed.
+#[derive(Clone, Default)]
+struct Kept(Arc<Mutex<Vec<RunEvent>>>);
+
+impl ProjectorHandler for Kept {
+    fn name(&self) -> &str {
+        "output"
+    }
+
+    async fn dispatch(&self, request: &ProjectRequest) -> Result<ProjectResponse, CodedError> {
+        let pages = request.events.iter().flat_map(|book| &book.pages);
+        self.0.lock().unwrap().extend(pages.filter_map(run_event));
+        Ok(ProjectResponse::default())
+    }
+}
+
 #[test]
 fn a_dry_run_plans_and_does_not_finish() {
     let settings = Settings {
@@ -85,10 +106,20 @@ fn a_dry_run_plans_and_does_not_finish() {
         operators: "default".to_string(),
         jobs: 1,
     };
-    let mut out = JsonLines(Vec::new());
-    let status = run(MemoryStore::new(), &plans(), &settings, None, &mut out).unwrap();
+    let kept = Kept::default();
+    let status = run(
+        MemoryStore::new(),
+        &plans(),
+        &settings,
+        None,
+        Readers::printing(Box::new(kept.clone())),
+    )
+    .unwrap();
     assert_eq!(status, None);
-    let text = String::from_utf8(out.0).unwrap();
-    assert!(text.starts_with(r#"{"event":"run.started""#), "{text}");
-    assert!(text.contains(r#""event":"mutant.planned""#), "{text}");
+    let events = kept.0.lock().unwrap();
+    assert!(matches!(events[0], RunEvent::RunStarted(_)), "{events:?}");
+    assert!(
+        matches!(events[1], RunEvent::MutantsPlanned(_)),
+        "{events:?}"
+    );
 }

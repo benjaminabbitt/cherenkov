@@ -22,7 +22,7 @@ struct Recording {
 }
 
 impl Edge for Recording {
-    async fn handle(&self, book: CommandBook) -> Result<Reported, Report> {
+    async fn handle(&self, book: CommandBook) -> Result<Reported, EdgeError> {
         self.books.lock().unwrap().push(book);
         Ok(Reported {
             delivery: Delivery::Duplicate,
@@ -30,7 +30,7 @@ impl Edge for Recording {
         })
     }
 
-    async fn events(&self, _: &Cover, _: u64) -> Result<Vec<EventPage>, Report> {
+    async fn events(&self, _: &Cover, _: u64) -> Result<Vec<EventPage>, EdgeError> {
         Ok(Vec::new())
     }
 
@@ -58,6 +58,7 @@ fn a_fact_book_carries_the_fact_under_its_external_id() {
     let fact = DecisionReported {
         mutant: "m".to_string(),
         verdict: Verdict::Killed,
+        decision: None,
     };
     let book = fact_book(cover(), &fact, "an id");
     assert_eq!(book.cover, Some(cover()));
@@ -83,6 +84,7 @@ async fn report_hands_the_edge_a_fact_book_and_answers_what_it_did() {
     let fact = DecisionReported {
         mutant: "m".to_string(),
         verdict: Verdict::Survived,
+        decision: None,
     };
     let reported = edge.report(cover(), &fact, "x").await.unwrap();
     assert_eq!(reported.delivery, Delivery::Duplicate);
@@ -90,4 +92,16 @@ async fn report_hands_the_edge_a_fact_book_and_answers_what_it_did() {
         body(&edge.books.lock().unwrap()[0]),
         Body::Fact(_)
     ));
+}
+
+#[test]
+fn only_a_retry_recovery_is_retryable() {
+    let failed = |recovery| EdgeError {
+        cause: Report::new("x"),
+        recovery,
+    };
+    assert!(failed(Recovery::Retry).retryable());
+    for recovery in [Recovery::Business, Recovery::Invalid, Recovery::Bug] {
+        assert!(!failed(recovery).retryable(), "{recovery:?}");
+    }
 }

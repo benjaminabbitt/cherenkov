@@ -1,42 +1,36 @@
 //! A run on the run layer, end to end. The run is planned; unless it is a
 //! dry run, its test programs are prepared, each told to the run as it is
 //! ready, and the run, with its last program prepared, is ready and hands
-//! its mutants on. Then the bus serves ([`host`]) the runners, one instance
-//! per worker, and both policies, until the run ends. Meanwhile the run's
-//! stream is followed, and each event's documents handed to a [`Sink`] the
-//! moment it is recorded; a mutant's decision is printed from its own
-//! stream as the run records it.
+//! its mutants on. The bus serves ([`host`]) from the start: the output
+//! prints each event as the run records it (a mutant's decision is on the
+//! run's stream, whole), the runners, one instance per worker, run the
+//! mutants once they are handed on, and both policies move the work between
+//! the run and its mutants, until the run ends.
 
-use std::cell::Cell;
-use std::io::Write;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use angzarr_embedded::v1::{EventPage, Uuid};
+use angzarr_embedded::angzarr_bus::Outcome;
+use angzarr_embedded::v1::Uuid;
 use cherenkov_core::execution::MutantExecutor;
 use cherenkov_core::plan::MutantPlan;
-use cherenkov_run_ports::{Edge, Serving};
+use cherenkov_run_ports::{Edge, Serving, Subscriptions};
 use tokio::sync::mpsc::unbounded_channel;
 
-use crate::covers::{mutant_cover, run_cover};
+use crate::covers::run_cover;
 use crate::error::RunLayerError;
-use crate::follow::Follow;
-use crate::host;
+use crate::host::{self, Readers};
 use crate::live::LiveRuns;
+use crate::pool::Pool;
 use crate::programs;
-use crate::render::documents;
 use crate::runner::Runner;
 use crate::workers::{self, Explain, Failed, Preparation, Worker};
-use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, run_event};
+use cherenkov_run_domain::events::{RunEvent, run_event};
 use cherenkov_run_domain::plan;
 use cherenkov_run_domain::{
     ExecutableMutant, PlanRun, PlannedMutant, PreparationFailed, RunStatus,
 };
-use cherenkov_run_wire::output::Document;
-
-/// How often the follower looks at the store when no commit woke it.
-const POLL: Duration = Duration::from_millis(20);
 
 /// What a run is planned with.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,28 +50,12 @@ pub struct Workers {
     pub explain: Explain,
 }
 
-/// Where a followed run's documents go, each as soon as it is recorded.
-pub trait Sink {
-    fn document(&mut self, doc: &Document);
-}
-
-/// A sink writing each document as one line of JSON, flushed.
-pub struct JsonLines<W: Write>(pub W);
-
-impl<W: Write> Sink for JsonLines<W> {
-    fn document(&mut self, doc: &Document) {
-        if let Ok(line) = serde_json::to_string(doc) {
-            let _ = writeln!(self.0, "{line}");
-        }
-        let _ = self.0.flush();
-    }
-}
-
 /// Plan `plans` as the run `run` with `settings` on `core` and, given
-/// `workers`, run it; with none, a dry run: planned, never run. Hands every
-/// event of the run to `sink`; returns the status the run finished with,
-/// none for a run that has not finished (a dry run). A test program that
-/// does not prepare is recorded (the program, the run finished as failed)
+/// `workers`, run it; with none, a dry run: planned, never run. The bus is
+/// served from the start, and the `readers` print each event of the run the
+/// moment it is recorded and write its verdict file when it finishes. Returns the status the run finished with, none
+/// for a run that has not finished (a dry run). A test program that does
+/// not prepare is recorded (the program, the run finished as failed)
 /// before its error is returned.
 pub async fn run<C: Serving + 'static>(
     core: &Arc<C>,
@@ -85,44 +63,47 @@ pub async fn run<C: Serving + 'static>(
     plans: &[MutantPlan],
     settings: &Settings,
     workers: Option<Workers>,
-    sink: &mut dyn Sink,
+    readers: Readers,
 ) -> Result<Option<RunStatus>, RunLayerError> {
     let programs = workers
         .as_ref()
         .map_or(0, |w| w.sets.first().map_or(0, Vec::len));
     core.command(run_cover(&run), &plan_run(plans, settings, programs))
         .await?;
-    let mut printer = Printer::new(run.clone(), sink);
-    let Some(workers) = workers else {
-        printer.catch_up(core.as_ref()).await?;
-        return Ok(printer.status);
-    };
-    let stopped = Cell::new(false);
     let live = LiveRuns::default();
-    let work = async {
-        let worked = work(core, &run, plans, workers, &live).await;
-        stopped.set(true);
-        worked
-    };
-    let (worked, followed) = tokio::join!(work, printer.follow(core.as_ref(), &stopped));
-    followed?;
-    worked?;
-    Ok(printer.status)
+    match workers.filter(|_| !plans.is_empty()) {
+        Some(workers) => work(core, &run, plans, workers, &live, readers).await?,
+        None => print(core.as_ref(), &live, readers).await?,
+    }
+    Ok(live.status(&run))
+}
+
+/// Serve the output alone until it has printed what the run recorded: a dry
+/// run, or a run of no mutants.
+async fn print<C: Serving>(
+    core: &C,
+    live: &LiveRuns,
+    readers: Readers,
+) -> Result<(), RunLayerError> {
+    host::serve(core, host::subscriptions(live, readers, None), |served| {
+        !served.is_empty()
+    })
+    .await
 }
 
 /// Prepare the run's test programs, recording each on the run, which
-/// judges them and, with the last, is ready, handing its mutants on; then
-/// serve the bus until the run is `finished`.
+/// judges them and, with the last, is ready, handing its mutants on; and,
+/// meanwhile and after, serve the bus until the run ends. The first worker
+/// prepares; the others are the runner's from the start, and the first
+/// joins them when the preparation is done.
 async fn work<C: Serving + 'static>(
     core: &Arc<C>,
     run: &Uuid,
     plans: &[MutantPlan],
     workers: Workers,
     live: &LiveRuns,
+    readers: Readers,
 ) -> Result<(), RunLayerError> {
-    if plans.is_empty() {
-        return Ok(());
-    }
     let Workers {
         mut sets,
         jobs,
@@ -133,12 +114,62 @@ async fn work<C: Serving + 'static>(
             reason: "no workers".to_string(),
         });
     }
-    let first = prepare_programs(core.as_ref(), run, plans, sets.remove(0), jobs, explain).await?;
-    sets.insert(0, first);
-    let instances = NonZeroUsize::new(sets.len()).unwrap_or(NonZeroUsize::MIN);
-    let workers = sets.into_iter().map(Worker::new).collect();
-    let runner = Runner::new(core.clone(), explain, workers);
-    serve(core, run, runner, instances, live).await
+    let first = sets.remove(0);
+    if first.is_empty() {
+        return Err(RunLayerError::Workers {
+            reason: "no test programs".to_string(),
+        });
+    }
+    let instances = NonZeroUsize::MIN.saturating_add(sets.len());
+    let pool = Pool::new(sets.into_iter().map(Worker::new).collect());
+    let runner = Runner::new(core.clone(), explain, pool.clone()).knowing(live.clone());
+    let subscriptions = host::subscriptions(live, readers, Some((Box::new(runner), instances)));
+    let progress = Progress::default();
+    let prepare = async {
+        let prepared = prepare_programs(core.as_ref(), run, plans, first, jobs, explain).await;
+        progress.prepared(&prepared);
+        prepared.map(|first| pool.give(Worker::new(first)))
+    };
+    let (prepared, served) = tokio::join!(
+        prepare,
+        serve(core.as_ref(), run, subscriptions, live, &progress)
+    );
+    prepared?;
+    served
+}
+
+/// How far the preparation of the run's test programs is, for the serve
+/// that waits on it. Whether the bus has seen what the preparation
+/// recorded is the live runs model's to say, not this flag's: the bus may
+/// be idle just before a commit and asked just after it.
+#[derive(Default)]
+struct Progress {
+    done: AtomicBool,
+    aborted: AtomicBool,
+}
+
+impl Progress {
+    /// The preparation ended with `result`. A failure the run's stream says
+    /// (a program that did not prepare finishes the run) is observed like
+    /// the rest; any other has recorded nothing, and nothing will come.
+    fn prepared<T>(&self, result: &Result<T, RunLayerError>) {
+        let recorded = matches!(result, Ok(_) | Err(RunLayerError::Workers { .. }));
+        self.aborted.store(!recorded, Ordering::SeqCst);
+        self.done.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether the bus is to go on, idle as it is. It is, until the run
+    /// ends (the live runs model has seen `RunFinished`): a delivery the bus
+    /// holds for its retry is served again after its delay, and a step to
+    /// come is committed by a handler that has finished. It is not once the
+    /// bus has given up on a delivery (`given_up`: a dead letter, which the
+    /// run owes for good) or the preparation recorded nothing and will not.
+    fn more(&self, live: &LiveRuns, run: &Uuid, given_up: bool) -> bool {
+        if self.aborted.load(Ordering::SeqCst) || given_up {
+            return false;
+        }
+        !self.done.load(Ordering::SeqCst) || live.status(run).is_none()
+    }
 }
 
 /// Prepare the run's test programs on `first`, the first worker's set,
@@ -171,11 +202,29 @@ async fn prepare_programs<E: Edge>(
             }
         }
     }
-    let first = preparing.await.map_err(|_| RunLayerError::Workers {
-        reason: "a test program's preparation panicked".to_string(),
-    })?;
+    let first = match preparing.await {
+        Ok(first) => first,
+        Err(_) => return Err(panicked(core, run).await),
+    };
     refused(core, run).await?;
     Ok(first)
+}
+
+/// The error of a preparation that panicked: the run is told, which finishes
+/// it failed, as for any program that does not prepare.
+async fn panicked<E: Edge>(core: &E, run: &Uuid) -> RunLayerError {
+    let reason = "a test program's preparation panicked".to_string();
+    let fact = PreparationFailed {
+        program: None,
+        reason: reason.clone(),
+    };
+    match core
+        .report(run_cover(run), &fact, "preparation panicked")
+        .await
+    {
+        Ok(_) => RunLayerError::Workers { reason },
+        Err(failed) => failed.into(),
+    }
 }
 
 /// Tell the run what preparing one program found.
@@ -209,24 +258,24 @@ async fn refused<E: Edge>(core: &E, run: &Uuid) -> Result<(), RunLayerError> {
 }
 
 /// Serve the bus until `run` ends. The bus asks whether to go on each time
-/// it is idle, which is when nothing is in flight and nothing is owed but
-/// what failed: the run has ended, and that is done; or it is served what
-/// it can (a failure it holds and retries, a step to come); or it served
-/// nothing at all, and nothing will: a mutant the bus gave up on (a dead
-/// letter) is owed by the run for good.
-async fn serve<C: Serving + 'static>(
-    core: &Arc<C>,
+/// it is idle ([`Progress::more`]); a run that did not end by then is owed
+/// for good, and is reported as what the bus gave up on, else as stalled.
+async fn serve<C: Serving>(
+    core: &C,
     run: &Uuid,
-    runner: Runner<C>,
-    instances: NonZeroUsize,
+    subscriptions: Subscriptions,
     live: &LiveRuns,
+    progress: &Progress,
 ) -> Result<(), RunLayerError> {
     let mut failures = Vec::new();
     let ended = live.clone();
     let asking = run.clone();
-    host::serve(core.as_ref(), runner, instances, live, |served| {
+    host::serve(core, subscriptions, |served| {
         failures.extend(served.failures().iter().cloned());
-        ended.status(&asking).is_none() && !served.is_empty()
+        let given_up = failures
+            .iter()
+            .any(|failed| failed.outcome != Outcome::Held);
+        progress.more(&ended, &asking, given_up)
     })
     .await?;
     if live.status(run).is_some() {
@@ -280,90 +329,6 @@ fn summary(plan: &MutantPlan) -> PlannedMutant {
         description: plan.change(),
         original: plan.original.clone(),
         mutated: plan.mutated.clone(),
-    }
-}
-
-/// Follows the run's stream and hands each event to the sink as its
-/// documents, a mutant's decision as its own stream holds it; keeps the
-/// status the run finished with.
-struct Printer<'a> {
-    run: Uuid,
-    follow: Follow,
-    sink: &'a mut dyn Sink,
-    status: Option<RunStatus>,
-    finished: bool,
-}
-
-impl<'a> Printer<'a> {
-    fn new(run: Uuid, sink: &'a mut dyn Sink) -> Printer<'a> {
-        Printer {
-            follow: Follow::new(run_cover(&run)),
-            run,
-            sink,
-            status: None,
-            finished: false,
-        }
-    }
-
-    /// Print what the run recorded since the last look, until it finishes
-    /// or the work `stopped`. Woken by each commit, and by the poll.
-    async fn follow<E: Edge>(
-        &mut self,
-        core: &E,
-        stopped: &Cell<bool>,
-    ) -> Result<(), RunLayerError> {
-        loop {
-            // Armed before reading: a commit after this resolves it.
-            let commit = core.next_commit();
-            let stop = stopped.get();
-            self.catch_up(core).await?;
-            if self.finished || stop {
-                return Ok(());
-            }
-            tokio::select! {
-                () = commit => {}
-                () = tokio::time::sleep(POLL) => {}
-            }
-        }
-    }
-
-    /// Print what the run recorded since the last look.
-    async fn catch_up<E: Edge>(&mut self, core: &E) -> Result<(), RunLayerError> {
-        for page in self.follow.next(core).await? {
-            match run_event(&page) {
-                Some(RunEvent::DecisionRecorded(decided)) => {
-                    let detail = self.decision(core, &decided.mutant).await?;
-                    self.print(&detail.unwrap_or(page));
-                    continue;
-                }
-                Some(RunEvent::RunFinished(finished)) => {
-                    self.status = Some(finished.status);
-                    self.finished = true;
-                }
-                _ => {}
-            }
-            self.print(&page);
-        }
-        Ok(())
-    }
-
-    /// The page of mutant `id`'s stream that decides it for this run.
-    async fn decision<E: Edge>(
-        &self,
-        core: &E,
-        id: &str,
-    ) -> Result<Option<EventPage>, RunLayerError> {
-        let pages = core.events(&mutant_cover(id)?, 0).await?;
-        Ok(pages.into_iter().find(|page| {
-            matches!(mutant_event(page),
-                Some(MutantEvent::MutantDecided(d)) if d.run.as_ref().map(|run| &run.0) == Some(&self.run))
-        }))
-    }
-
-    fn print(&mut self, page: &EventPage) {
-        for doc in documents(&self.run, page) {
-            self.sink.document(&doc);
-        }
     }
 }
 

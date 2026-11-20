@@ -204,21 +204,21 @@ fn test_text_writes_each_document_as_it_comes() {
 
 /// Documents recorded by a sink.
 #[derive(Default, Clone)]
-struct Kept(std::rc::Rc<std::cell::RefCell<Vec<Document>>>);
+struct Kept(std::sync::Arc<std::sync::Mutex<Vec<Document>>>);
 
 impl Sink for Kept {
     fn document(&mut self, doc: &Document) {
-        self.0.borrow_mut().push(doc.clone());
+        self.0.lock().unwrap().push(doc.clone());
     }
 }
 
 /// A log that can be read after the sink is dropped.
 #[derive(Default, Clone)]
-struct Log(std::rc::Rc<std::cell::RefCell<Vec<u8>>>);
+struct Log(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
 
 impl Write for Log {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.borrow_mut().extend_from_slice(buf);
+        self.0.lock().unwrap().extend_from_slice(buf);
         Ok(buf.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
@@ -251,7 +251,7 @@ fn test_the_run_s_finish_counts_the_mutants_it_could_not_run_by_reason() {
             event: Some(Event::Finished(finished(&[("unsupported", 3)], &[]))),
         });
     }
-    let docs = kept.0.borrow();
+    let docs = kept.0.lock().unwrap();
     let Some(Event::Finished(finished)) = &docs.last().unwrap().event else {
         panic!("{docs:?}");
     };
@@ -261,7 +261,7 @@ fn test_the_run_s_finish_counts_the_mutants_it_could_not_run_by_reason() {
     );
     assert_eq!(docs.len(), 6, "every document goes on");
     // The log has one line for each mutant not run, with its reason.
-    let lines: Vec<serde_json::Value> = String::from_utf8(log.0.borrow().clone())
+    let lines: Vec<serde_json::Value> = String::from_utf8(log.0.lock().unwrap().clone())
         .unwrap()
         .lines()
         .map(|l| serde_json::from_str(l).unwrap())
@@ -285,7 +285,7 @@ fn test_the_finish_says_the_exit_code_its_status_maps_to() {
         sink.document(&Document {
             event: Some(Event::Finished(done)),
         });
-        let docs = kept.0.borrow();
+        let docs = kept.0.lock().unwrap();
         let Some(Event::Finished(told)) = &docs[0].event else {
             panic!("{docs:?}");
         };
@@ -307,4 +307,190 @@ fn test_the_text_summary_names_the_reasons_accepted() {
         err,
         ["rust: 7 mutants; killed 4, unsupported 3; not run, accepted: inlined 2, other 1"]
     );
+}
+
+mod printing {
+    use std::sync::{Arc, Mutex};
+
+    use angzarr_embedded::angzarr_router::hpb::ProjectRequest;
+    use angzarr_embedded::markup::pack_message;
+    use angzarr_embedded::v1::{Cover, EventBook, EventPage, Uuid, event_page};
+    use cherenkov_run_domain::{ProgramFailed, RUN_DOMAIN, RunStarted};
+
+    use super::*;
+
+    fn page(sequence: u64, event: angzarr_embedded::Any) -> EventPage {
+        EventPage {
+            sequence,
+            body: Some(event_page::Body::Event(event)),
+            meta: None,
+        }
+    }
+
+    fn request(root: Option<Uuid>, pages: Vec<EventPage>) -> ProjectRequest {
+        ProjectRequest {
+            events: Some(EventBook {
+                cover: Some(Cover {
+                    domain: RUN_DOMAIN.to_string(),
+                    root,
+                    edition: None,
+                }),
+                pages,
+                next_sequence: 0,
+                snapshot: None,
+            }),
+        }
+    }
+
+    fn started() -> angzarr_embedded::Any {
+        pack_message(&RunStarted::default())
+    }
+
+    fn failed() -> angzarr_embedded::Any {
+        pack_message(&ProgramFailed {
+            program: None,
+            reason: "no debugger".to_string(),
+        })
+    }
+
+    #[tokio::test]
+    async fn test_each_page_handed_is_printed_as_its_documents_in_order() {
+        let kept = Kept::default();
+        let output = printing(Box::new(kept.clone()));
+        let run = Uuid::from_bytes([3; 16]);
+        output
+            .dispatch(&request(
+                Some(run.clone()),
+                vec![page(0, started()), page(1, failed())],
+            ))
+            .await
+            .unwrap();
+        let docs = kept.0.lock().unwrap();
+        let events: Vec<&str> = docs
+            .iter()
+            .map(|d| match d.event {
+                Some(Event::Started(_)) => "started",
+                Some(Event::Failed(_)) => "failed",
+                _ => "other",
+            })
+            .collect();
+        assert_eq!(events, ["started", "failed"]);
+        // Each names the run it was handed under.
+        let Some(Event::Started(first)) = &docs[0].event else {
+            panic!("{docs:?}");
+        };
+        assert_eq!(first.run, Some(run));
+    }
+
+    #[tokio::test]
+    async fn test_a_stream_with_no_root_or_a_book_with_no_cover_prints_nothing() {
+        let kept = Kept::default();
+        let output = printing(Box::new(kept.clone()));
+        output
+            .dispatch(&request(None, vec![page(0, started())]))
+            .await
+            .unwrap();
+        output
+            .dispatch(&ProjectRequest { events: None })
+            .await
+            .unwrap();
+        assert!(kept.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_the_output_is_named() {
+        let output = printing(Box::new(Kept::default()));
+        assert_eq!(output.name(), OUTPUT);
+    }
+
+    /// Documents kept by a sink that can be shared.
+    #[derive(Clone, Default)]
+    struct Kept(Arc<Mutex<Vec<Document>>>);
+
+    impl Sink for Kept {
+        fn document(&mut self, doc: &Document) {
+            self.0.lock().unwrap().push(doc.clone());
+        }
+    }
+}
+
+mod verdict_file {
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use angzarr_diagnostic::Diagnostic;
+    use cherenkov_run_application::verdicts::VerdictFile;
+    use cherenkov_run_wire::output::VerdictLine;
+
+    use super::*;
+
+    /// A directory of this test's own, gone with it.
+    struct Scratch(PathBuf);
+
+    impl Scratch {
+        fn new() -> Scratch {
+            static NEXT: AtomicU32 = AtomicU32::new(0);
+            let n = NEXT.fetch_add(1, Ordering::SeqCst);
+            let dir =
+                std::env::temp_dir().join(format!("cherenkov-verdicts-{}-{n}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            Scratch(dir)
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn line(id: &str, verdict: Verdict) -> VerdictLine {
+        VerdictLine {
+            id: id.to_string(),
+            verdict: verdict.into(),
+            file: "src/lib.rs".to_string(),
+            line: 4,
+            column: 5,
+            function: None,
+            operator: "aor".to_string(),
+            original: "+".to_string(),
+            mutated: Some("-".to_string()),
+            killed_by: vec!["t".to_string()],
+        }
+    }
+
+    #[test]
+    fn test_the_file_holds_one_json_line_for_each_mutant_and_replaces_what_was_there() {
+        let scratch = Scratch::new();
+        let path = scratch.0.join(".cherenkov").join("verdicts.jsonl");
+        let file = JsonVerdictFile::new(path.clone());
+        file.write(&[line("a", Verdict::Killed), line("b", Verdict::Survived)])
+            .unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].starts_with(r#"{"id":"a","verdict":"killed","file":"src/lib.rs""#));
+        assert!(lines[1].contains(r#""verdict":"survived""#));
+        assert!(text.ends_with('\n'));
+        // Written again, it is replaced, and the same lines are the same bytes.
+        file.write(&[line("a", Verdict::Killed)]).unwrap();
+        let again = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(again.lines().count(), 1);
+        file.write(&[line("a", Verdict::Killed)]).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), again);
+        let left: Vec<_> = std::fs::read_dir(path.parent().unwrap()).unwrap().collect();
+        assert_eq!(left.len(), 1, "no temporary file is left behind");
+    }
+
+    #[test]
+    fn test_a_file_that_cannot_be_written_is_a_report_naming_the_path() {
+        let scratch = Scratch::new();
+        let blocker = scratch.0.join("file");
+        std::fs::write(&blocker, "x").unwrap();
+        // Its parent is a file.
+        let file = JsonVerdictFile::new(blocker.join("verdicts.jsonl"));
+        let error = file.write(&[]).unwrap_err();
+        assert_eq!(error.code(), "cherenkov-cli-unreadable");
+        assert!(error.to_string().contains("verdicts.jsonl"), "{error}");
+    }
 }

@@ -12,20 +12,20 @@
 //! planned mutant program by program and tells its stream what each made of
 //! it, and the mutant decides its verdict; the fan-in policy tells each
 //! mutant's run, whose last decision finishes it. The live runs read model
-//! ([`live`]) says when a run has ended. A reader follows the run's stream
-//! and prints each event as one JSON document per line. A dry run plans the
-//! run and runs nothing. [`layer::run`] runs one end to end.
+//! ([`live`]) says when a run has ended, and the caller's output prints each
+//! event of the run as the bus hands it over. A dry run plans the run and
+//! runs nothing. [`layer::run`] runs one end to end.
 
 pub mod covers;
 pub mod error;
-pub mod follow;
 pub mod host;
 pub mod layer;
 pub mod live;
 pub mod policies;
+pub mod pool;
 pub mod programs;
-pub mod render;
 pub mod runner;
+pub mod verdicts;
 pub mod workers;
 
 #[cfg(test)]

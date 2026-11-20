@@ -1,4 +1,4 @@
-//! A run's events, and its mutants' decisions, as the documents a reader
+//! A run's events, each with its decisions whole, as the documents a reader
 //! prints, one per line (`output-events.md`): the messages of
 //! `cherenkov.output.v1`, whose JSON the wire crate's generated code writes.
 //! Each has the event's name, the run and when it was recorded, and is
@@ -6,7 +6,7 @@
 
 use angzarr_embedded::v1::{EventPage, Uuid};
 use cherenkov_core::deficiency;
-use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, recorded_at, run_event};
+use cherenkov_run_domain::events::{RunEvent, recorded_at, run_event};
 use cherenkov_run_domain::{
     MutantDecided, Outcome, PlannedMutant, ProgramPrepared, RunFinished, Selection, Verdict,
 };
@@ -16,23 +16,14 @@ use cherenkov_run_wire::output::{
 };
 use cherenkov_run_wire::{self as wire, names};
 
-/// The documents `page` of run `run`'s stream, or of one of its mutants'
-/// streams, prints as: one per mutant for the mutants planned, one for a
-/// mutant's decision (a run's record of it is printed from the mutant's),
-/// one for each other run event, and none for anything else.
+/// The documents `page` of run `run`'s stream prints as: one per mutant for
+/// the mutants planned, one for a mutant's decision (the run records it
+/// whole), one for each other run event, and none for anything else.
 pub fn documents(run: &Uuid, page: &EventPage) -> Vec<Document> {
     let at = recorded_at(page);
     let document = |event| Document { event: Some(event) };
-    let event = match (run_event(page), mutant_event(page)) {
-        (Some(event), _) => event,
-        (None, Some(MutantEvent::MutantDecided(d))) => {
-            return decided(run, at, d)
-                .map(Event::Decided)
-                .map(document)
-                .into_iter()
-                .collect();
-        }
-        (None, _) => return Vec::new(),
+    let Some(event) = run_event(page) else {
+        return Vec::new();
     };
     match event {
         RunEvent::RunStarted(s) => vec![document(Event::Started(Started {
@@ -66,9 +57,15 @@ pub fn documents(run: &Uuid, page: &EventPage) -> Vec<Document> {
             program: f.program,
             reason: f.reason,
         }))],
-        // A decision is printed from the mutant's stream; readiness is no event a
-        // reader needs.
-        RunEvent::DecisionRecorded(_) | RunEvent::RunReady(_) => Vec::new(),
+        RunEvent::DecisionRecorded(record) => record
+            .decision
+            .and_then(|decision| decided(run, at, decision))
+            .map(Event::Decided)
+            .map(document)
+            .into_iter()
+            .collect(),
+        // Readiness is no event a reader needs.
+        RunEvent::RunReady(_) => Vec::new(),
         RunEvent::RunFinished(f) => vec![document(Event::Finished(finished(run, at, f)))],
     }
 }

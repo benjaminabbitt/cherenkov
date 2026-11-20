@@ -177,3 +177,26 @@ message Finished {
   // How many mutants could not be run, by the reason's code.
   map<string, uint32> deficiencies = 7;
 }
+
+// One line of the verdict file (`.cherenkov/verdicts.jsonl`, committed): a
+// mutant and the verdict a finished run gave it, sorted by id. It holds
+// nothing that varies between identical runs (no time, run id, tier or
+// duration), so the file diffs as one line for each changed verdict.
+message VerdictLine {
+  option (io.angzarr.codegen.v1.message) = {
+    json_names: JSON_NAMES_PROTO
+    json_defaults: true
+  };
+
+  string id = 1;
+  cherenkov.mutant.v1.Verdict verdict = 2;
+  string file = 3;
+  uint32 line = 4;
+  uint32 column = 5;
+  optional string function = 6 [(io.angzarr.codegen.v1.field) = {json_null: true}];
+  string operator = 7;
+  string original = 8;
+  optional string mutated = 9 [(io.angzarr.codegen.v1.field) = {json_null: true}];
+  // The names of the tests that killed it, sorted.
+  repeated string killed_by = 10;
+}

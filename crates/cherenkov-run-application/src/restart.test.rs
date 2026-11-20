@@ -13,6 +13,7 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use angzarr_embedded::angzarr_router::router::DynProjectorHandler;
 use angzarr_embedded::v1::Uuid;
 use cherenkov_core::execution::{Budget, ExecError, MutantExecutor, RawOutcome, Tier};
 use cherenkov_core::plan::MutantPlan;
@@ -20,10 +21,12 @@ use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, run_even
 use cherenkov_run_domain::{PlanRun, RunStatus};
 
 use crate::covers::{mutant_cover, run_cover};
-use crate::host;
+use crate::host::{self, Readers};
 use crate::live::LiveRuns;
+use crate::pool::Pool;
 use crate::runner::Runner;
 use crate::test_plans::{executables, many, prepared};
+use crate::testing::silent;
 use crate::workers::{Killer, Worker};
 
 const MUTANTS: usize = 6;
@@ -103,7 +106,11 @@ fn runner(
         hold,
         gate: gate.clone(),
     });
-    Runner::new(core.clone(), explain, vec![Worker::new(vec![executor])])
+    Runner::new(
+        core.clone(),
+        explain,
+        Pool::new(vec![Worker::new(vec![executor])]),
+    )
 }
 
 /// A run of `MUTANTS` mutants, planned and ready: its one program prepared,
@@ -165,7 +172,7 @@ async fn test_a_serve_stopped_half_way_is_finished_by_a_new_bus_with_no_mutant_r
     // The first serve: its runner holds on the fourth mutant it begins.
     let hold = 4;
     let first_live = LiveRuns::default();
-    let first = host::serve(
+    let first = serve(
         core.as_ref(),
         runner(&core, &ledger, hold, &gate),
         instances,
@@ -201,7 +208,7 @@ async fn test_a_serve_stopped_half_way_is_finished_by_a_new_bus_with_no_mutant_r
     // runs, on the same store. It stops when the run has ended.
     let second_live = LiveRuns::default();
     let ended = second_live.clone();
-    host::serve(
+    serve(
         core.as_ref(),
         runner(&core, &ledger, usize::MAX, &gate),
         instances,
@@ -261,7 +268,7 @@ async fn test_a_run_on_the_bus_completes_following_the_stores_change_feed() {
     let ledger = Arc::new(Ledger::default());
     let (_release, gate): (Sender<()>, Receiver<()>) = channel();
     let gate = Arc::new(Mutex::new(gate));
-    host::serve(
+    serve(
         core.as_ref(),
         runner(&core, &ledger, usize::MAX, &gate),
         NonZeroUsize::MIN,
@@ -272,4 +279,22 @@ async fn test_a_run_on_the_bus_completes_following_the_stores_change_feed() {
     .unwrap();
     assert_eq!(live.status(&run), Some(RunStatus::Complete));
     assert_eq!(ledger.count(), MUTANTS, "each mutant ran once");
+}
+
+/// The runner, both policies and the live runs on the bus `core` hosts,
+/// served until `more` says no.
+async fn serve(
+    core: &Core,
+    runner: Runner<Core>,
+    instances: NonZeroUsize,
+    live: &LiveRuns,
+    more: impl FnMut(&angzarr_embedded::angzarr_bus::Served) -> bool + Send,
+) -> Result<(), crate::error::RunLayerError> {
+    let runners = Some((Box::new(runner) as Box<dyn DynProjectorHandler>, instances));
+    host::serve(
+        core,
+        host::subscriptions(live, Readers::printing(silent()), runners),
+        more,
+    )
+    .await
 }

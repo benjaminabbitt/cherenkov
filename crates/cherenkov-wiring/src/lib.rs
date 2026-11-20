@@ -13,7 +13,8 @@ use angzarr_embedded::{OnRetryable, Registry, Sampled, Timestamp};
 use cherenkov_core::plan::MutantPlan;
 use cherenkov_embedded_edge::{EmbeddedEdge, RunStore, TokioWait};
 use cherenkov_run_application::error::RunLayerError;
-use cherenkov_run_application::layer::{self, Settings, Sink, Workers};
+use cherenkov_run_application::host::Readers;
+use cherenkov_run_application::layer::{self, Settings, Workers};
 use cherenkov_run_domain::RunStatus;
 
 /// The instant and the fresh command id a call is handled at: this is the
@@ -54,15 +55,16 @@ pub async fn core<S: RunStore>(
 }
 
 /// Plan `plans` as a new run with `settings` on `store` and, given
-/// `workers`, run it; with none, a dry run: planned, never run. Hands every
-/// event of the run to `sink`; returns the status the run finished with,
+/// `workers`, run it; with none, a dry run: planned, never run. the `readers`
+/// print every event of the run as it is recorded and write its verdict file
+/// when it finishes; returns the status the run finished with,
 /// none for a run that has not finished (a dry run). See [`layer::run`].
 pub fn run<S: RunStore>(
     store: S,
     plans: &[MutantPlan],
     settings: &Settings,
     workers: Option<Workers>,
-    sink: &mut dyn Sink,
+    readers: Readers,
 ) -> Result<Option<RunStatus>, RunLayerError> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_time()
@@ -72,7 +74,7 @@ pub fn run<S: RunStore>(
         })?;
     runtime.block_on(async {
         let core = Arc::new(core(store, OnRetryable::default()).await?);
-        layer::run(&core, new_run(), plans, settings, workers, sink).await
+        layer::run(&core, new_run(), plans, settings, workers, readers).await
     })
 }
 

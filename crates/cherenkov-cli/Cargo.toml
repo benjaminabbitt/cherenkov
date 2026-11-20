@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 angzarr-diagnostic.workspace = true
+angzarr-embedded.workspace = true
 angzarr-presentation.workspace = true
 cli-support.workspace = true
 sysinfo.workspace = true
@@ -20,6 +21,7 @@ cherenkov-core.workspace = true
 cherenkov-exec-dap.workspace = true
 cherenkov-fs.workspace = true
 cherenkov-run-application.workspace = true
+cherenkov-run-domain.workspace = true
 cherenkov-run-wire.workspace = true
 cherenkov-run-store.workspace = true
 cherenkov-wiring.workspace = true
@@ -27,6 +29,10 @@ cherenkov-syntax.workspace = true
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+angzarr-ports.workspace = true
+tokio.workspace = true
 
 [lints]
 workspace = true

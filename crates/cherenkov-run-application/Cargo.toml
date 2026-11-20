@@ -15,7 +15,6 @@ cherenkov-core.workspace = true
 cherenkov-run-domain.workspace = true
 cherenkov-run-ports.workspace = true
 cherenkov-run-wire.workspace = true
-serde_json.workspace = true
 tokio.workspace = true
 
 [dev-dependencies]

@@ -13,9 +13,11 @@ use std::time::Duration;
 use angzarr_embedded::angzarr_bus::{Bus as _, Following, RetryPolicy, Served};
 use angzarr_embedded::angzarr_ports::CommitWait;
 use angzarr_embedded::v1::{CommandBook, Cover, EventPage};
-use angzarr_embedded::{Bus, Host, OnRetryable, Registry, Sampled, Wait};
+use angzarr_embedded::{Bus, Host, OnRetryable, Registry, Sampled, StreamRef, Wait};
 use angzarr_embedded_host::{App, OneStore};
-use cherenkov_run_ports::{Delivery, Edge, Report, Reported, Serving, Subscriptions};
+use cherenkov_run_ports::{
+    Delivery, Edge, EdgeError, Recovery, Report, Reported, Serving, Subscriptions,
+};
 
 /// How often the bus looks at the store when no commit woke it.
 pub const POLL: Duration = Duration::from_millis(20);
@@ -85,6 +87,17 @@ impl<S> RunStore for S where
 {
 }
 
+/// `error`, captured, with who must act on it.
+fn failed(
+    error: &dyn angzarr_embedded::angzarr_diagnostic::Diagnostic,
+    recovery: Recovery,
+) -> EdgeError {
+    EdgeError {
+        cause: Report::of(error),
+        recovery,
+    }
+}
+
 /// The core served in process: the `App` over one store, the root's
 /// sample, and the timer the bus waits on.
 pub struct EmbeddedEdge<S: RunStore> {
@@ -123,12 +136,12 @@ impl<S: RunStore> EmbeddedEdge<S> {
 }
 
 impl<S: RunStore> Edge for EmbeddedEdge<S> {
-    async fn handle(&self, book: CommandBook) -> Result<Reported, Report> {
+    async fn handle(&self, book: CommandBook) -> Result<Reported, EdgeError> {
         let handled = self
             .app
             .handle(book, &(self.sample)())
             .await
-            .map_err(|e| Report::of(&e))?;
+            .map_err(|e| failed(&e, e.recovery()))?;
         let delivery = match handled.delivery() {
             angzarr_embedded::v1::DeliveryOutcome::Duplicate => Delivery::Duplicate,
             _ => Delivery::Applied,
@@ -141,9 +154,14 @@ impl<S: RunStore> Edge for EmbeddedEdge<S> {
         Ok(Reported { delivery, events })
     }
 
-    async fn events(&self, stream: &Cover, from: u64) -> Result<Vec<EventPage>, Report> {
-        let pages = self.app.events(stream).await.map_err(|e| Report::of(&e))?;
-        Ok(pages.into_iter().filter(|p| p.sequence >= from).collect())
+    async fn events(&self, stream: &Cover, from: u64) -> Result<Vec<EventPage>, EdgeError> {
+        let at = StreamRef::try_from(stream).map_err(|e| failed(&e, Recovery::Invalid))?;
+        let slice = self
+            .store()
+            .read(at, from, None)
+            .await
+            .map_err(|e| failed(&e, e.recovery()))?;
+        Ok(slice.pages)
     }
 
     fn next_commit(&self) -> CommitWait {
@@ -156,7 +174,7 @@ impl<S: RunStore> Serving for EmbeddedEdge<S> {
         &'a self,
         subscriptions: Subscriptions,
         more: &'a mut (dyn FnMut(&Served) -> bool + Send),
-    ) -> Result<(), Report> {
+    ) -> Result<(), EdgeError> {
         let kernel = self.app.kernel();
         let store = self.store();
         let sample = Arc::clone(&self.sample);
@@ -173,9 +191,10 @@ impl<S: RunStore> Serving for EmbeddedEdge<S> {
         .retrying(RETRY);
         let mut bus = Bus::new(host);
         for subscription in subscriptions {
-            bus.subscribe(subscription).map_err(|e| Report::of(&e))?;
+            bus.subscribe(subscription)
+                .map_err(|e| failed(&e, Recovery::Bug))?;
         }
-        bus.serve(more).await.map_err(|e| Report::of(&e))
+        bus.serve(more).await.map_err(|e| failed(&e, e.recovery()))
     }
 }
 

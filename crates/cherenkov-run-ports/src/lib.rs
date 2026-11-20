@@ -8,7 +8,8 @@
 //! - **Serving** ([`Serving`]): serve a set of bus subscriptions until the
 //!   caller says to stop.
 //!
-//! Errors are angzarr's diagnostics, captured as a [`Report`].
+//! Errors are angzarr's diagnostics, captured as a [`Report`] with their
+//! recovery ([`EdgeError`]).
 
 use std::future::Future;
 
@@ -21,7 +22,23 @@ use angzarr_embedded::v1::{
     Command, CommandBook, CommandPage, Cover, EventPage, Fact, FactOrigin, command_page,
 };
 
-pub use angzarr_embedded::angzarr_diagnostic::Report;
+pub use angzarr_embedded::angzarr_diagnostic::{Recovery, Report};
+
+/// Why the core did not take a call: what failed, captured, and who must
+/// act on it. A call that failed with [`Recovery::Retry`] (a store down for
+/// now, a write that lost a race) is worth making again; the others are not.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EdgeError {
+    pub cause: Report,
+    pub recovery: Recovery,
+}
+
+impl EdgeError {
+    /// Whether making the call again may succeed.
+    pub fn retryable(&self) -> bool {
+        self.recovery == Recovery::Retry
+    }
+}
 
 /// Whether a reported fact was recorded, or was a redelivery of one
 /// already on the stream (the same external id).
@@ -80,14 +97,15 @@ pub fn fact_book<F: DomainMessage>(stream: Cover, fact: &F, external_id: &str) -
 pub trait Edge: Send + Sync {
     /// Handle one book (a command or a fact) on its stream. The core owns
     /// the clock and the ids the call is stamped with.
-    fn handle(&self, book: CommandBook) -> impl Future<Output = Result<Reported, Report>> + Send;
+    fn handle(&self, book: CommandBook)
+    -> impl Future<Output = Result<Reported, EdgeError>> + Send;
 
     /// `stream`'s events from sequence `from` on.
     fn events(
         &self,
         stream: &Cover,
         from: u64,
-    ) -> impl Future<Output = Result<Vec<EventPage>, Report>> + Send;
+    ) -> impl Future<Output = Result<Vec<EventPage>, EdgeError>> + Send;
 
     /// A wait armed now, resolved by the first commit after this call: arm
     /// it before reading, so a commit between the read and the wait is not
@@ -99,7 +117,7 @@ pub trait Edge: Send + Sync {
         &self,
         stream: Cover,
         command: &C,
-    ) -> impl Future<Output = Result<(), Report>> + Send {
+    ) -> impl Future<Output = Result<(), EdgeError>> + Send {
         let book = command_book(stream, command);
         async move { self.handle(book).await.map(drop) }
     }
@@ -112,7 +130,7 @@ pub trait Edge: Send + Sync {
         stream: Cover,
         fact: &F,
         external_id: &str,
-    ) -> impl Future<Output = Result<Reported, Report>> + Send {
+    ) -> impl Future<Output = Result<Reported, EdgeError>> + Send {
         let book = fact_book(stream, fact, external_id);
         async move { self.handle(book).await }
     }
@@ -130,7 +148,7 @@ pub trait Serving: Edge {
         &'a self,
         subscriptions: Subscriptions,
         more: &'a mut (dyn FnMut(&Served) -> bool + Send),
-    ) -> impl Future<Output = Result<(), Report>> + 'a;
+    ) -> impl Future<Output = Result<(), EdgeError>> + 'a;
 }
 
 #[cfg(test)]

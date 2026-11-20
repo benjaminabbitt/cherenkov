@@ -2,54 +2,74 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use cherenkov_core::execution::{Budget, ExecError, RawOutcome, Tier};
-use serde_json::Value;
-
 use angzarr_embedded::OnRetryable;
 use angzarr_embedded::angzarr_ports::memory::MemoryStore;
+use cherenkov_core::execution::{Budget, ExecError, RawOutcome, Tier};
 use cherenkov_embedded_edge::RunStore;
-
-use super::*;
-use crate::test_plans::{many, plans};
-use crate::testing::{new_core, new_core_on, new_run};
-use crate::workers::Killer;
+use cherenkov_run_domain::Verdict;
+use cherenkov_run_domain::events::run_event;
 use cherenkov_run_ports::Edge;
 
-/// [`super::run`] on a runtime of its own, over `store`, as a process does.
-fn run<S: RunStore>(
-    store: S,
-    plans: &[MutantPlan],
-    settings: &Settings,
-    workers: Option<Workers>,
-    sink: &mut dyn Sink,
-) -> Result<Option<RunStatus>, RunLayerError> {
-    run_retrying(
-        store,
-        OnRetryable::default(),
-        plans,
-        settings,
-        workers,
-        sink,
-    )
+use super::*;
+use crate::host::Readers;
+use crate::test_plans::{many, plans};
+use crate::testing::{new_core, new_core_on, new_run, recording, recording_to};
+use crate::workers::Killer;
+
+/// What a run came to: how it ended, what it printed (the names of the run's
+/// events in the order the output was handed them), and what its stream
+/// holds.
+struct Ran {
+    status: Result<Option<RunStatus>, RunLayerError>,
+    printed: Vec<&'static str>,
+    events: Vec<RunEvent>,
 }
 
-/// [`run`], the kernel retrying as `retry` says.
+/// [`layer::run`] on `store`, the kernel retrying as `retry` says, with an
+/// output that records the names of the events it is handed; on a runtime of
+/// its own, as a process starts one.
 fn run_retrying<S: RunStore>(
     store: S,
     retry: OnRetryable,
     plans: &[MutantPlan],
-    settings: &Settings,
     workers: Option<Workers>,
-    sink: &mut dyn Sink,
-) -> Result<Option<RunStatus>, RunLayerError> {
+) -> Ran {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_time()
         .build()
         .unwrap();
     runtime.block_on(async {
         let core = Arc::new(new_core_on(store, retry).await);
-        super::run(&core, new_run(), plans, settings, workers, sink).await
+        let (output, printed) = recording();
+        let run = new_run();
+        let status = super::run(
+            &core,
+            run.clone(),
+            plans,
+            &settings(),
+            workers,
+            Readers::printing(output),
+        )
+        .await;
+        let events = core
+            .events(&run_cover(&run), 0)
+            .await
+            .unwrap()
+            .iter()
+            .filter_map(run_event)
+            .collect();
+        let printed = printed.lock().unwrap().clone();
+        Ran {
+            status,
+            printed,
+            events,
+        }
     })
+}
+
+/// [`run_retrying`] in memory, the kernel retrying as it does.
+fn run(plans: &[MutantPlan], workers: Option<Workers>) -> Ran {
+    run_retrying(MemoryStore::new(), OnRetryable::default(), plans, workers)
 }
 
 /// Kills `a`'s mutant (`test_a` fails); `b`'s survives. Counts its runs.
@@ -106,95 +126,104 @@ fn workers(runs: &Arc<AtomicUsize>) -> Workers {
     }
 }
 
-/// Every line of `out`, parsed: each must be one JSON document.
-fn documents(out: Vec<u8>) -> Vec<Value> {
-    String::from_utf8(out)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap_or_else(|e| panic!("{line}: {e}")))
+/// The mutant ids of the decisions a run recorded, with their verdicts.
+fn decisions(events: &[RunEvent]) -> Vec<(String, Verdict)> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            RunEvent::DecisionRecorded(d) => Some((d.mutant.clone(), d.verdict)),
+            _ => None,
+        })
         .collect()
 }
 
-fn names(docs: &[Value]) -> Vec<&str> {
-    docs.iter().map(|d| d["event"].as_str().unwrap()).collect()
-}
-
 #[test]
-fn test_a_run_writes_its_events_one_document_per_line_from_its_start_to_its_finish() {
+fn test_a_run_prints_its_events_from_its_start_to_its_finish() {
     let runs = Arc::new(AtomicUsize::new(0));
-    let mut out = JsonLines(Vec::new());
-    let exit = run(
-        MemoryStore::new(),
-        &plans(),
-        &settings(),
-        Some(workers(&runs)),
-        &mut out,
-    )
-    .unwrap();
-    let out = out.0;
-    assert_eq!(exit, Some(RunStatus::Complete));
-    let docs = documents(out);
+    let ran = run(&plans(), Some(workers(&runs)));
+    assert_eq!(ran.status, Ok(Some(RunStatus::Complete)));
     assert_eq!(
-        names(&docs),
+        ran.printed,
         [
             "run.started",
             "mutant.planned",
-            "mutant.planned",
             "program.prepared",
+            "run.ready",
             "mutant.decided",
             "mutant.decided",
             "run.finished",
         ]
     );
-    let run_id = docs[0]["run"].clone();
-    assert!(docs.iter().all(|d| d["run"] == run_id));
-    let mut verdicts: Vec<(&str, &str)> = docs
+    let verdicts: Vec<Verdict> = decisions(&ran.events).into_iter().map(|d| d.1).collect();
+    assert_eq!(verdicts.len(), 2);
+    assert!(verdicts.contains(&Verdict::Killed) && verdicts.contains(&Verdict::Survived));
+    assert_eq!(runs.load(Ordering::SeqCst), 2, "each mutant ran once");
+}
+
+#[test]
+fn test_each_decision_the_run_records_holds_the_mutant_and_what_decided_it_whole() {
+    let runs = Arc::new(AtomicUsize::new(0));
+    let ran = run(&plans(), Some(workers(&runs)));
+    let decided: Vec<_> = ran
+        .events
         .iter()
-        .filter(|d| d["event"] == "mutant.decided")
-        .map(|d| {
-            (
-                d["function"].as_str().unwrap(),
-                d["verdict"].as_str().unwrap(),
-            )
+        .filter_map(|event| match event {
+            RunEvent::DecisionRecorded(d) => d.decision.as_ref(),
+            _ => None,
         })
         .collect();
-    verdicts.sort();
-    assert_eq!(verdicts, [("a", "killed"), ("b", "survived")]);
-    // Each decision says what the mutant changed, from the plan.
-    let a = docs
+    assert_eq!(decided.len(), 2);
+    let a = decided
         .iter()
-        .find(|d| d["event"] == "mutant.decided" && d["function"] == "a")
+        .find(|d| {
+            d.mutant
+                .as_ref()
+                .is_some_and(|m| m.function.as_deref() == Some("a"))
+        })
         .unwrap();
     assert_eq!(
-        (a["original"].clone(), a["mutated"].clone()),
-        ("+".into(), "-".into())
+        a.verdict.as_ref().map(|outcome| outcome.verdict),
+        Some(Verdict::Killed)
     );
-    assert_eq!(a["description"], "eval-return \"x - 1\" [force-return]");
-    let prepared = docs
-        .iter()
-        .find(|d| d["event"] == "program.prepared")
-        .unwrap();
-    assert_eq!(
-        prepared["selection"], "every-test",
-        "the fake records nothing"
-    );
-    assert!(prepared["reason"].is_string());
-    assert_eq!(
-        docs[6]["counts"],
-        serde_json::json!({"killed": 1, "survived": 1})
-    );
+    assert_eq!(a.programs, ["calc-test"]);
 }
 
 #[test]
 fn test_a_dry_run_plans_the_run_and_runs_nothing() {
-    let mut out = JsonLines(Vec::new());
-    let status = run(MemoryStore::new(), &plans(), &settings(), None, &mut out).unwrap();
-    let out = out.0;
-    assert_eq!(status, None, "it did not finish");
-    assert_eq!(
-        names(&documents(out)),
-        ["run.started", "mutant.planned", "mutant.planned"]
-    );
+    let ran = run(&plans(), None);
+    assert_eq!(ran.status, Ok(None), "it did not finish");
+    assert_eq!(ran.printed, ["run.started", "mutant.planned"]);
+}
+
+#[test]
+fn test_a_run_of_no_mutants_finishes_at_once_and_prints_it() {
+    let runs = Arc::new(AtomicUsize::new(0));
+    let ran = run(&[], Some(workers(&runs)));
+    assert_eq!(ran.status, Ok(Some(RunStatus::Complete)));
+    assert_eq!(ran.printed.last(), Some(&"run.finished"));
+    assert_eq!(runs.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn test_a_run_with_no_workers_or_no_test_programs_is_refused_saying_so() {
+    let none = Workers {
+        sets: Vec::new(),
+        jobs: 1,
+        explain,
+    };
+    let Err(RunLayerError::Workers { reason }) = run(&plans(), Some(none)).status else {
+        panic!("a run with no workers");
+    };
+    assert_eq!(reason, "no workers");
+    let empty = Workers {
+        sets: vec![Vec::new()],
+        jobs: 1,
+        explain,
+    };
+    let Err(RunLayerError::Workers { reason }) = run(&plans(), Some(empty)).status else {
+        panic!("a run with no test programs");
+    };
+    assert_eq!(reason, "no test programs");
 }
 
 /// Fails its baseline.
@@ -217,58 +246,49 @@ fn test_a_run_whose_workers_cannot_run_fails_saying_why() {
         jobs: 1,
         explain,
     };
-    let mut out = JsonLines(Vec::new());
-    let error = run(
-        MemoryStore::new(),
-        &plans(),
-        &settings(),
-        Some(broken),
-        &mut out,
-    )
-    .unwrap_err();
-    let RunLayerError::Workers { reason } = error else {
-        panic!("{error:?}");
+    let ran = run(&plans(), Some(broken));
+    let Err(RunLayerError::Workers { reason }) = ran.status else {
+        panic!("{:?}", ran.status);
     };
     assert!(reason.contains("unmutated tests do not pass"), "{reason}");
-    // The stream says so too, and ends.
-    let docs = documents(out.0);
-    let failed = docs
-        .iter()
-        .find(|d| d["event"] == "program.failed")
-        .unwrap();
-    assert!(
-        failed["reason"]
-            .as_str()
-            .unwrap()
-            .contains("unmutated tests do not pass")
+    // The stream says so too, and ends, and the output printed both.
+    assert!(ran.events.iter().any(|event| matches!(event,
+        RunEvent::ProgramFailed(f) if f.reason.contains("unmutated tests do not pass"))));
+    assert!(matches!(ran.events.last(),
+        Some(RunEvent::RunFinished(f)) if f.status == RunStatus::Failed));
+    assert_eq!(
+        &ran.printed[ran.printed.len() - 2..],
+        ["program.failed", "run.finished"]
     );
-    let last = docs.last().unwrap();
-    assert_eq!(last["event"], "run.finished");
-    assert_eq!(last["status"], "failed");
-    assert_eq!(last["exit"], 0, "the exit code is the program's to say");
 }
 
-/// Each line written, sent on as soon as it is complete.
-struct Lines {
-    to: std::sync::mpsc::Sender<String>,
-    partial: Vec<u8>,
+/// Panics preparing.
+struct Panicking;
+
+impl MutantExecutor for Panicking {
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+        Ok(exited(0))
+    }
+
+    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+        panic!("the debugger fell over");
+    }
 }
 
-impl std::io::Write for Lines {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.partial.extend_from_slice(bytes);
-        while let Some(end) = self.partial.iter().position(|&b| b == b'\n') {
-            let line: Vec<u8> = self.partial.drain(..=end).collect();
-            let _ = self
-                .to
-                .send(String::from_utf8_lossy(&line).trim_end().to_string());
-        }
-        Ok(bytes.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
+#[test]
+fn test_a_preparation_that_panics_finishes_the_run_failed_and_says_so() {
+    let panicking = Workers {
+        sets: vec![vec![Box::new(Panicking)]],
+        jobs: 1,
+        explain,
+    };
+    let ran = run(&plans(), Some(panicking));
+    let Err(RunLayerError::Workers { reason }) = ran.status else {
+        panic!("{:?}", ran.status);
+    };
+    assert_eq!(reason, "a test program's preparation panicked");
+    assert!(matches!(ran.events.last(),
+        Some(RunEvent::RunFinished(f)) if f.status == RunStatus::Failed));
 }
 
 /// A gate the test opens: whoever waits on it blocks until then.
@@ -326,22 +346,10 @@ impl MutantExecutor for Slow {
     }
 }
 
-/// The next document from `lines` whose event is `event`, within ten
-/// seconds: none when the run holds it back.
-fn next_event(lines: &std::sync::mpsc::Receiver<String>, event: &str) -> Option<Value> {
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    loop {
-        let left = deadline.saturating_duration_since(std::time::Instant::now());
-        let line = lines.recv_timeout(left).ok()?;
-        let doc: Value = serde_json::from_str(&line).unwrap();
-        if doc["event"] == event {
-            return Some(doc);
-        }
-    }
-}
-
+/// Mutants `a` and `b` of a program that prepares at once and one that
+/// waits for `prepared`; `b` waits for `decided`.
 #[test]
-fn test_each_event_is_written_as_it_happens_while_later_work_is_still_running() {
+fn test_each_event_is_printed_as_it_happens_while_later_work_is_still_running() {
     // An agent acts on the first prepared program and the first decided
     // mutant while the run goes on: neither waits for slower work.
     let (prepared, decided) = (Gate::default(), Gate::default());
@@ -360,35 +368,45 @@ fn test_each_event_is_written_as_it_happens_while_later_work_is_still_running() 
         jobs: 2,
         explain,
     };
-    let (to, lines) = std::sync::mpsc::channel();
+    let (to, names) = std::sync::mpsc::channel();
     let running = std::thread::spawn(move || {
-        let mut out = JsonLines(Lines {
-            to,
-            partial: Vec::new(),
-        });
-        run(
-            MemoryStore::new(),
-            &plans(),
-            &settings(),
-            Some(workers),
-            &mut out,
-        )
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let core = Arc::new(new_core().await);
+            super::run(
+                &core,
+                new_run(),
+                &plans(),
+                &settings(),
+                Some(workers),
+                Readers::printing(recording_to(to)),
+            )
+            .await
+        })
     });
-    let first = next_event(&lines, "program.prepared");
+    // The first program prepared is printed while the slow one is not.
+    assert_eq!(next(&names, "program.prepared"), Some("program.prepared"));
     prepared.open();
-    assert_eq!(
-        first.map(|d| d["program"].clone()),
-        Some(Value::from("quick")),
-        "the quick program's preparation waited for the slow one's"
-    );
-    let first = next_event(&lines, "mutant.decided");
+    // The first mutant decided is printed while the other is not.
+    assert_eq!(next(&names, "mutant.decided"), Some("mutant.decided"));
     decided.open();
-    assert_eq!(
-        first.map(|d| d["function"].clone()),
-        Some(Value::from("a")),
-        "a's verdict waited for b's"
-    );
     assert_eq!(running.join().unwrap().unwrap(), Some(RunStatus::Complete));
+}
+
+/// The next name from `names` that is `wanted`, within ten seconds: none
+/// when the run holds it back.
+fn next(names: &std::sync::mpsc::Receiver<&'static str>, wanted: &str) -> Option<&'static str> {
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        let name = names.recv_timeout(left).ok()?;
+        if name == wanted {
+            return Some(name);
+        }
+    }
 }
 
 /// Plan `a`'s run waits for plan `b`'s to finish (up to 5 s): only
@@ -432,17 +450,9 @@ fn test_mutants_run_on_the_workers_at_once() {
         jobs: 2,
         explain,
     };
-    let mut out = JsonLines(Vec::new());
     assert_eq!(
-        run(
-            MemoryStore::new(),
-            &plans(),
-            &settings(),
-            Some(workers),
-            &mut out
-        )
-        .unwrap(),
-        Some(RunStatus::Complete)
+        run(&plans(), Some(workers)).status,
+        Ok(Some(RunStatus::Complete))
     );
     assert!(
         !waited_out.load(Ordering::SeqCst),
@@ -476,35 +486,20 @@ fn test_many_workers_decide_every_mutant_once_with_no_write_racing_on_any_stream
         jobs: 2,
         explain,
     };
-    let mut out = JsonLines(Vec::new());
     let store = crate::yielding::Yielding::default();
-    let exit = run_retrying(
-        store.clone(),
-        strict(),
-        &plans,
-        &settings(),
-        Some(workers),
-        &mut out,
-    )
-    .unwrap();
-    assert_eq!(exit, Some(RunStatus::Complete));
+    let ran = run_retrying(store.clone(), strict(), &plans, Some(workers));
+    assert_eq!(ran.status, Ok(Some(RunStatus::Complete)));
     assert_eq!(store.conflicts(), 0, "a write lost a race on its stream");
-    let docs = documents(out.0);
-    let mut decided: Vec<&str> = docs
-        .iter()
-        .filter(|d| d["event"] == "mutant.decided")
-        .map(|d| d["id"].as_str().unwrap())
-        .collect();
+    let mut decided: Vec<String> = decisions(&ran.events).into_iter().map(|d| d.0).collect();
     decided.sort_unstable();
     let ids: Vec<String> = plans.iter().map(|p| p.id.0.clone()).collect();
     assert_eq!(decided, ids, "each mutant decided once");
     assert_eq!(runs.load(Ordering::SeqCst), 64, "each mutant ran once");
-    let last = docs.last().unwrap();
-    assert_eq!(last["event"], "run.finished");
-    assert_eq!(
-        last["counts"],
-        serde_json::json!({"killed": 32, "survived": 32})
-    );
+    let Some(RunEvent::RunFinished(last)) = ran.events.last() else {
+        panic!("{:?}", ran.events.last());
+    };
+    let counts: Vec<(Verdict, u32)> = last.counts.iter().map(|t| (t.verdict, t.count)).collect();
+    assert_eq!(counts, [(Verdict::Killed, 32), (Verdict::Survived, 32)]);
 }
 
 #[test]
@@ -545,6 +540,7 @@ fn test_measure_the_fan_in_s_cost_as_the_run_s_stream_grows() {
             let fact = cherenkov_run_domain::DecisionReported {
                 mutant: id.clone(),
                 verdict: cherenkov_run_domain::Verdict::Killed,
+                decision: None,
             };
             core.report(run_cover(&run), &fact, id).await.unwrap();
             if (i + 1) % 500 == 0 {
@@ -570,17 +566,111 @@ fn test_measure_the_fan_in_s_cost_as_the_run_s_stream_grows() {
         explain,
     };
     let whole = std::time::Instant::now();
-    let mut out = JsonLines(std::io::sink());
-    run(
-        MemoryStore::new(),
-        &plans,
-        &settings(),
-        Some(workers),
-        &mut out,
-    )
-    .unwrap();
+    run(&plans, Some(workers)).status.unwrap();
     eprintln!(
         "a whole run of {n} instant mutants on 8 workers: {:?}",
         whole.elapsed()
+    );
+}
+
+/// The core, but its first read of a mutant's stream fails: the store was
+/// down for a moment.
+struct Flaky {
+    inner: crate::testing::Core,
+    reads: AtomicUsize,
+    recovery: cherenkov_run_ports::Recovery,
+}
+
+impl Edge for Flaky {
+    async fn handle(
+        &self,
+        book: angzarr_embedded::v1::CommandBook,
+    ) -> Result<cherenkov_run_ports::Reported, cherenkov_run_ports::EdgeError> {
+        self.inner.handle(book).await
+    }
+
+    async fn events(
+        &self,
+        stream: &angzarr_embedded::v1::Cover,
+        from: u64,
+    ) -> Result<Vec<angzarr_embedded::v1::EventPage>, cherenkov_run_ports::EdgeError> {
+        if stream.domain == cherenkov_run_domain::MUTANT_DOMAIN
+            && self.reads.fetch_add(1, Ordering::SeqCst) == 0
+        {
+            return Err(cherenkov_run_ports::EdgeError {
+                cause: angzarr_diagnostic::Report::new("test-store-down"),
+                recovery: self.recovery,
+            });
+        }
+        self.inner.events(stream, from).await
+    }
+
+    fn next_commit(&self) -> angzarr_embedded::angzarr_ports::CommitWait {
+        self.inner.next_commit()
+    }
+}
+
+impl cherenkov_run_ports::Serving for Flaky {
+    fn serve<'a>(
+        &'a self,
+        subscriptions: cherenkov_run_ports::Subscriptions,
+        more: &'a mut (dyn FnMut(&angzarr_embedded::angzarr_bus::Served) -> bool + Send),
+    ) -> impl std::future::Future<Output = Result<(), cherenkov_run_ports::EdgeError>> + 'a {
+        self.inner.serve(subscriptions, more)
+    }
+}
+
+/// A run of the two plans on a core whose first mutant read fails with
+/// `recovery`.
+fn run_on_flaky(recovery: cherenkov_run_ports::Recovery) -> (Ran, Arc<AtomicUsize>) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
+    let runs = Arc::new(AtomicUsize::new(0));
+    let ran = runtime.block_on(async {
+        let core = Arc::new(Flaky {
+            inner: new_core().await,
+            reads: AtomicUsize::new(0),
+            recovery,
+        });
+        let (output, printed) = recording();
+        let status = super::run(
+            &core,
+            new_run(),
+            &plans(),
+            &settings(),
+            Some(workers(&runs)),
+            Readers::printing(output),
+        )
+        .await;
+        let printed = printed.lock().unwrap().clone();
+        Ran {
+            status,
+            printed,
+            events: Vec::new(),
+        }
+    });
+    (ran, runs)
+}
+
+#[test]
+fn test_a_run_whose_handler_fails_once_for_now_is_served_again_and_completes() {
+    let (ran, runs) = run_on_flaky(cherenkov_run_ports::Recovery::Retry);
+    assert_eq!(ran.status, Ok(Some(RunStatus::Complete)));
+    assert_eq!(runs.load(Ordering::SeqCst), 2, "each mutant ran once");
+}
+
+#[test]
+fn test_a_run_whose_handler_fails_for_good_is_given_up_on_and_reported() {
+    let (ran, runs) = run_on_flaky(cherenkov_run_ports::Recovery::Bug);
+    assert!(
+        matches!(ran.status, Err(RunLayerError::Kernel { .. })),
+        "{:?}",
+        ran.status
+    );
+    assert!(
+        runs.load(Ordering::SeqCst) < 2,
+        "the mutant it failed on was not run"
     );
 }

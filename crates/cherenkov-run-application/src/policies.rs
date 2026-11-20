@@ -17,7 +17,7 @@
 //! twice is a duplicate.
 
 use angzarr_diagnostic::Diagnostic;
-use angzarr_embedded::angzarr_router::error::CodedError;
+use angzarr_embedded::angzarr_router::error::{CodedError, RetryableStatus};
 use angzarr_embedded::angzarr_router::hpb::ProjectRequest;
 use angzarr_embedded::markup::{Commands, PolicyContext};
 use angzarr_embedded::v1::EventPage;
@@ -61,9 +61,17 @@ impl FanOut {
     }
 }
 
-/// `error` as a handler's answer: a bug, its code and its text.
+/// `error` as a handler's answer: its code and its text, a bug the bus
+/// holds and serves again when the core could not take a call for now (a
+/// store down), else one it gives up on.
 pub fn handler_error(error: &RunLayerError) -> CodedError {
-    CodedError::bug(error.code(), [("reason".to_string(), error.to_string())])
+    let details = [("reason".to_string(), error.to_string())];
+    match error {
+        RunLayerError::Unavailable { .. } => {
+            CodedError::retryable_bug(RetryableStatus::Unavailable, error.code(), details)
+        }
+        _ => CodedError::bug(error.code(), details),
+    }
 }
 
 /// The one page of a request the bus hands over, with its stream's
@@ -100,6 +108,7 @@ impl FanIn {
             DecisionReported {
                 mutant: mutant.id.clone(),
                 verdict: outcome.verdict,
+                decision: Some(event.clone()),
             },
         ))
     }

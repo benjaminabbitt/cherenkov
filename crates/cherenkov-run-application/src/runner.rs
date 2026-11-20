@@ -27,9 +27,11 @@ use cherenkov_run_ports::Edge;
 
 use crate::covers::run_cover;
 use crate::error::RunLayerError;
+use crate::live::LiveRuns;
 use crate::policies::{handed, handler_error};
+use crate::pool::Pool;
 use crate::programs;
-use crate::workers::{Explain, Programs, Ran, Seen, Worker};
+use crate::workers::{Explain, Programs, Ran, Seen};
 use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, run_event};
 use cherenkov_run_domain::observation;
 use cherenkov_run_domain::plan;
@@ -46,9 +48,11 @@ pub const RUNNER: &str = "runner";
 pub struct Runner<E> {
     core: Arc<E>,
     explain: Explain,
-    /// The workers no instance holds. There are as many as instances, so an
-    /// instance handed a mutant always finds one.
-    idle: Mutex<Vec<Worker>>,
+    /// The workers no instance holds.
+    pool: Arc<Pool>,
+    /// What the live runs read model knows of the runs' preparation, read
+    /// before a run's stream is.
+    live: Option<LiveRuns>,
     /// What each run prepared, by the run's id: read from its stream when
     /// one of its mutants is first handed.
     programs: Mutex<BTreeMap<String, Arc<Programs>>>,
@@ -64,29 +68,25 @@ struct Done {
 }
 
 impl<E> Runner<E> {
-    /// The runner over `core`'s streams, on `workers`: subscribe it with
-    /// one instance per worker.
-    pub fn new(core: Arc<E>, explain: Explain, workers: Vec<Worker>) -> Runner<E> {
+    /// The runner over `core`'s streams, on the workers of `pool`:
+    /// subscribe it with one instance per worker.
+    pub fn new(core: Arc<E>, explain: Explain, pool: Arc<Pool>) -> Runner<E> {
         Runner {
             core,
             explain,
-            idle: Mutex::new(workers),
+            pool,
+            live: None,
             programs: Mutex::new(BTreeMap::new()),
         }
     }
 
-    fn take(&self) -> Option<Worker> {
-        self.idle
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop()
-    }
-
-    fn give_back(&self, worker: Worker) {
-        self.idle
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(worker);
+    /// The same runner, reading what a run prepared from `live` when it
+    /// knows it, before reading the run's stream.
+    pub fn knowing(self, live: LiveRuns) -> Runner<E> {
+        Runner {
+            live: Some(live),
+            ..self
+        }
     }
 
     /// Run `plan` in test program `program` on a worker, on a thread where
@@ -97,9 +97,7 @@ impl<E> Runner<E> {
         plan: MutantPlan,
         programs: Arc<Programs>,
     ) -> Result<Ran, RunLayerError> {
-        let mut worker = self.take().ok_or_else(|| RunLayerError::Workers {
-            reason: "no worker is free".to_string(),
-        })?;
+        let mut worker = self.pool.take().await;
         let explain = self.explain;
         let ran = tokio::task::spawn_blocking(move || {
             let ran = worker.run_in(program, &plan, &programs, explain);
@@ -109,23 +107,17 @@ impl<E> Runner<E> {
         let (worker, ran) = ran.map_err(|_| RunLayerError::Workers {
             reason: "a worker panicked".to_string(),
         })?;
-        self.give_back(worker);
+        self.pool.give(worker);
         Ok(ran)
     }
 }
 
 impl<E: Edge> Runner<E> {
-    /// What `run` prepared: read from its stream the first time, then kept.
-    async fn programs_of(&self, run: &Uuid) -> Result<Arc<Programs>, RunLayerError> {
-        let key = run.to_string();
-        let kept = self
-            .programs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(&key)
-            .cloned();
-        if let Some(kept) = kept {
-            return Ok(kept);
+    /// What `run` prepared: as the live runs model knows it, else read from
+    /// the run's stream.
+    async fn prepared(&self, run: &Uuid) -> Result<Programs, RunLayerError> {
+        if let Some(known) = self.live.as_ref().and_then(|live| live.programs(run)) {
+            return Ok(known);
         }
         let prepared: Vec<_> = self
             .core
@@ -137,7 +129,22 @@ impl<E: Edge> Runner<E> {
                 _ => None,
             })
             .collect();
-        let programs = Arc::new(programs::programs(prepared));
+        Ok(programs::programs(prepared))
+    }
+
+    /// What `run` prepared: read the first time, then kept.
+    async fn programs_of(&self, run: &Uuid) -> Result<Arc<Programs>, RunLayerError> {
+        let key = run.to_string();
+        let kept = self
+            .programs
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&key)
+            .cloned();
+        if let Some(kept) = kept {
+            return Ok(kept);
+        }
+        let programs = Arc::new(self.prepared(run).await?);
         if programs.is_empty() {
             return Err(RunLayerError::Workers {
                 reason: format!("run {run} prepared no test program"),

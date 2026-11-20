@@ -100,6 +100,16 @@ fn outcome() -> Outcome {
     }
 }
 
+/// A mutant decided for a run.
+fn decided() -> MutantDecided {
+    MutantDecided {
+        mutant: Some(planned()),
+        verdict: Some(outcome()),
+        run: Some(uuid()),
+        programs: vec!["calc-0123".to_string()],
+    }
+}
+
 fn duration(seconds: i64, nanos: i32) -> Option<prost_types::Duration> {
     Some(prost_types::Duration { seconds, nanos })
 }
@@ -358,6 +368,7 @@ fn lines() -> Vec<String> {
         .chain(decision_lines())
         .chain(snapshot_lines())
         .chain(documents().iter().map(line))
+        .chain(verdict_lines().iter().map(line))
         .collect()
 }
 
@@ -454,10 +465,22 @@ fn decision_lines() -> Vec<String> {
         line(&DecisionReported {
             mutant: "f2ba84283a346cc0".to_string(),
             verdict: Verdict::Survived.into(),
+            decision: None,
         }),
         line(&DecisionRecorded {
             mutant: "f2ba84283a346cc0".to_string(),
             verdict: Verdict::Killed.into(),
+            decision: None,
+        }),
+        line(&DecisionReported {
+            mutant: "f2ba84283a346cc0".to_string(),
+            verdict: Verdict::Killed.into(),
+            decision: Some(decided()),
+        }),
+        line(&DecisionRecorded {
+            mutant: "f2ba84283a346cc0".to_string(),
+            verdict: Verdict::Killed.into(),
+            decision: Some(decided()),
         }),
         line(&PlanMutant {
             run: Some(uuid()),
@@ -502,12 +525,7 @@ fn decision_lines() -> Vec<String> {
                 reason: "evaluate: dap connection closed".to_string(),
             })),
         }),
-        line(&MutantDecided {
-            mutant: Some(planned()),
-            verdict: Some(outcome()),
-            run: Some(uuid()),
-            programs: vec!["calc-0123".to_string()],
-        }),
+        line(&decided()),
     ]
 }
 
@@ -769,5 +787,56 @@ fn test_a_number_with_no_value_is_named_by_its_number() {
 fn test_no_value_is_named_unspecified_by_the_run() {
     for verdict in 1..=10 {
         assert_ne!(names::verdict(verdict), "unspecified");
+    }
+}
+
+/// The verdict file's lines: a killed mutant with every field, and a
+/// survivor with the optional ones unset.
+fn verdict_lines() -> Vec<output::VerdictLine> {
+    vec![
+        output::VerdictLine {
+            id: "f2ba84283a346cc0".to_string(),
+            verdict: Verdict::Killed.into(),
+            file: "src/lib.rs".to_string(),
+            line: 4,
+            column: 5,
+            function: Some("total".to_string()),
+            operator: "aor".to_string(),
+            original: "+".to_string(),
+            mutated: Some("-".to_string()),
+            killed_by: vec!["calc::test_a".to_string(), "calc::test_b".to_string()],
+        },
+        output::VerdictLine {
+            id: "0123456789abcdef".to_string(),
+            verdict: Verdict::Survived.into(),
+            file: "src/lib.rs".to_string(),
+            line: 9,
+            column: 1,
+            function: None,
+            operator: "sdl".to_string(),
+            original: "x += 1;".to_string(),
+            mutated: None,
+            killed_by: Vec::new(),
+        },
+    ]
+}
+
+/// The verdict file's lines as JSON text: the field order of the message,
+/// an unset `function` or `mutated` as `null`, and the verdict by name.
+const VERDICT_LINES: &str = r#"{"id":"f2ba84283a346cc0","verdict":"killed","file":"src/lib.rs","line":4,"column":5,"function":"total","operator":"aor","original":"+","mutated":"-","killed_by":["calc::test_a","calc::test_b"]}
+{"id":"0123456789abcdef","verdict":"survived","file":"src/lib.rs","line":9,"column":1,"function":null,"operator":"sdl","original":"x += 1;","mutated":null,"killed_by":[]}
+"#;
+
+#[test]
+fn test_a_verdict_line_is_the_json_the_verdict_file_holds() {
+    let written: Vec<String> = verdict_lines()
+        .iter()
+        .map(|line| serde_json::to_string(line).unwrap())
+        .collect();
+    let expected: Vec<&str> = VERDICT_LINES.lines().collect();
+    assert_eq!(written, expected);
+    for (text, line) in expected.iter().zip(verdict_lines()) {
+        let read: output::VerdictLine = serde_json::from_str(text).unwrap();
+        assert_eq!(read, line);
     }
 }

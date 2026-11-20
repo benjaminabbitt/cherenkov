@@ -208,6 +208,7 @@ fn decision(id: &str, verdict: Verdict) -> DecisionReported {
     DecisionReported {
         mutant: id.to_string(),
         verdict,
+        decision: None,
     }
 }
 
@@ -1154,4 +1155,47 @@ fn registering_twice_is_refused() {
     let mut registry = Registry::new();
     register(&mut registry).unwrap();
     assert!(register(&mut registry).is_err());
+}
+
+#[tokio::test]
+async fn test_a_decision_is_recorded_on_the_run_with_the_decision_whole() {
+    let core = core();
+    let run = new_run();
+    core.command(run_cover(&run), &plan(&["a"])).await.unwrap();
+    core.report(run_cover(&run), &preparation("p"), "p")
+        .await
+        .unwrap();
+    let decided = MutantDecided {
+        mutant: Some(PlannedMutant {
+            id: "a".to_string(),
+            file: "src/lib.rs".to_string(),
+            ..PlannedMutant::default()
+        }),
+        verdict: Some(Outcome {
+            killed_by: vec![KilledBy {
+                test: "t".to_string(),
+                location: None,
+                message: String::new(),
+                got: None,
+                expected: None,
+            }],
+            ..outcome(Verdict::Killed)
+        }),
+        run: Some(RunId::from(run.clone())),
+        programs: vec!["p".to_string()],
+    };
+    let fact = DecisionReported {
+        decision: Some(decided.clone()),
+        ..decision("a", Verdict::Killed)
+    };
+    core.report(run_cover(&run), &fact, "a").await.unwrap();
+    let recorded = run_events(&core, &run)
+        .await
+        .into_iter()
+        .find_map(|event| match event {
+            RunEvent::DecisionRecorded(d) => Some(d),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(recorded.decision, Some(decided));
 }

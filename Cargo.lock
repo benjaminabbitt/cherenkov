@@ -413,11 +413,14 @@ name = "cherenkov-cli"
 version = "0.1.0"
 dependencies = [
  "angzarr-diagnostic",
+ "angzarr-embedded",
+ "angzarr-ports",
  "angzarr-presentation",
  "cherenkov-core",
  "cherenkov-exec-dap",
  "cherenkov-fs",
  "cherenkov-run-application",
+ "cherenkov-run-domain",
  "cherenkov-run-store",
  "cherenkov-run-wire",
  "cherenkov-syntax",
@@ -427,6 +430,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sysinfo",
+ "tokio",
 ]
 
 [[package]]
@@ -512,7 +516,6 @@ dependencies = [
  "cherenkov-run-ports",
  "cherenkov-run-wire",
  "cherenkov-syntax",
- "serde_json",
  "tokio",
  "uuid",
 ]

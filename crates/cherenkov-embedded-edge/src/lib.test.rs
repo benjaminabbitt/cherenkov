@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use angzarr_embedded::angzarr_bus::{Credit, Scope, Subscription};
+use angzarr_embedded::angzarr_diagnostic::Report;
 use angzarr_embedded::angzarr_ports::memory::MemoryStore;
 use angzarr_embedded::angzarr_router::error::CodedError;
 use angzarr_embedded::angzarr_router::hpb::{ProjectRequest, ProjectResponse};
@@ -10,7 +11,7 @@ use angzarr_embedded::testing::Samples;
 use angzarr_embedded::v1::{Cover, Uuid};
 use angzarr_embedded::{BusPolicy, ProjectorHandler, Registry};
 use cherenkov_run_domain::{ExecutableMutant, PlanRun, PlannedMutant, RUN_DOMAIN, register};
-use cherenkov_run_ports::{Delivery, Edge, Serving};
+use cherenkov_run_ports::{Delivery, Edge, Recovery, Serving};
 
 use super::*;
 
@@ -93,11 +94,12 @@ async fn a_fact_reported_twice_under_one_id_is_a_duplicate() {
 }
 
 #[tokio::test]
-async fn a_refused_command_is_a_report() {
+async fn a_refused_command_is_a_business_failure() {
     let edge = edge().await;
     edge.command(run(), &PlanRun::default()).await.unwrap();
-    let again = edge.command(run(), &PlanRun::default()).await;
-    assert!(again.is_err());
+    let again = edge.command(run(), &PlanRun::default()).await.unwrap_err();
+    assert_eq!(again.recovery, Recovery::Business);
+    assert!(!again.retryable());
 }
 
 #[tokio::test]
@@ -141,4 +143,36 @@ async fn two_subscriptions_of_one_name_are_misconfigured() {
     let edge = edge().await;
     let both = vec![nothing(), nothing()];
     assert!(edge.serve(both, &mut |_| false).await.is_err());
+}
+
+#[tokio::test]
+async fn a_stream_with_no_root_cannot_be_read() {
+    let edge = edge().await;
+    let rootless = Cover {
+        root: None,
+        ..run()
+    };
+    let error = edge.events(&rootless, 0).await.unwrap_err();
+    assert_eq!(error.recovery, Recovery::Invalid);
+}
+
+#[test]
+fn a_failure_is_captured_with_its_code_and_its_recovery() {
+    let error = failed(&Report::new("angzarr-x"), Recovery::Retry);
+    assert_eq!(error.cause, Report::new("angzarr-x"));
+    assert!(error.retryable());
+}
+
+#[tokio::test]
+async fn events_are_read_from_the_sequence_asked() {
+    let edge = edge().await;
+    edge.command(run(), &PlanRun::default()).await.unwrap();
+    let from: Vec<u64> = edge
+        .events(&run(), 2)
+        .await
+        .unwrap()
+        .iter()
+        .map(|p| p.sequence)
+        .collect();
+    assert_eq!(from, [2]);
 }
