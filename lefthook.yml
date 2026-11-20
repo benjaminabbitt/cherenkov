@@ -1,0 +1,47 @@
+# Lefthook configuration for Cherenkov (https://github.com/evilmartians/lefthook)
+#
+# Setup: lefthook install (again after a hook is added or removed here)
+# Bypass: none; a failing hook is a finding: fix the cause and commit again.
+#
+# pre-commit is the fast checks only; the tests run on push (`just
+# push-check`): red tests may be pushed off master with a warning, never to it.
+
+pre-commit:
+  parallel: false
+  commands:
+    # Refuse commits whose staged files contain secrets (gitleaks).
+    scan-secrets:
+      run: just scan-secrets
+    fmt-check:
+      glob: "*.rs"
+      run: just fmt-check
+    lint:
+      glob: "*.{rs,toml}"
+      run: just lint
+    # Nothing path-based, full-hash pins (the dev module, when linked: .dev).
+    pins-check:
+      glob: "{Cargo.toml,**/Cargo.toml,Cargo.lock,pins.toml,.cargo/config.toml}"
+      run: if [ -e .dev ]; then just dev::pins-check; fi
+
+# Keep the generated cargo [patch] (just dev::local) in step with the lock and
+# the checkouts; silent when dev-local is off, loud when a sibling is missing.
+post-checkout:
+  commands:
+    dev-refresh:
+      run: if [ -e .dev ]; then just dev::refresh --quiet; fi
+
+post-merge:
+  commands:
+    dev-refresh:
+      run: if [ -e .dev ]; then just dev::refresh --quiet; fi
+
+pre-push:
+  commands:
+    # A pin on a commit that is not on its dependency's remote cannot be built
+    # elsewhere: push the dependency first (just dev::land).
+    pins-reachable:
+      run: if [ -e .dev ]; then just dev::pins-reachable; fi
+    push-check:
+      use_stdin: true
+      files: echo justfile
+      run: just push-check

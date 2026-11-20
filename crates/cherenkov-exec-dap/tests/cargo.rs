@@ -1,0 +1,138 @@
+use std::path::PathBuf;
+
+use cherenkov_exec_dap::toolchain::test_binaries_from_cargo_json;
+
+#[test]
+fn test_cargo_json_yields_test_executables_only() {
+    let stdout = r#"{"reason":"compiler-artifact","target":{"kind":["lib"],"name":"calc"},"profile":{"test":false},"executable":null}
+{"reason":"compiler-artifact","target":{"kind":["lib"],"name":"calc"},"profile":{"test":true},"executable":"/t/out/calc-6a9d"}
+{"reason":"compiler-artifact","target":{"kind":["test"],"name":"calc"},"profile":{"test":true},"executable":"/t/out/calc-c649"}
+{"reason":"compiler-artifact","target":{"kind":["bin"],"name":"tool"},"profile":{"test":false},"executable":"/t/out/tool"}
+{"reason":"build-finished","success":true}
+not json at all
+"#;
+    assert_eq!(
+        test_binaries_from_cargo_json(stdout),
+        [
+            PathBuf::from("/t/out/calc-6a9d"),
+            PathBuf::from("/t/out/calc-c649")
+        ]
+    );
+}
+
+// --- The code under test is what a non-test build compiles: rustc's
+// dep-info for it lists every source file, and leaves out modules that
+// only exist under `cfg(test)` (inline or `#[path = "x.test.rs"]`).
+
+use cherenkov_exec_dap::toolchain::{dep_info_of, dep_info_sources};
+
+#[test]
+fn test_a_checked_crate_s_dep_info_sits_beside_its_metadata() {
+    let filenames = ["/w/target/debug/deps/libdeps-147def452609373e.rmeta".to_string()];
+    assert_eq!(
+        dep_info_of(&filenames),
+        Some(PathBuf::from(
+            "/w/target/debug/deps/deps-147def452609373e.d"
+        ))
+    );
+    assert_eq!(
+        dep_info_of(&["/w/target/debug/build/x/out".to_string()]),
+        None
+    );
+}
+
+#[test]
+fn test_dep_info_names_the_rust_sources_of_its_first_rule_from_the_workspace_root() {
+    let text = "/w/target/debug/deps/deps-1.d: crates/deps/src/lib.rs crates/deps/src/a\\ b.rs /reg/serde/src/lib.rs crates/deps/data.toml\n\ncrates/deps/src/lib.rs:\ncrates/deps/src/a\\ b.rs:\n";
+    assert_eq!(
+        dep_info_sources(text, std::path::Path::new("/w")),
+        [
+            PathBuf::from("/w/crates/deps/src/lib.rs"),
+            PathBuf::from("/w/crates/deps/src/a b.rs"),
+            PathBuf::from("/reg/serde/src/lib.rs"),
+        ]
+    );
+}
+
+// --- `cargo test` runs each test binary in its package's directory, and
+// tests depend on it (a nested `cargo build` finds the project's
+// rust-toolchain.toml from there): so does Cherenkov.
+
+use cherenkov_exec_dap::toolchain::{TestProgram, test_programs_from_cargo_json};
+
+#[test]
+fn test_cargo_json_yields_each_test_executable_with_its_package_directory() {
+    let stdout = r#"{"reason":"compiler-artifact","manifest_path":"/w/crates/calc/Cargo.toml","profile":{"test":true},"executable":"/t/out/calc-6a9d"}
+{"reason":"compiler-artifact","manifest_path":"/w/crates/tool/Cargo.toml","profile":{"test":false},"executable":"/t/out/tool"}
+"#;
+    assert_eq!(
+        test_programs_from_cargo_json(stdout),
+        [TestProgram {
+            binary: PathBuf::from("/t/out/calc-6a9d"),
+            package_dir: PathBuf::from("/w/crates/calc"),
+        }]
+    );
+}
+
+#[test]
+fn test_a_test_program_runs_with_the_environment_cargo_test_gives_it() {
+    use cherenkov_exec_dap::toolchain::cargo_test_env;
+    let program = TestProgram {
+        binary: PathBuf::from("/t/out/calc-6a9d"),
+        package_dir: PathBuf::from("/w/crates/calc"),
+    };
+    let env = cargo_test_env(&program, std::path::Path::new("/bin/cargo"), Some("1.96.1"));
+    let get = |k: &str| env.iter().find(|(n, _)| n == k).map(|(_, v)| v.as_str());
+    assert_eq!(get("CARGO"), Some("/bin/cargo"));
+    assert_eq!(get("CARGO_MANIFEST_DIR"), Some("/w/crates/calc"));
+    assert_eq!(
+        get("CARGO_MANIFEST_PATH"),
+        Some("/w/crates/calc/Cargo.toml")
+    );
+    // rustup's pin, which nested cargo and rustc calls inherit.
+    assert_eq!(get("RUSTUP_TOOLCHAIN"), Some("1.96.1"));
+    let unpinned = cargo_test_env(&program, std::path::Path::new("/bin/cargo"), None);
+    assert!(unpinned.iter().all(|(n, _)| n != "RUSTUP_TOOLCHAIN"));
+}
+
+#[test]
+fn test_a_workspace_s_crates_are_its_members_lib_and_bin_targets_as_rustc_names_them() {
+    use cherenkov_exec_dap::toolchain::workspace_from_metadata;
+    let meta: serde_json::Value = serde_json::from_str(
+        r#"{"workspace_root":"/w","packages":[
+            {"targets":[{"kind":["lib"],"name":"read-model"},{"kind":["test"],"name":"it"}]},
+            {"targets":[{"kind":["bin"],"name":"ctxloom"}]}]}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        workspace_from_metadata(&meta),
+        (
+            PathBuf::from("/w"),
+            vec!["ctxloom".to_string(), "read_model".to_string()]
+        )
+    );
+}
+
+// --- The debugger needs a debug build whatever the project's profiles say
+// (a size-optimized, stripped test profile has no line table and inlines
+// the functions mutants are placed in), unless the caller set it.
+
+use cherenkov_exec_dap::toolchain::debug_profile_env;
+
+#[test]
+fn test_the_test_build_is_unoptimized_with_debug_info_and_symbols() {
+    let env = debug_profile_env(|_| false);
+    let has = |k: &str, v: &str| env.iter().any(|(a, b)| a == k && b == v);
+    for profile in ["TEST", "DEV"] {
+        assert!(has(&format!("CARGO_PROFILE_{profile}_OPT_LEVEL"), "0"));
+        assert!(has(&format!("CARGO_PROFILE_{profile}_DEBUG"), "2"));
+        assert!(has(&format!("CARGO_PROFILE_{profile}_STRIP"), "false"));
+    }
+}
+
+#[test]
+fn test_a_profile_setting_the_caller_made_is_kept() {
+    let env = debug_profile_env(|name| name == "CARGO_PROFILE_TEST_OPT_LEVEL");
+    assert!(!env.iter().any(|(k, _)| k == "CARGO_PROFILE_TEST_OPT_LEVEL"));
+    assert!(env.iter().any(|(k, _)| k == "CARGO_PROFILE_TEST_DEBUG"));
+}

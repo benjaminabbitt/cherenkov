@@ -1,0 +1,176 @@
+//! A run's events, and its mutants' decisions, as the documents a reader
+//! prints, one per line (`output-events.md`): the messages of
+//! `cherenkov.output.v1`, whose JSON the wire crate's generated code writes.
+//! Each has the event's name, the run and when it was recorded, and is
+//! usable on its own.
+
+use angzarr_embedded::v1::{EventPage, Uuid};
+use cherenkov_core::deficiency;
+use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, recorded_at, run_event};
+use cherenkov_run_domain::{
+    MutantDecided, Outcome, PlannedMutant, ProgramPrepared, RunFinished, Selection, Verdict,
+};
+use cherenkov_run_wire::output::{
+    Decided, Document, Executors, Failed, FailedTests, Finished, Killers, Planned, Prepared,
+    Started, document::Event,
+};
+use cherenkov_run_wire::{self as wire, names};
+
+/// The documents `page` of run `run`'s stream, or of one of its mutants'
+/// streams, prints as: one per mutant for the mutants planned, one for a
+/// mutant's decision (a run's record of it is printed from the mutant's),
+/// one for each other run event, and none for anything else.
+pub fn documents(run: &Uuid, page: &EventPage) -> Vec<Document> {
+    let at = recorded_at(page);
+    let document = |event| Document { event: Some(event) };
+    let event = match (run_event(page), mutant_event(page)) {
+        (Some(event), _) => event,
+        (None, Some(MutantEvent::MutantDecided(d))) => {
+            return decided(run, at, d)
+                .map(Event::Decided)
+                .map(document)
+                .into_iter()
+                .collect();
+        }
+        (None, _) => return Vec::new(),
+    };
+    match event {
+        RunEvent::RunStarted(s) => vec![document(Event::Started(Started {
+            run: Some(run.clone()),
+            at: Some(at),
+            root: s.root,
+            language: s.language,
+            operators: s.operators,
+            jobs: s.jobs,
+            fast: s.fast,
+            mutants: s.mutants,
+        }))],
+        RunEvent::MutantsPlanned(planned) => planned
+            .mutants
+            .into_iter()
+            .filter_map(|executable| executable.mutant)
+            .map(|m| {
+                document(Event::Planned(Planned {
+                    run: Some(run.clone()),
+                    at: Some(at),
+                    mutant: Some(m.into()),
+                }))
+            })
+            .collect(),
+        RunEvent::ProgramPrepared(p) => {
+            vec![document(Event::Prepared(prepared(run, at, p)))]
+        }
+        RunEvent::ProgramFailed(f) => vec![document(Event::Failed(Failed {
+            run: Some(run.clone()),
+            at: Some(at),
+            program: f.program,
+            reason: f.reason,
+        }))],
+        // A decision is printed from the mutant's stream; readiness is no event a
+        // reader needs.
+        RunEvent::DecisionRecorded(_) | RunEvent::RunReady(_) => Vec::new(),
+        RunEvent::RunFinished(f) => vec![document(Event::Finished(finished(run, at, f)))],
+    }
+}
+
+/// A duration in the milliseconds a document holds.
+fn millis(ms: u64) -> u32 {
+    u32::try_from(ms).unwrap_or(u32::MAX)
+}
+
+/// A prepared program's document: its timings, its tests, and how its
+/// mutants choose their tests (with the tests that failed recording, or
+/// why every test runs).
+fn prepared(run: &Uuid, at: angzarr_embedded::Timestamp, p: ProgramPrepared) -> Prepared {
+    Prepared {
+        run: Some(run.clone()),
+        at: Some(at),
+        program: p.program,
+        baseline_ms: millis(p.baseline_ms),
+        prepared_ms: millis(p.prepared_ms),
+        tests: p.tests,
+        selection: p.selection.into(),
+        failures: (p.selection == Selection::RecordedWithFailures).then_some(FailedTests {
+            failed_tests: p.failed_tests,
+        }),
+        reason: p.selection_reason,
+    }
+}
+
+/// A decided mutant's document: the mutant, its verdict, and what the
+/// verdict says (who killed it, who executed it, why it was not run). None
+/// for a decision that holds no outcome.
+fn decided(run: &Uuid, at: angzarr_embedded::Timestamp, d: MutantDecided) -> Option<Decided> {
+    let Outcome {
+        verdict,
+        tier,
+        took_ms,
+        tests_run,
+        killed_by,
+        reason,
+    } = d.verdict?;
+    let (reason, reason_code) = match reason {
+        Some(reason) => {
+            let code = reason_code(verdict, &reason);
+            (Some(reason), Some(code))
+        }
+        None => (None, None),
+    };
+    Some(Decided {
+        run: Some(run.clone()),
+        at: Some(at),
+        mutant: d.mutant.map(wire_mutant),
+        verdict: verdict.into(),
+        tier: tier.map(Into::into),
+        took_ms: millis(took_ms),
+        killers: (verdict == Verdict::Killed).then(|| Killers {
+            killed_by: killed_by.into_iter().map(Into::into).collect(),
+            complete: true,
+        }),
+        executors: (verdict == Verdict::Survived).then(|| Executors {
+            executed_by: tests_run.clone(),
+        }),
+        tests_run,
+        reason,
+        reason_code,
+    })
+}
+
+/// The short machine-readable form of the `reason` a mutant of `verdict`
+/// was not run for: its own for an unviable mutant or one the debugger
+/// cannot run, the verdict's name for a mutant no test calls or reaches.
+fn reason_code(verdict: Verdict, reason: &str) -> String {
+    match verdict {
+        Verdict::Unviable => deficiency::unviable_code(reason).to_string(),
+        Verdict::NotCalled | Verdict::NotReached => names::verdict(verdict.into()),
+        Verdict::Unsupported | Verdict::Error => deficiency::unsupported_code(reason).to_string(),
+        _ => "none".to_string(),
+    }
+}
+
+fn wire_mutant(m: PlannedMutant) -> wire::PlannedMutant {
+    m.into()
+}
+
+/// A finished run's document: its tallies by the verdicts' names, its time
+/// and its status. Its exit code and its deficiencies are the program's to
+/// say.
+fn finished(run: &Uuid, at: angzarr_embedded::Timestamp, f: RunFinished) -> Finished {
+    Finished {
+        run: Some(run.clone()),
+        at: Some(at),
+        counts: f
+            .counts
+            .into_iter()
+            .map(|tally| (names::verdict(tally.verdict.into()), tally.count))
+            .collect(),
+        took_ms: millis(f.took_ms),
+        exit: 0,
+        status: f.status.into(),
+        deficiencies: Default::default(),
+    }
+}
+
+#[cfg(test)]
+#[path = "render.test.rs"]
+mod tests;

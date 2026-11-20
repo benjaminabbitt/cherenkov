@@ -1,0 +1,1614 @@
+//! What every native debugger driver provides for tier P, and the one
+//! executor written over it. Drivers (Delve, GDB) differ only in how they
+//! start a session and implement these primitives.
+
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use cherenkov_core::edit::Edit;
+use cherenkov_core::execution::{
+    Budget, Driven, ExecError, MutantExecutor, RawOutcome, Recording, Selection, Tier,
+};
+use cherenkov_core::plan::{Action, MutantPlan};
+use cherenkov_core::syntax::Pos;
+use cherenkov_core::token::Token;
+
+use crate::isa::Isa;
+use crate::tierp::{Insn, Patch, Unpatchable, derive};
+
+/// One function's instructions, with the path its debug info reports for
+/// the requested source file (instructions from other files are inlined code).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionCode {
+    pub file: String,
+    pub insns: Vec<Insn>,
+}
+
+/// How a run under a debugger ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunEnd {
+    Exited(i32),
+    /// The debugger stopped the process on a crash (Go: unrecovered panic
+    /// or fatal error; native: a fatal signal) before it could exit.
+    Crashed {
+        kind: String,
+        message: String,
+    },
+    TimedOut,
+}
+
+/// What a tier B run does each time execution reaches the mutant's stop.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Effect {
+    /// Evaluate `value`, store it in `target`, and resume after the statement.
+    Assign { target: String, value: String },
+    /// Evaluate `value` and return it from the current function.
+    Return { value: String },
+    /// Return this value as the current function's result: in the integer
+    /// return registers, or through the caller's result pointer. Its heap
+    /// blocks are allocated in the program first.
+    ReturnBuilt {
+        value: crate::layouts::Built,
+        in_registers: bool,
+    },
+    /// Return the value the support library's constructor for `request`
+    /// makes: resolved (the library built, its layout of the type checked
+    /// against `layout`, the program's) into [`Effect::ReturnBuilt`]
+    /// before the run.
+    ReturnConstructed {
+        request: crate::support_lib::Request,
+        layout: crate::layouts::Layout,
+        in_registers: bool,
+        /// The value built from its layout, for when the library cannot
+        /// make it.
+        fallback: Option<Box<crate::layouts::Built>>,
+    },
+    /// Flip the boolean in `al` (a call's result) at every hit.
+    FlipResult,
+    /// At each jump out of a swapped `&&`/`||`'s left operand, read from
+    /// the flags which successor the program takes and continue where the
+    /// mutant goes from it (storing a constant first when the operator's
+    /// result is a value). Nothing is evaluated.
+    Steer { steers: Vec<crate::tierp::Steer> },
+    /// Evaluate `condition` and continue at `if_true` or `if_false`, the
+    /// exits of the condition's code (its own code is skipped).
+    Branch {
+        condition: String,
+        if_true: u64,
+        if_false: u64,
+    },
+    /// `inner`, unless the mutated operation overflows its integer type:
+    /// then the program goes to the compiled operation's overflow panic, as
+    /// the mutated source's checked operation would (the debugger's own
+    /// arithmetic wraps).
+    Guarded {
+        guard: OverflowGuard,
+        inner: Box<Effect>,
+    },
+    /// The copies of a generic function each have their own stops and
+    /// their own effect (a layout, a jump's exits): at a stop, the effect
+    /// of the copy it belongs to.
+    PerStop(Vec<(Vec<u64>, Effect)>),
+}
+
+/// A mutated checked operation: its operands' source text, the operator,
+/// and where the compiled operation panics on overflow.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OverflowGuard {
+    pub lhs: String,
+    pub rhs: String,
+    pub op: &'static str,
+    pub panic: u64,
+}
+
+/// How a tier B run ended: as a run does, whether the stop was reached, and
+/// the evaluator's complaint if it could not apply the effect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Evaluated {
+    pub end: RunEnd,
+    pub reached: bool,
+    pub refused: Option<String>,
+}
+
+/// How a recording run ended, and who called each function entry it hit.
+/// A recording run: how it ended, which tests called each entry hit, and
+/// which reach addresses any code executed.
+pub type Recorded = (RunEnd, Vec<(u64, Driven)>, Vec<u64>);
+
+/// A debuggee stopped before running any test code.
+pub trait NativeSession {
+    /// Replace the program with a fresh process in this session, ready for
+    /// the next run. `false` when the debugger cannot: start a new session.
+    fn restart(&mut self) -> Result<bool, ExecError> {
+        Ok(false)
+    }
+
+    /// Tier B: run with a breakpoint at each of `stops`, applying `effect`
+    /// at every hit. `None` when the debugger has no evaluator for it.
+    fn run_evaluating(
+        &mut self,
+        _stops: &[u64],
+        _effect: &Effect,
+        _timeout: Duration,
+    ) -> Result<Option<Evaluated>, ExecError> {
+        Ok(None)
+    }
+
+    /// The instructions of the function containing `file:line`, or `None`
+    /// when this program has no code for that line.
+    fn function_code(&mut self, file: &Path, line: u32) -> Result<Option<FunctionCode>, ExecError>;
+    /// Every function with code on the line, first [`NativeSession::function_code`]'s
+    /// (a closure's body shares its line with the function around it).
+    /// `line` may resolve to a later line up to `last` when it has no code
+    /// of its own (the mutated site's last line).
+    fn function_codes(
+        &mut self,
+        file: &Path,
+        line: u32,
+        _last: u32,
+    ) -> Result<Vec<FunctionCode>, ExecError> {
+        Ok(self.function_code(file, line)?.into_iter().collect())
+    }
+    fn read(&mut self, addr: u64, len: usize) -> Result<Vec<u8>, ExecError>;
+    fn write(&mut self, addr: u64, bytes: &[u8]) -> Result<(), ExecError>;
+    /// Let the program run until it exits, crashes, or `timeout` passes.
+    fn run_to_exit(&mut self, timeout: Duration) -> Result<RunEnd, ExecError> {
+        self.run_reaching(&[], timeout).map(|(end, _)| end)
+    }
+
+    /// As [`NativeSession::run_to_exit`], also telling whether execution
+    /// reached any of the instructions at `reach` (the mutated code): an
+    /// instruction breakpoint on each, cleared at the first hit.
+    fn run_reaching(
+        &mut self,
+        reach: &[u64],
+        timeout: Duration,
+    ) -> Result<(RunEnd, bool), ExecError>;
+
+    /// Run to exit recording, for each of `entries` (function entries),
+    /// which of `tests` (the binary's test names) call it: the code the
+    /// selected tests drive. Entries never hit are left out. Also which of
+    /// `reach` (mutated code) anything executes. `None` when this debugger
+    /// cannot tell.
+    fn run_recording(
+        &mut self,
+        _entries: &[u64],
+        _reach: &[u64],
+        _tests: &[String],
+        _timeout: Duration,
+    ) -> Result<Option<Recorded>, ExecError> {
+        Ok(None)
+    }
+
+    /// Run only these tests from the next restart on (`None`: the
+    /// configured ones). `false` when this debugger cannot select.
+    fn select_tests(&mut self, _tests: Option<&[String]>) -> Result<bool, ExecError> {
+        Ok(false)
+    }
+
+    /// The program's standard output so far, when the debugger forwards it.
+    fn take_output(&mut self) -> String {
+        String::new()
+    }
+
+    /// Apply a patch. Fails, writing nothing, unless memory still holds
+    /// every region's `original`.
+    fn arm(&mut self, patch: &Patch) -> Result<(), ExecError> {
+        for r in &patch.regions {
+            let current = self.read(r.addr, r.original.len())?;
+            if current != r.original {
+                return Err(ExecError(format!(
+                    "expected {:02x?} at {:#x}, found {current:02x?}",
+                    r.original, r.addr
+                )));
+            }
+        }
+        for r in &patch.regions {
+            write_verified(self, r.addr, &r.replacement)?;
+        }
+        Ok(())
+    }
+
+    /// Restore every region's `original` and verify it reads back byte-identical.
+    fn disarm(&mut self, patch: &Patch) -> Result<(), ExecError> {
+        for r in &patch.regions {
+            write_verified(self, r.addr, &r.original)?;
+        }
+        Ok(())
+    }
+}
+
+fn write_verified<S: NativeSession + ?Sized>(
+    session: &mut S,
+    addr: u64,
+    bytes: &[u8],
+) -> Result<(), ExecError> {
+    session.write(addr, bytes)?;
+    let back = session.read(addr, bytes.len())?;
+    if back != bytes {
+        return Err(ExecError(format!(
+            "wrote {bytes:02x?} at {addr:#x}, read back {back:02x?}"
+        )));
+    }
+    Ok(())
+}
+
+/// Kill a debuggee if it still runs. A debugger's own teardown can release
+/// a running debuggee without killing it; a timed-out mutant would then loop
+/// on with no parent.
+pub(crate) fn kill_debuggee(pid: Option<u32>) {
+    let pid = pid
+        .and_then(|p| i32::try_from(p).ok())
+        .and_then(rustix::process::Pid::from_raw);
+    if let Some(pid) = pid {
+        let _ = rustix::process::kill_process(pid, rustix::process::Signal::KILL);
+    }
+}
+
+/// Starts a fresh session for each run.
+pub trait Launcher {
+    type Session: NativeSession;
+    fn start(&self) -> Result<Self::Session, ExecError>;
+    /// The calling convention of the programs it runs, a key of the ISA
+    /// table's `return_stub`.
+    fn abi(&self) -> &'static str;
+    /// The program it runs, whose DWARF line table gives instructions their
+    /// columns.
+    fn binary(&self) -> Option<&Path> {
+        None
+    }
+}
+
+/// The facts of a tier P run. A run past the budget is a timeout even if
+/// its end was already queued when the budget was checked (design section 7).
+/// How much longer than its budget a mutant may take on a machine busy with
+/// other work: the one-minute load average per core, once, as the run
+/// starts (before its own workers load the machine), at least 1 and at most
+/// 4. A starved mutant is then not mistaken for a hung one.
+pub fn load_factor() -> f64 {
+    static FACTOR: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *FACTOR.get_or_init(|| {
+        let load = std::fs::read_to_string("/proc/loadavg")
+            .ok()
+            .and_then(|s| s.split_whitespace().next()?.parse::<f64>().ok());
+        let cpus = std::thread::available_parallelism().map_or(1, usize::from);
+        load.map_or(1.0, |l| load_factor_of(l, cpus))
+    })
+}
+
+/// [`load_factor`] for a load average and a core count.
+pub fn load_factor_of(load: f64, cpus: usize) -> f64 {
+    (load / cpus.max(1) as f64).clamp(1.0, 4.0)
+}
+
+pub fn outcome_of(end: RunEnd, wall: Duration, budget: Budget) -> RawOutcome {
+    outcome_in(Tier::P, end, wall, budget)
+}
+
+/// [`outcome_of`] for a run under `tier`.
+pub fn outcome_in(tier: Tier, end: RunEnd, wall: Duration, budget: Budget) -> RawOutcome {
+    if wall > budget.timeout {
+        return RawOutcome::TimedOut { tier, wall };
+    }
+    match end {
+        RunEnd::Exited(code) => RawOutcome::Exited { code, tier, wall },
+        RunEnd::Crashed { kind, message } => RawOutcome::Crashed {
+            kind,
+            message,
+            tier,
+            wall,
+        },
+        RunEnd::TimedOut => RawOutcome::TimedOut { tier, wall },
+    }
+}
+
+/// Mutants applied as tier P patches, one fresh debuggee per run.
+pub struct TierPExecutor<L: Launcher> {
+    launcher: L,
+    isa: Isa,
+    /// The binary's line-table rows, read once.
+    rows: std::sync::OnceLock<Vec<crate::lines::Row>>,
+    /// The program's load offset: run-time address minus file address.
+    bias: std::sync::OnceLock<u64>,
+    /// The binary's result types, read once (when a value must be built).
+    layouts: std::sync::OnceLock<Option<crate::layouts::Layouts>>,
+    /// Where the plans' root lies below the build's root.
+    source_prefix: PathBuf,
+    /// The session kept between runs, restarted with a fresh process each
+    /// time (GDB and the program's symbols load once).
+    session: Option<L::Session>,
+    /// The tests the next runs are narrowed to; `None` runs the configured
+    /// ones.
+    selected: Option<Vec<String>>,
+    /// What the project's source says about its types' defaults.
+    default_facts: cherenkov_core::types::DefaultFacts,
+    /// The rustup toolchain the program is built with, for the support
+    /// library; `None` builds it with whatever `cargo` is.
+    toolchain: Option<String>,
+    /// The directory the plans' paths are relative to, where their source
+    /// can be read to check a replacement value's names; `None` checks none.
+    scope_root: Option<PathBuf>,
+    /// Which names of a value, at a byte of a source text, do not resolve.
+    unresolved: Option<UnresolvedNames>,
+}
+
+/// The syntax layer's check of a replacement value's names: the source, the
+/// byte of the mutated function, the value; the names that do not resolve.
+pub type UnresolvedNames = fn(&str, usize, &str) -> Vec<String>;
+
+impl<L: Launcher> TierPExecutor<L> {
+    /// Uses `isa`'s return stub for the launcher's calling convention; if
+    /// the table has none, body replacements are reported unpatchable.
+    pub fn new(launcher: L, isa: Isa) -> Self {
+        let isa = isa.with_abi(launcher.abi()).unwrap_or(isa);
+        TierPExecutor {
+            launcher,
+            isa,
+            rows: std::sync::OnceLock::new(),
+            bias: std::sync::OnceLock::new(),
+            layouts: std::sync::OnceLock::new(),
+            source_prefix: PathBuf::new(),
+            session: None,
+            selected: None,
+            default_facts: Default::default(),
+            toolchain: None,
+            scope_root: None,
+            unresolved: None,
+        }
+    }
+
+    fn timed_run(session: &mut L::Session, budget: Budget) -> Result<RawOutcome, ExecError> {
+        let start = Instant::now();
+        let end = session.run_to_exit(budget.timeout)?;
+        Ok(outcome_of(end, start.elapsed(), budget))
+    }
+
+    /// The plan's path as the compiler recorded it: relative to the build's
+    /// root (a Cargo workspace root, when the plan's root is a member below
+    /// it). Debuggers match it by trailing components, so it still finds code
+    /// in a binary whose debug info names another checkout of the same tree
+    /// (copied target directories, CI caches); an absolute path would not.
+    fn source(&self, plan: &MutantPlan) -> PathBuf {
+        self.source_prefix.join(&plan.file)
+    }
+
+    /// Plans' paths are relative to `prefix` below the build's root.
+    pub fn with_source_prefix(mut self, prefix: impl Into<PathBuf>) -> Self {
+        self.source_prefix = prefix.into();
+        self
+    }
+
+    /// The project's source facts about its types' defaults, for values
+    /// the binary has no code to make.
+    pub fn with_default_facts(mut self, facts: cherenkov_core::types::DefaultFacts) -> Self {
+        self.default_facts = facts;
+        self
+    }
+
+    /// Read the plans' sources below `root` (the directory their paths are
+    /// relative to), so a replacement value naming something the source
+    /// cannot resolve is decided unviable, without a debugger.
+    pub fn with_scope_check(mut self, root: impl Into<PathBuf>, check: UnresolvedNames) -> Self {
+        self.scope_root = Some(root.into());
+        self.unresolved = Some(check);
+        self
+    }
+
+    /// The unresolvable names of a body replacement's value, when the
+    /// mutated source would not compile with them.
+    fn unresolved_value(&self, plan: &MutantPlan) -> Option<String> {
+        let Action::ReturnDefault {
+            value_text: Some(v),
+            ..
+        } = &plan.action
+        else {
+            return None;
+        };
+        let source = std::fs::read_to_string(self.scope_root.as_ref()?.join(&plan.file)).ok()?;
+        let names = self.unresolved?(&source, plan.site.start.byte, v);
+        (!names.is_empty()).then(|| {
+            format!(
+                "{v} does not compile in the source: cannot find `{}` in this scope",
+                names.join("`, `")
+            )
+        })
+    }
+
+    /// Build the support library with this rustup toolchain, the
+    /// program's own.
+    pub fn with_toolchain(mut self, toolchain: Option<String>) -> Self {
+        self.toolchain = toolchain;
+        self
+    }
+}
+
+/// What tier B knows of the program under test.
+struct Program<'a> {
+    isa: &'a Isa,
+    /// Its result types, when its debug info could be read.
+    layouts: Option<&'a crate::layouts::Layouts>,
+    /// Its load offset (run-time minus file address).
+    bias: u64,
+    /// What the project's source says about its types' defaults.
+    facts: &'a cherenkov_core::types::DefaultFacts,
+    /// Its rustup toolchain, which builds the support library.
+    toolchain: Option<&'a str>,
+}
+
+/// The tier B effect of a plan, when its action is one the evaluator can
+/// carry out: an assignment, or a value to return.
+pub fn effect_of(plan: &MutantPlan) -> Option<Effect> {
+    action_effect(plan).or_else(|| crate::tierp::negatable(plan).then_some(Effect::FlipResult))
+}
+
+/// Whether any part of a built value is made by the program's own code.
+fn calls_program(built: &crate::layouts::Built) -> bool {
+    !built.calls.is_empty() || built.heap.iter().any(|(_, b)| calls_program(b))
+}
+
+/// A body replacement in an `async fn`.
+fn is_async_fn(plan: &MutantPlan) -> bool {
+    matches!(plan.action, Action::ReturnDefault { async_fn: true, .. })
+}
+
+/// The effect a plan's action asks for, apart from negating a call's result.
+fn action_effect(plan: &MutantPlan) -> Option<Effect> {
+    match &plan.action {
+        Action::EvalThenJump { target, value, .. } => Some(Effect::Assign {
+            target: target.clone(),
+            value: value.clone(),
+        }),
+        Action::EvalReturn { value_text } => Some(Effect::Return {
+            value: value_text.clone(),
+        }),
+        Action::ReturnDefault {
+            value_text: Some(v),
+            ..
+        } => Some(Effect::Return { value: v.clone() }),
+        // The exits are found in the function's code (tier_b).
+        Action::EvalBranch { cond_text, .. } => Some(Effect::Branch {
+            condition: cond_text.clone(),
+            if_true: 0,
+            if_false: 0,
+        }),
+        _ => None,
+    }
+}
+
+/// The stops and effect a mutant starts from: a negated boolean from a
+/// call is flipped where the call returns (so nothing is evaluated and how
+/// the value is used does not matter); any other is its action's effect.
+fn initial_effect(
+    plan: &MutantPlan,
+    code: &FunctionCode,
+    tier_p: &Unpatchable,
+) -> Result<(Vec<u64>, Effect), RawOutcome> {
+    let flip = crate::tierp::negatable(plan)
+        .then(|| crate::tierp::flip_after_call(plan, &code.file, &code.insns).ok())
+        .flatten();
+    match (flip, action_effect(plan)) {
+        (Some(at), _) => Ok((vec![at], Effect::FlipResult)),
+        (None, Some(e)) => Ok((Vec::new(), e)),
+        (None, None) => Err(RawOutcome::Unsupported {
+            reason: format!("a negated boolean not computed by a call (tier P: {tier_p})"),
+        }),
+    }
+}
+
+/// A body replaced by a value of a compound type: built from its layout,
+/// since GDB cannot return those; or, where that needs the program's code
+/// or heap blocks, made by the support library's compiled constructor (a
+/// std type, named by its public path). `None` for any other mutant, and
+/// for a pointer no constructor makes (GDB evaluates it).
+fn constructed_effect(
+    plan: &MutantPlan,
+    code: &FunctionCode,
+    program: &Program<'_>,
+    tier_p: &Unpatchable,
+) -> Result<Option<Effect>, RawOutcome> {
+    let (
+        Action::ReturnDefault {
+            value_text: Some(v),
+            ..
+        },
+        Some(layouts),
+        Some(entry),
+    ) = (
+        &plan.action,
+        program.layouts,
+        code.insns.iter().map(|i| i.pc).min(),
+    )
+    else {
+        return Ok(None);
+    };
+    let Some(layout) = layouts.result_of(entry.wrapping_sub(program.bias)) else {
+        return Ok(None);
+    };
+    if !matches!(
+        layout,
+        crate::layouts::Layout::Struct { .. }
+            | crate::layouts::Layout::Enum { .. }
+            | crate::layouts::Layout::Int { size: 16, .. }
+            | crate::layouts::Layout::Pointer { .. }
+    ) {
+        return Ok(None);
+    }
+    // A small value holding a float may come back in xmm registers under
+    // Rust's ABI, which this builder does not write.
+    if layout.has_float() && layout.size() <= 16 {
+        return Err(RawOutcome::Unsupported {
+            reason: format!(
+                "a {}-byte result holding a float (tier P: {tier_p})",
+                layout.size()
+            ),
+        });
+    }
+    let entry = entry.wrapping_sub(program.bias);
+    // An async fn's body runs in a future's poll: the mutated fn's future
+    // is ready, with the value, on its first poll.
+    let v = if is_async_fn(plan) && layouts.is_future_poll(entry) {
+        format!("Poll::Ready({v})")
+    } else {
+        v.clone()
+    };
+    compound_effect(layouts, layout, &v, entry, program, tier_p)
+}
+
+/// The effect that returns `v` of the compound `layout` from the function
+/// at `entry` (a file address): built bytes, or a compiled constructor.
+fn compound_effect(
+    layouts: &crate::layouts::Layouts,
+    layout: crate::layouts::Layout,
+    v: &str,
+    entry: u64,
+    program: &Program<'_>,
+    tier_p: &Unpatchable,
+) -> Result<Option<Effect>, RawOutcome> {
+    use crate::layouts::{Layout, Refusal};
+    let bias = program.bias;
+    let pointer = matches!(layout, Layout::Pointer { .. });
+    let built = if pointer {
+        Err(Refusal::Unsupported(format!(
+            "{v} for a pointer needs the program's code"
+        )))
+    } else {
+        crate::layouts::build_value_with(&layout, v, program.facts)
+    };
+    let needs_code = match &built {
+        Ok(b) => !b.heap.is_empty() || !b.calls.is_empty(),
+        Err(Refusal::Unsupported(_)) => true,
+        Err(Refusal::Unviable(_)) => false,
+    };
+    let named = needs_code
+        .then(|| layouts.result_type_name(entry))
+        .flatten()
+        .map(|n| crate::support_lib::request_in(&n, v, layouts, program.facts))
+        // Parts only the program's own code makes (a hand-written
+        // Default) stay its code's: a mirror has no code of its own.
+        .filter(|r| match (r, &built) {
+            (Ok(request), Ok(b)) => request.mirrors.is_empty() || !calls_program(b),
+            _ => true,
+        });
+    let unsupported = |reason: String| Err(RawOutcome::Unsupported { reason });
+    match (named, built) {
+        (Some(Ok(request)), built) => {
+            crate::support_lib::request(program.toolchain, &request);
+            Ok(Some(Effect::ReturnConstructed {
+                request,
+                in_registers: layout.in_registers(),
+                layout,
+                fallback: built.ok().map(|b| Box::new(b.rebased(bias))),
+            }))
+        }
+        // A pointer no constructor makes: as GDB evaluates it.
+        (_, Err(_)) if pointer => Ok(None),
+        (_, Ok(value)) => Ok(Some(Effect::ReturnBuilt {
+            in_registers: layout.in_registers(),
+            value: value.rebased(bias),
+        })),
+        (_, Err(Refusal::Unviable(reason))) => Err(RawOutcome::Unviable { reason }),
+        (Some(Err(why)), Err(e)) => {
+            unsupported(format!("{e}; no constructor: {why} (tier P: {tier_p})"))
+        }
+        (None, Err(why)) => unsupported(format!("{why} (tier P: {tier_p})")),
+    }
+}
+
+/// A swapped `&&` or `||`, in any context: steered at the program's own
+/// jumps on the left operand, so operands that call methods need no
+/// evaluation under the debugger. `None` when `effect` is not one it
+/// steers.
+fn logical_steering(
+    plan: &MutantPlan,
+    code: &FunctionCode,
+    effect: &Effect,
+) -> Option<Result<Vec<crate::tierp::Steer>, Unpatchable>> {
+    (crate::tierp::is_logical_swap(plan)
+        && matches!(
+            effect,
+            Effect::Branch { .. } | Effect::Assign { .. } | Effect::Return { .. }
+        ))
+    .then(|| crate::tierp::swap_logical(plan, &code.file, &code.insns))
+}
+
+/// The arithmetic operator a swap puts in, when rustc checks it.
+fn checked_operator(edit: &Edit) -> Option<&'static str> {
+    match edit {
+        Edit::ReplaceToken {
+            with: Token::Add, ..
+        } => Some("+"),
+        Edit::ReplaceToken {
+            with: Token::Sub, ..
+        } => Some("-"),
+        Edit::ReplaceToken {
+            with: Token::Mul, ..
+        } => Some("*"),
+        _ => None,
+    }
+}
+
+/// A swapped arithmetic operator that rustc checks: guarded, so an
+/// overflow panics as the mutated source would.
+fn overflow_guard(
+    plan: &MutantPlan,
+    code: &FunctionCode,
+    effect: &Effect,
+) -> Option<OverflowGuard> {
+    let (Some(op), [lhs, rhs]) = (checked_operator(&plan.edit), &plan.operand_texts[..]) else {
+        return None;
+    };
+    if !matches!(
+        effect,
+        Effect::Assign { .. } | Effect::Return { .. } | Effect::Branch { .. }
+    ) {
+        return None;
+    }
+    let panic = crate::tierp::overflow_panic(plan, &code.file, &code.insns)?;
+    Some(OverflowGuard {
+        lhs: lhs.clone(),
+        rhs: rhs.clone(),
+        op,
+        panic,
+    })
+}
+
+/// Where a mutant that no other stop serves stops. A body replacement
+/// stops at the function's true entry (so the frame is the function's own,
+/// not an inlined callee's); the others at the first instruction of their
+/// statement: positioned at or after its column, since a line can hold more
+/// than one statement (`if f { s = s + 2; }`). The line's first only without
+/// columns.
+fn statement_stop(action: &Action, stop_at: Pos, insns: &[Insn]) -> Option<u64> {
+    let at = (stop_at.line, stop_at.col);
+    let on_line = || insns.iter().filter(|i| i.line == at.0);
+    match action {
+        Action::ReturnDefault { .. } => insns.iter().map(|i| i.pc).min(),
+        _ if on_line().any(|i| i.column != 0) => on_line()
+            .filter(|i| i.column != 0 && (i.line, i.column) >= at)
+            .map(|i| i.pc)
+            .min(),
+        _ => on_line().map(|i| i.pc).min(),
+    }
+}
+
+impl<L: Launcher> TierPExecutor<L> {
+    /// Give each instruction the column of the line-table row it falls in.
+    /// Rows hold file addresses; a position-independent program runs at a
+    /// load offset, found by aligning the function's instructions with rows
+    /// of the same lines. Without a readable binary or a consistent offset
+    /// the columns stay 0 (whole lines).
+    fn with_columns(&self, mut code: FunctionCode) -> FunctionCode {
+        let rows = self.rows.get_or_init(|| {
+            self.launcher
+                .binary()
+                .and_then(|b| crate::lines::rows(b).ok())
+                .unwrap_or_default()
+        });
+        let row_at = |addr: u64| {
+            let at = rows.partition_point(|r| r.addr <= addr);
+            at.checked_sub(1).map(|k| &rows[k])
+        };
+        let Some(first) = code.insns.iter().min_by_key(|i| i.pc) else {
+            return code;
+        };
+        // Rows of the function's own file: inlined code from other files has
+        // rows of its own, under lines that are not GDB's for that address.
+        let tail = |path: &str| {
+            let mut parts = path.rsplit('/');
+            (
+                parts.next().unwrap_or("").to_string(),
+                parts.next().unwrap_or("").to_string(),
+            )
+        };
+        let own = tail(&code.file);
+        let ours = |r: &crate::lines::Row| tail(&r.file) == own;
+        let agrees = |bias: u64| {
+            let (mut yes, mut all) = (0usize, 0usize);
+            for i in &code.insns {
+                if let Some(r) = row_at(i.pc.wrapping_sub(bias)).filter(|r| ours(r)) {
+                    all += 1;
+                    // Line 0 rows are compiler-generated code with no source
+                    // position, which GDB reports under the line before.
+                    if r.line == i.line || r.line == 0 {
+                        yes += 1;
+                    }
+                }
+            }
+            (yes, all)
+        };
+        // One load offset for the whole program: found once, by the first
+        // instruction's rows at the same address within a page.
+        let bias = match self.bias.get() {
+            Some(&b) => b,
+            None => {
+                let best = rows
+                    .iter()
+                    .filter(|r| {
+                        r.line == first.line && r.addr & 0xfff == first.pc & 0xfff && ours(r)
+                    })
+                    .map(|r| first.pc.wrapping_sub(r.addr))
+                    .max_by_key(|&b| agrees(b).0);
+                let Some(b) = best.filter(|&b| {
+                    let (yes, all) = agrees(b);
+                    all >= 3 && yes * 10 >= all * 9
+                }) else {
+                    return code;
+                };
+                let _ = self.bias.set(b);
+                b
+            }
+        };
+        for insn in &mut code.insns {
+            if let Some(row) = row_at(insn.pc.wrapping_sub(bias)).filter(|r| ours(r))
+                && row.line == insn.line
+            {
+                insn.column = row.column;
+            }
+        }
+        code
+    }
+
+    /// Tier B: stop where the plan says, apply its effect through the
+    /// debugger's evaluator, run on. `tier_p` is why no patch exists.
+    /// Tier B's plan for a mutant: where it stops, what it does there, and
+    /// why its `&&`/`||` swap was not steered (if so); or the outcome when
+    /// it cannot apply. `tier_p` is why no patch exists.
+    fn tier_b_plan(
+        plan: &MutantPlan,
+        code: &FunctionCode,
+        program: &Program<'_>,
+        tier_p: &Unpatchable,
+    ) -> Result<TierBPlan, RawOutcome> {
+        let (mut stops, mut effect) = initial_effect(plan, code, tier_p)?;
+        if let Some(constructed) = constructed_effect(plan, code, program, tier_p)? {
+            effect = constructed;
+        }
+        // Why a swap was not steered, when it is one: the evaluator's
+        // fallback hides it.
+        let mut unsteered = None;
+        match logical_steering(plan, code, &effect) {
+            Some(Ok(steers)) if !steers.is_empty() => {
+                stops = steers.iter().map(|s| s.pc).collect();
+                effect = Effect::Steer { steers };
+            }
+            Some(Err(e)) => unsteered = Some(e),
+            _ => {}
+        }
+        if let Some(guard) = overflow_guard(plan, code, &effect) {
+            effect = Effect::Guarded {
+                guard,
+                inner: Box::new(effect),
+            };
+        }
+        if let Effect::Branch {
+            if_true, if_false, ..
+        } = &mut effect
+        {
+            match crate::tierp::branch_exits(plan, &code.file, &code.insns, program.isa) {
+                Ok(exits) => {
+                    *if_true = exits.if_true;
+                    *if_false = exits.if_false;
+                    stops = vec![exits.stop];
+                }
+                Err(e) => {
+                    return Err(RawOutcome::Unsupported {
+                        reason: format!("{e} (tier P: {tier_p})"),
+                    });
+                }
+            }
+        }
+        if stops.is_empty() {
+            stops.extend(statement_stop(&plan.action, plan.stop_at, &code.insns));
+        }
+        if stops.is_empty() {
+            return Err(RawOutcome::Unsupported {
+                reason: format!("no code for line {} (tier P: {tier_p})", plan.stop_at.line),
+            });
+        }
+        Ok((stops, effect, unsteered))
+    }
+
+    /// An effect with its constructors resolved to libraries.
+    fn resolved(
+        effect: Effect,
+        program: &Program<'_>,
+        tier_p: &Unpatchable,
+    ) -> Result<Effect, RawOutcome> {
+        let Effect::ReturnConstructed {
+            request,
+            layout,
+            in_registers,
+            fallback,
+        } = &effect
+        else {
+            return Ok(effect);
+        };
+        match crate::support_lib::resolve(program.toolchain, request, layout) {
+            Ok((library, symbol)) => Ok(Effect::ReturnBuilt {
+                value: crate::layouts::Built {
+                    bytes: vec![0; layout.size() as usize],
+                    constructs: vec![crate::layouts::Construct {
+                        at: 0,
+                        size: layout.size(),
+                        library,
+                        symbol,
+                    }],
+                    ..Default::default()
+                },
+                in_registers: *in_registers,
+            }),
+            Err(crate::layouts::Refusal::Unviable(reason)) => Err(RawOutcome::Unviable { reason }),
+            Err(_) if fallback.is_some() => Ok(Effect::ReturnBuilt {
+                value: fallback.as_deref().cloned().unwrap_or_default(),
+                in_registers: *in_registers,
+            }),
+            Err(why) => Err(RawOutcome::Unsupported {
+                reason: format!("{why} (tier P: {tier_p})"),
+            }),
+        }
+    }
+
+    /// The stops and the effect of tier B over every copy of the function:
+    /// one effect where the copies agree, else each copy's own at its stops.
+    fn tier_b_all(
+        plan: &MutantPlan,
+        copies: &[FunctionCode],
+        program: &Program<'_>,
+        tier_p: &Unpatchable,
+    ) -> Result<TierBPlan, RawOutcome> {
+        let mut stops = Vec::new();
+        let mut effects: Vec<(Vec<u64>, Effect)> = Vec::new();
+        let mut unsteered = None;
+        for code in copies {
+            let (s, e, u) = Self::tier_b_plan(plan, code, program, tier_p)?;
+            let e = Self::resolved(e, program, tier_p)?;
+            stops.extend(s.iter().copied());
+            unsteered = unsteered.or(u);
+            match effects.iter_mut().find(|(_, known)| *known == e) {
+                Some((at, _)) => at.extend(s),
+                None => effects.push((s, e)),
+            }
+        }
+        let effect = match effects.len() {
+            1 => effects.remove(0).1,
+            _ => Effect::PerStop(effects),
+        };
+        Ok((stops, effect, unsteered))
+    }
+
+    fn tier_b(
+        session: &mut L::Session,
+        plan: &MutantPlan,
+        copies: &[FunctionCode],
+        program: &Program<'_>,
+        budget: Budget,
+        tier_p: Unpatchable,
+    ) -> Result<(RawOutcome, String), ExecError> {
+        let unsupported = |reason: String| Ok((RawOutcome::Unsupported { reason }, String::new()));
+        let (stops, effect, unsteered) = match Self::tier_b_all(plan, copies, program, &tier_p) {
+            Ok(p) => p,
+            Err(outcome) => return Ok((outcome, String::new())),
+        };
+        let budget = budget.evaluating();
+        let start = Instant::now();
+        let Some(run) = session.run_evaluating(&stops, &effect, budget.timeout)? else {
+            return unsupported(format!("no tier B evaluator here (tier P: {tier_p})"));
+        };
+        let output = session.take_output();
+        if let Some(why) = run.refused {
+            let unsteered = unsteered
+                .map(|e| format!(" (not steered: {e})"))
+                .unwrap_or_default();
+            return unsupported(format!(
+                "the evaluator cannot apply the mutant: {why}{unsteered} (tier P: {tier_p})"
+            ));
+        }
+        if !run.reached && matches!(run.end, RunEnd::Exited(_)) {
+            let reason = "the selected tests never execute the mutated code".to_string();
+            return Ok((RawOutcome::NotReached { reason }, output));
+        }
+        Ok((
+            outcome_in(Tier::B, run.end, start.elapsed(), budget),
+            output,
+        ))
+    }
+
+    /// As [`MutantExecutor::run`], also returning the program's standard
+    /// output (empty when the debugger does not forward it).
+    pub fn run_capturing(
+        &mut self,
+        plan: &MutantPlan,
+        budget: Budget,
+    ) -> Result<(RawOutcome, String), ExecError> {
+        if let Some(reason) = self.unresolved_value(plan) {
+            return Ok((RawOutcome::Unviable { reason }, String::new()));
+        }
+        let budget = Budget {
+            timeout: budget.timeout.mul_f64(load_factor()),
+        };
+        // Mutants neither tier can run are rejected before a debugger starts.
+        if let Err(e @ Unpatchable::UnsupportedEdit(_)) = derive(plan, "", &[], &self.isa)
+            && effect_of(plan).is_none()
+            && !crate::tierp::negatable(plan)
+        {
+            return Ok((
+                RawOutcome::Unsupported {
+                    reason: e.to_string(),
+                },
+                String::new(),
+            ));
+        }
+        let mut session = self.acquire()?;
+        let result = self.run_in(&mut session, plan, budget);
+        // Kept for the next run, unless the run failed (its state is unknown).
+        if result.is_ok() {
+            self.session = Some(session);
+        }
+        result
+    }
+
+    /// A session ready for a run: the kept one with a fresh process, or a new
+    /// one when there is none or it cannot restart.
+    /// Every copy of the plan's function, with columns: of the functions
+    /// with code on its line, those with the most code inside the mutated
+    /// expression (one per instance of a generic).
+    fn locate_all(
+        &self,
+        session: &mut L::Session,
+        plan: &MutantPlan,
+    ) -> Result<Vec<FunctionCode>, ExecError> {
+        // An async fn's signature has only the code that makes its future;
+        // its body's first line has the poll's.
+        let line = if is_async_fn(plan) {
+            plan.site.start.line
+        } else {
+            plan.stop_at.line
+        };
+        let mut candidates: Vec<FunctionCode> = session
+            .function_codes(&self.source(plan), line, plan.site.end.line)?
+            .into_iter()
+            .map(|c| self.with_columns(c))
+            .collect();
+        // The body of an async fn runs in a future's poll, not in a closure
+        // that shares its first line.
+        if is_async_fn(plan) && candidates.iter().any(|c| self.future_poll(c)) {
+            candidates.retain(|c| self.future_poll(c));
+        }
+        let mut span = plan.site;
+        for o in &plan.operands {
+            span.start = span.start.min(o.start);
+            span.end = span.end.max(o.end);
+        }
+        let insns: Vec<&Vec<Insn>> = candidates.iter().map(|c| &c.insns).collect();
+        let keep = crate::tierp::at_site_all(&insns, &span);
+        let mut k = 0;
+        candidates.retain(|_| {
+            k += 1;
+            keep.contains(&(k - 1))
+        });
+        Ok(candidates)
+    }
+
+    /// Whether the function is a future's poll.
+    fn future_poll(&self, code: &FunctionCode) -> bool {
+        let program = self.program();
+        let entry = code.insns.iter().map(|i| i.pc).min();
+        matches!(
+            (program.layouts, entry),
+            (Some(l), Some(e)) if l.is_future_poll(e.wrapping_sub(program.bias))
+        )
+    }
+
+    /// Whether the function returns an integer wider than one register.
+    fn wide_result(&self, code: &FunctionCode) -> bool {
+        let layouts = self
+            .layouts
+            .get_or_init(|| {
+                self.launcher
+                    .binary()
+                    .and_then(|b| crate::layouts::Layouts::read(b).ok())
+            })
+            .as_ref();
+        let bias = self.bias.get().copied().unwrap_or(0);
+        let entry = code.insns.iter().map(|i| i.pc).min();
+        matches!(
+            (layouts, entry),
+            (Some(l), Some(e)) if matches!(
+                l.result_of(e.wrapping_sub(bias)),
+                Some(crate::layouts::Layout::Int { size, .. }) if size > 8
+            )
+        )
+    }
+
+    fn acquire(&mut self) -> Result<L::Session, ExecError> {
+        if let Some(mut s) = self.session.take()
+            && s.select_tests(self.selected.as_deref()).is_ok()
+            && s.restart().unwrap_or(false)
+        {
+            return Ok(s);
+        }
+        // Without a line table nothing can be located, and every mutant
+        // would quietly count as never called or unreached.
+        if let Some(binary) = self.launcher.binary()
+            && !crate::lines::has_line_table(binary)
+        {
+            return Err(ExecError(format!(
+                "{} has no debug line information: build its tests with debug info and \
+                     without strip (for a project whose profile turns them off: \
+                     CARGO_PROFILE_TEST_DEBUG=2 CARGO_PROFILE_TEST_STRIP=false)",
+                binary.display()
+            )));
+        }
+        let mut s = self.launcher.start()?;
+        // A fresh launch runs the configured tests: narrow it, then start
+        // over with the narrowed ones.
+        if self.selected.is_some() && s.select_tests(self.selected.as_deref())? && !s.restart()? {
+            return Err(ExecError(
+                "the debugger cannot restart with selected tests".into(),
+            ));
+        }
+        Ok(s)
+    }
+
+    /// What tier B needs of the program: its ISA, layouts and load offset.
+    fn program(&self) -> Program<'_> {
+        let layouts = self
+            .layouts
+            .get_or_init(|| {
+                self.launcher
+                    .binary()
+                    .and_then(|b| crate::layouts::Layouts::read(b).ok())
+            })
+            .as_ref();
+        Program {
+            isa: &self.isa,
+            layouts,
+            bias: self.bias.get().copied().unwrap_or(0),
+            facts: &self.default_facts,
+            toolchain: self.toolchain.as_deref(),
+        }
+    }
+
+    /// The addresses whose execution means the mutated code ran: a tier P
+    /// patch's regions, or tier B's stops (the ones a run of the mutant
+    /// watches). None when the plan cannot apply here.
+    fn reach_of(&self, plan: &MutantPlan, copies: &[FunctionCode]) -> Option<Vec<u64>> {
+        match self.derive_all(plan, copies) {
+            Derived::Patch(p) => Some(p.regions.iter().map(|r| r.addr).collect()),
+            Derived::TierB(e) => Self::tier_b_all(plan, copies, &self.program(), &e)
+                .ok()
+                .map(|(stops, _, _)| stops),
+            Derived::Refused(_) => None,
+        }
+    }
+
+    /// The tier P patch of `plan` over every copy of its function (the
+    /// first is the one tier B would stop in), or why there is none.
+    fn derive_all(&self, plan: &MutantPlan, copies: &[FunctionCode]) -> Derived {
+        let Some((code, rest)) = copies.split_first() else {
+            return Derived::Refused("no code".into());
+        };
+        // The other copies of a generic function: the mutant changes each.
+        // Tier P patches them all; tier B applies to one stop's frame, so a
+        // mutant it would need is refused rather than applied to one copy.
+        let mut others = Vec::new();
+        for copy in rest {
+            match derive(plan, &copy.file, &copy.insns, &self.isa) {
+                Ok(p) => others.extend(p.regions),
+                Err(e) if effect_of(plan).is_some() => return Derived::TierB(e),
+                Err(e) => {
+                    return Derived::Refused(format!(
+                        "a generic function's copies cannot all be patched: {e}"
+                    ));
+                }
+            }
+        }
+        let derived = match derive(plan, &code.file, &code.insns, &self.isa) {
+            // The return stub clears only the first result register: a
+            // wider integer result (i128, u128) would keep its upper half.
+            Ok(_)
+                if matches!(plan.action, Action::ReturnDefault { .. })
+                    && self.wide_result(code) =>
+            {
+                Err(Unpatchable::UnsupportedEdit(
+                    "a return stub for a result wider than a register".into(),
+                ))
+            }
+            // An async fn's body returns `Poll<T>`, which zeroed registers do
+            // not make from a zero `T`: tier B builds `Poll::Ready(value)`.
+            Ok(_) if is_async_fn(plan) && self.future_poll(code) => Err(
+                Unpatchable::UnsupportedEdit("a return stub for an async fn's poll".into()),
+            ),
+            d => d,
+        };
+        match derived {
+            Ok(mut p) => {
+                p.regions.extend(others);
+                Derived::Patch(p)
+            }
+            Err(e) if !rest.is_empty() && effect_of(plan).is_none() => Derived::Refused(format!(
+                "a generic function's copies cannot all be patched: {e}"
+            )),
+            Err(e) if effect_of(plan).is_some() => Derived::TierB(e),
+            Err(e) => Derived::Refused(e.to_string()),
+        }
+    }
+
+    fn run_in(
+        &self,
+        session: &mut L::Session,
+        plan: &MutantPlan,
+        budget: Budget,
+    ) -> Result<(RawOutcome, String), ExecError> {
+        let copies = match self.locate_all(session, plan) {
+            Ok(c) if !c.is_empty() => c,
+            Ok(_) => {
+                let reason = format!(
+                    "{}:{} is not in this program",
+                    plan.file.display(),
+                    plan.stop_at.line
+                );
+                return Ok((RawOutcome::NotReached { reason }, String::new()));
+            }
+            Err(e) => {
+                return Ok((
+                    RawOutcome::Unsupported {
+                        reason: e.to_string(),
+                    },
+                    String::new(),
+                ));
+            }
+        };
+        let patch = match self.derive_all(plan, &copies) {
+            Derived::Patch(p) => p,
+            Derived::Refused(reason) => {
+                return Ok((RawOutcome::Unsupported { reason }, String::new()));
+            }
+            Derived::TierB(e) => {
+                return Self::tier_b(session, plan, &copies, &self.program(), budget, e);
+            }
+        };
+        session.arm(&patch)?;
+        // After arming, so a breakpoint saves the patched bytes as its own.
+        let reach: Vec<u64> = patch.regions.iter().map(|r| r.addr).collect();
+        let start = Instant::now();
+        let (end, reached) = session.run_reaching(&reach, budget.timeout)?;
+        let output = session.take_output();
+        if !reached && matches!(end, RunEnd::Exited(_)) {
+            let reason = "the selected tests never execute the mutated code".to_string();
+            return Ok((RawOutcome::NotReached { reason }, output));
+        }
+        Ok((outcome_of(end, start.elapsed(), budget), output))
+    }
+
+    /// As [`MutantExecutor::baseline`], also returning the program's output.
+    pub fn baseline_capturing(
+        &mut self,
+        budget: Budget,
+    ) -> Result<(RawOutcome, String), ExecError> {
+        let mut session = self.acquire()?;
+        let raw = Self::timed_run(&mut session, budget)?;
+        let output = session.take_output();
+        self.session = Some(session);
+        Ok((raw, output))
+    }
+}
+
+impl<L: Launcher> MutantExecutor for TierPExecutor<L> {
+    fn run(&mut self, plan: &MutantPlan, budget: Budget) -> Result<RawOutcome, ExecError> {
+        self.run_capturing(plan, budget).map(|(raw, _)| raw)
+    }
+
+    fn baseline(&mut self, budget: Budget) -> Result<RawOutcome, ExecError> {
+        self.baseline_capturing(budget).map(|(raw, _)| raw)
+    }
+
+    fn run_with_output(
+        &mut self,
+        plan: &MutantPlan,
+        budget: Budget,
+    ) -> Result<(RawOutcome, String), ExecError> {
+        self.run_capturing(plan, budget)
+    }
+
+    fn baseline_with_output(&mut self, budget: Budget) -> Result<(RawOutcome, String), ExecError> {
+        self.baseline_capturing(budget)
+    }
+
+    fn driven(
+        &mut self,
+        plans: &[MutantPlan],
+        budget: Budget,
+    ) -> Result<Option<Vec<Driven>>, ExecError> {
+        self.recording(plans, budget).map(|r| r.driven)
+    }
+
+    fn recording(&mut self, plans: &[MutantPlan], budget: Budget) -> Result<Recording, ExecError> {
+        let every_test = |tests: Option<usize>, reason: String| Recording {
+            tests,
+            selection: Selection::EveryTest { reason },
+            driven: None,
+        };
+        // The binary's tests by the runner's names, to tell them on the stack.
+        let Some(tests) = self.launcher.binary().and_then(crate::libtest::list_tests) else {
+            return Ok(every_test(
+                None,
+                "the test program does not list its tests".to_string(),
+            ));
+        };
+        let count = Some(tests.len());
+        self.selected = None;
+        let mut session = self.acquire()?;
+        // Each plan's function by its entry: the first instruction of the
+        // outermost function block holding the plan's line.
+        let mut entries = Vec::with_capacity(plans.len());
+        // A plan whose function could not be located (an error, not "not
+        // in this program") is run with every test rather than dropped.
+        let mut unlocated = Vec::with_capacity(plans.len());
+        // Each tier P plan's patched addresses, the ones a run watches to
+        // tell whether the mutated code executed: a plan no test executes
+        // needs no run.
+        let mut reach = Vec::with_capacity(plans.len());
+        for plan in plans {
+            // Every copy's entry: a generic's instances are called by
+            // different tests.
+            let copies = self.locate_all(&mut session, plan);
+            unlocated.push(copies.is_err());
+            let copies = copies.unwrap_or_default();
+            let starts: Vec<u64> = copies
+                .iter()
+                .filter_map(|c| c.insns.iter().map(|i| i.pc).min())
+                .collect();
+            entries.push(starts);
+            reach.push(self.reach_of(plan, &copies));
+        }
+        let mut watch: Vec<u64> = entries.iter().flatten().copied().collect();
+        watch.sort_unstable();
+        watch.dedup();
+        let mut watch_reach: Vec<u64> = reach.iter().flatten().flatten().copied().collect();
+        watch_reach.sort_unstable();
+        watch_reach.dedup();
+        let recorded = session.run_recording(
+            &watch,
+            &watch_reach,
+            &tests,
+            recording_timeout(budget.timeout),
+        )?;
+        self.session = Some(session);
+        let Some((end, calls, hit)) = recorded else {
+            return Ok(every_test(
+                count,
+                "the recording run recorded nothing".to_string(),
+            ));
+        };
+        let hit: std::collections::HashSet<u64> = hit.into_iter().collect();
+        let reached: Vec<Option<bool>> = reach
+            .iter()
+            .map(|r| {
+                r.as_ref()
+                    .map(|addrs| addrs.iter().any(|a| hit.contains(a)))
+            })
+            .collect();
+        if end != RunEnd::Exited(0) {
+            let output = self
+                .session
+                .as_mut()
+                .map(|s| s.take_output())
+                .unwrap_or_default();
+            let failing: Vec<String> = crate::libtest::failures(&output).into_keys().collect();
+            // A test that fails only under the recording's breakpoints (a
+            // timing-sensitive one, slowed down) may have stopped before
+            // calling what it would have; the others ran whole, each on its
+            // own thread. libtest's failure exit names them: the failed
+            // ones run every mutant. A crash or a timeout leaves the whole
+            // record in doubt: every test runs every mutant.
+            if end == RunEnd::Exited(101) && !failing.is_empty() {
+                let calls: std::collections::HashMap<u64, Driven> = calls.into_iter().collect();
+                return Ok(Recording {
+                    tests: count,
+                    driven: Some(selections(&entries, &unlocated, &reached, &calls, &failing)),
+                    selection: Selection::RecordedWithFailures {
+                        failed_tests: failing,
+                    },
+                });
+            }
+            let failed = if failing.is_empty() {
+                String::new()
+            } else {
+                format!(": {}", failing.join(", "))
+            };
+            return Ok(every_test(
+                count,
+                format!("the tests did not pass while recording what they call ({end:?}{failed})"),
+            ));
+        }
+        let calls: std::collections::HashMap<u64, Driven> = calls.into_iter().collect();
+        Ok(Recording {
+            tests: count,
+            selection: Selection::Recorded,
+            driven: Some(selections(&entries, &unlocated, &reached, &calls, &[])),
+        })
+    }
+
+    fn select_tests(&mut self, tests: Option<&[String]>) {
+        self.selected = tests.map(<[String]>::to_vec);
+    }
+
+    fn describe(&self) -> Option<String> {
+        self.launcher.binary().map(|b| b.display().to_string())
+    }
+
+    fn close_session(&mut self) {
+        // Dropping the session ends GDB and the program under it.
+        self.session = None;
+    }
+}
+
+/// Tier B's stops, its effect at them, and why a logical swap was not
+/// steered.
+type TierBPlan = (Vec<u64>, Effect, Option<Unpatchable>);
+
+/// How a plan applies to the program's code.
+enum Derived {
+    /// A tier P patch.
+    Patch(Patch),
+    /// Unsupported, and why.
+    Refused(String),
+    /// Through the debugger at a stop: tier P cannot, for this reason.
+    TierB(Unpatchable),
+}
+
+/// How long the recording run may take, given a mutant run's timeout.
+pub(crate) fn recording_timeout(run: Duration) -> Duration {
+    run * RECORDING_SLOWDOWN
+}
+
+/// How many mutant runs' time the one recording run may take.
+const RECORDING_SLOWDOWN: u32 = 20;
+
+/// Which tests drive each plan, from the recorded calls: by each plan's
+/// function entries (one per generic copy), or `unlocated` when its
+/// function could not be located. `failed` are tests that failed while
+/// recording: they may have stopped before calling what they would have.
+pub(crate) fn selections(
+    entries: &[Vec<u64>],
+    unlocated: &[bool],
+    reached: &[Option<bool>],
+    calls: &std::collections::HashMap<u64, Driven>,
+    failed: &[String],
+) -> Vec<Driven> {
+    entries
+        .iter()
+        .zip(unlocated)
+        .zip(reached)
+        .map(|((starts, &unlocated), &reached)| {
+            if unlocated {
+                return Driven::Every;
+            }
+            // The copies' callers together.
+            let mut tests = failed.to_vec();
+            // Called, but no test executed the mutated code: only a test
+            // that failed while recording might have.
+            let starts: &[u64] = if reached == Some(false) { &[] } else { starts };
+            for pc in starts {
+                match calls.get(pc) {
+                    Some(Driven::Every) => return Driven::Every,
+                    Some(Driven::Tests(t)) => tests.extend(t.iter().cloned()),
+                    _ => {}
+                }
+            }
+            tests.sort();
+            tests.dedup();
+            if tests.is_empty() {
+                Driven::NotCalled
+            } else {
+                Driven::Tests(tests)
+            }
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    fn names(n: &[&str]) -> Vec<String> {
+        n.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn insn(pc: u64, line: u32, column: u32) -> Insn {
+        Insn {
+            pc,
+            bytes: vec![0x90],
+            file: "a.rs".into(),
+            line,
+            column,
+        }
+    }
+
+    fn pos(line: u32, col: u32) -> Pos {
+        Pos { byte: 0, line, col }
+    }
+
+    #[test]
+    fn test_a_statement_stops_at_its_columns_first_instruction_on_the_line() {
+        let insns = [
+            insn(30, 4, 5),
+            insn(10, 4, 9),
+            insn(20, 4, 17),
+            insn(5, 3, 1),
+        ];
+        let nothing = Action::JumpOnly {
+            resume: cherenkov_core::plan::Target::AfterStatement(cherenkov_core::syntax::Span {
+                start: pos(1, 1),
+                end: pos(1, 2),
+            }),
+        };
+        // At or after the statement's column; an earlier one on the line is another statement's.
+        assert_eq!(statement_stop(&nothing, pos(4, 9), &insns), Some(10));
+        assert_eq!(statement_stop(&nothing, pos(4, 10), &insns), Some(20));
+        assert_eq!(statement_stop(&nothing, pos(4, 18), &insns), None);
+    }
+
+    #[test]
+    fn test_a_line_without_columns_stops_at_its_first_instruction() {
+        let insns = [insn(30, 4, 0), insn(10, 4, 0), insn(5, 3, 0)];
+        let nothing = Action::JumpOnly {
+            resume: cherenkov_core::plan::Target::AfterStatement(cherenkov_core::syntax::Span {
+                start: pos(1, 1),
+                end: pos(1, 2),
+            }),
+        };
+        assert_eq!(statement_stop(&nothing, pos(4, 1), &insns), Some(10));
+        assert_eq!(statement_stop(&nothing, pos(9, 1), &insns), None);
+    }
+
+    #[test]
+    fn test_a_body_replacement_stops_at_the_functions_lowest_instruction() {
+        let insns = [insn(30, 4, 5), insn(10, 4, 9), insn(5, 3, 1)];
+        let body = Action::ReturnDefault {
+            value_text: None,
+            zero_bits: false,
+            async_fn: false,
+        };
+        assert_eq!(statement_stop(&body, pos(4, 1), &insns), Some(5));
+    }
+
+    #[test]
+    fn test_only_add_sub_and_mul_swaps_are_overflow_guarded() {
+        let swap = |with| Edit::ReplaceToken {
+            capture: cherenkov_core::concept::Capture::Op,
+            from: Token::Div,
+            with,
+        };
+        assert_eq!(checked_operator(&swap(Token::Add)), Some("+"));
+        assert_eq!(checked_operator(&swap(Token::Sub)), Some("-"));
+        assert_eq!(checked_operator(&swap(Token::Mul)), Some("*"));
+        assert_eq!(checked_operator(&swap(Token::Div)), None);
+        assert_eq!(checked_operator(&Edit::DeleteStatement), None);
+    }
+
+    #[test]
+    fn test_the_budget_grows_with_the_load_per_core_only_above_one() {
+        assert_eq!(load_factor_of(3.0, 20), 1.0);
+        assert_eq!(load_factor_of(40.0, 20), 2.0);
+        assert_eq!(load_factor_of(400.0, 20), 4.0);
+    }
+
+    #[test]
+    fn test_selections_of_a_mutant_no_test_executes_are_no_test() {
+        // Its function is called, but no test reaches the mutated code (a
+        // branch never taken): running it would only show it unreached.
+        let calls = HashMap::from([(1, Driven::Tests(names(&["a"])))]);
+        let got = selections(
+            &[vec![1], vec![1], vec![1]],
+            &[false; 3],
+            &[Some(false), Some(true), None],
+            &calls,
+            &[],
+        );
+        assert_eq!(
+            got,
+            vec![
+                Driven::NotCalled,
+                Driven::Tests(names(&["a"])),
+                Driven::Tests(names(&["a"])),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_selections_of_an_unexecuted_mutant_keep_the_tests_that_failed_recording() {
+        // A test that failed may have stopped short of the mutated code.
+        let calls = HashMap::from([(1, Driven::Tests(names(&["a"])))]);
+        let failed = names(&["slow"]);
+        let got = selections(&[vec![1]], &[false], &[Some(false)], &calls, &failed);
+        assert_eq!(got, vec![Driven::Tests(names(&["slow"]))]);
+    }
+
+    #[test]
+    fn test_recording_gets_far_longer_than_a_mutant_run() {
+        // The recording walks the stack in Python at each test's first call
+        // of each function; running out of time means every test runs every
+        // mutant, so the one recording gets a much larger allowance.
+        let run = Duration::from_secs(15);
+        assert!(recording_timeout(run) >= run * 20);
+    }
+
+    #[test]
+    fn test_selections_join_the_callers_of_every_copy() {
+        let calls = HashMap::from([
+            (1, Driven::Tests(names(&["b"]))),
+            (2, Driven::Tests(names(&["a", "b"]))),
+        ]);
+        let got = selections(
+            &[vec![1, 2], vec![3]],
+            &[false, false],
+            &[None, None],
+            &calls,
+            &[],
+        );
+        assert_eq!(
+            got,
+            vec![Driven::Tests(names(&["a", "b"])), Driven::NotCalled]
+        );
+    }
+
+    #[test]
+    fn test_selections_of_an_unlocated_or_everyones_function_are_every_test() {
+        let calls = HashMap::from([(1, Driven::Every)]);
+        let got = selections(
+            &[vec![1], vec![]],
+            &[false, true],
+            &[None, None],
+            &calls,
+            &[],
+        );
+        assert_eq!(got, vec![Driven::Every, Driven::Every]);
+    }
+
+    #[test]
+    fn test_selections_add_the_tests_that_failed_while_recording_to_every_plan() {
+        // A test that failed under the recording's breakpoints may have
+        // stopped before calling the function: it runs every mutant. The
+        // tests that passed were recorded whole (each on its own thread).
+        let calls = HashMap::from([(1, Driven::Tests(names(&["a"])))]);
+        let failed = names(&["slow"]);
+        let got = selections(
+            &[vec![1], vec![2]],
+            &[false, false],
+            &[None, None],
+            &calls,
+            &failed,
+        );
+        assert_eq!(
+            got,
+            vec![
+                Driven::Tests(names(&["a", "slow"])),
+                Driven::Tests(names(&["slow"])),
+            ]
+        );
+    }
+}

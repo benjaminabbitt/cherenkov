@@ -1,0 +1,101 @@
+# one row per mutant: cargo-mutants verdict, Cherenkov verdict (reason code when unsupported). No source text.
+file	line	column	function	cargo_mutants	cherenkov	reason_code
+(cherenkov-only) src/served.rs	73	20	react_outboxed	(no match)	unsupported	no-patch-rule
+(cherenkov-only) src/served.rs	73	20	react_outboxed	(no match)	unsupported	no-patch-rule
+(cherenkov-only) src/served.rs	89	21	react_outboxed	(no match)	unsupported	no-patch-rule
+(cherenkov-only) src/served.rs	89	21	react_outboxed	(no match)	unsupported	no-patch-rule
+(cherenkov-only) src/served.rs	146	24	relay_pending	(no match)	unsupported	no-patch-rule
+(cherenkov-only) src/served.rs	146	24	relay_pending	(no match)	unsupported	no-patch-rule
+(cherenkov-only) src/served.rs	272	47	missing_served	(no match)	unsupported	no-patch-rule
+(cherenkov-only) src/served.rs	418	20	translated	(no match)	unsupported	no-patch-rule
+(cherenkov-only) src/served.rs	418	20	translated	(no match)	unsupported	no-patch-rule
+crates/angzarr-embedded/src/bus.rs	80	9	dispatch	Unviable	unviable	no-default
+crates/angzarr-embedded/src/bus.rs	92	9	component	Unviable	unviable	no-default
+crates/angzarr-embedded/src/bus.rs	102	9	name	Timeout	timeout	
+crates/angzarr-embedded/src/bus.rs	102	9	name	Timeout	timeout	
+crates/angzarr-embedded/src/bus.rs	107	9	source	CaughtMutant	timeout	
+crates/angzarr-embedded/src/bus.rs	107	9	source	CaughtMutant	timeout	
+crates/angzarr-embedded/src/bus.rs	113	5	step_report	Unviable	unsupported	value-not-buildable
+crates/angzarr-embedded/src/bus.rs	181	9	pushed_by	Unviable	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	181	9	pushed_by	Unviable	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	181	9	pushed_by	Unviable	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	181	9	pushed_by	Unviable	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	188	9	retrying	Unviable	unsupported	value-not-buildable
+crates/angzarr-embedded/src/bus.rs	188	9	retrying	Unviable	unsupported	value-not-buildable
+crates/angzarr-embedded/src/bus.rs	188	9	retrying	Unviable	unsupported	value-not-buildable
+crates/angzarr-embedded/src/bus.rs	188	9	retrying	Unviable	unsupported	value-not-buildable
+crates/angzarr-embedded/src/bus.rs	196	9	after	Unviable	unsupported	value-name-unresolved
+crates/angzarr-embedded/src/bus.rs	196	9	after	Unviable	unsupported	value-name-unresolved
+crates/angzarr-embedded/src/bus.rs	196	9	after	Unviable	unsupported	value-name-unresolved
+crates/angzarr-embedded/src/bus.rs	196	9	after	Unviable	unsupported	value-name-unresolved
+crates/angzarr-embedded/src/bus.rs	239	9	over	Unviable	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	246	37	over	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	246	37	over	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	246	37	over	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	280	9	subscribe	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	301	9	admit	Unviable	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	309	63	admit	CaughtMutant	killed	
+crates/angzarr-embedded/src/bus.rs	329	9	taken	Unviable	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	339	9	opened	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	356	9	project	Unviable	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	360	42	project	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	360	42	project	MissedMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	401	9	missing	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/bus.rs	411	9	react	Unviable	unsupported	value-not-buildable
+crates/angzarr-embedded/src/bus.rs	434	23	react	CaughtMutant	timeout	
+crates/angzarr-embedded/src/bus.rs	434	23	react	Timeout	timeout	
+crates/angzarr-embedded/src/bus.rs	434	26	react	Timeout	timeout	
+crates/angzarr-embedded/src/bus.rs	434	26	react	Timeout	timeout	
+crates/angzarr-embedded/src/bus.rs	434	26	react	CaughtMutant	timeout	
+crates/angzarr-embedded/src/error.rs	465	9	coded_as	Unviable	unsupported	generic-copies
+crates/angzarr-embedded/src/error.rs	493	9	recovery	Unviable	unsupported	generic-copies
+crates/angzarr-embedded/src/error.rs	611	9	from	Unviable	not-called	
+crates/angzarr-embedded/src/error.rs	649	9	named_stream	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/error.rs	649	9	named_stream	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/error.rs	678	9	details	CaughtMutant	killed	
+crates/angzarr-embedded/src/error.rs	678	9	details	Unviable	unsupported	value-not-buildable
+crates/angzarr-embedded/src/error.rs	678	9	details	Unviable	unsupported	value-not-buildable
+crates/angzarr-embedded/src/lib.rs	335	5	kernel_samples	CaughtMutant	survived	
+crates/angzarr-embedded/src/lib.rs	335	5	kernel_samples	Unviable	unviable	no-default
+crates/angzarr-embedded/src/served.rs	40	9	react_served	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	60	9	react_outboxed	CaughtMutant	timeout	
+crates/angzarr-embedded/src/served.rs	60	63	react_outboxed	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	60	63	react_outboxed	Timeout	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	74	13	Kernel<'k>::react_outboxed	CaughtMutant	(no match)	
+crates/angzarr-embedded/src/served.rs	75	13	Kernel<'k>::react_outboxed	CaughtMutant	(no match)	
+crates/angzarr-embedded/src/served.rs	87	27	react_outboxed	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	87	27	react_outboxed	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	90	13	Kernel<'k>::react_outboxed	CaughtMutant	(no match)	
+crates/angzarr-embedded/src/served.rs	91	13	Kernel<'k>::react_outboxed	CaughtMutant	(no match)	
+crates/angzarr-embedded/src/served.rs	115	9	relay_pending	CaughtMutant	timeout	
+crates/angzarr-embedded/src/served.rs	117	42	relay_pending	CaughtMutant	killed	
+crates/angzarr-embedded/src/served.rs	147	17	Kernel<'k>::relay_pending	MissedMutant	(no match)	
+crates/angzarr-embedded/src/served.rs	148	17	Kernel<'k>::relay_pending	Timeout	(no match)	
+crates/angzarr-embedded/src/served.rs	158	13	relay_pending	MissedMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	172	9	upcast_trigger	CaughtMutant	timeout	
+crates/angzarr-embedded/src/served.rs	194	9	settled	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	225	9	project_served	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	238	22	project_served	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	238	25	project_served	CaughtMutant	timeout	
+crates/angzarr-embedded/src/served.rs	266	9	missing_served	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	273	13	Kernel<'k>::missing_served	MissedMutant	(no match)	
+crates/angzarr-embedded/src/served.rs	302	9	relay	CaughtMutant	killed	
+crates/angzarr-embedded/src/served.rs	333	9	step_relayed	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	333	9	step_relayed	Unviable	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	333	9	step_relayed	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	333	9	step_relayed	Unviable	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	346	44	step_relayed	MissedMutant	survived	
+crates/angzarr-embedded/src/served.rs	346	44	step_relayed	CaughtMutant	killed	
+crates/angzarr-embedded/src/served.rs	346	44	step_relayed	CaughtMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	351	60	step_relayed	MissedMutant	not-called	
+crates/angzarr-embedded/src/served.rs	351	60	step_relayed	MissedMutant	not-called	
+crates/angzarr-embedded/src/served.rs	353	41	step_relayed	MissedMutant	not-called	
+crates/angzarr-embedded/src/served.rs	364	67	step_relayed	MissedMutant	unsupported	generic-copies
+crates/angzarr-embedded/src/served.rs	387	9	translated	CaughtMutant	timeout	
+crates/angzarr-embedded/src/served.rs	387	9	translated	Unviable	unviable	no-default
+crates/angzarr-embedded/src/served.rs	419	13	Run<'_>::translated	MissedMutant	(no match)	
+crates/angzarr-embedded/src/served.rs	420	13	Run<'_>::translated	MissedMutant	(no match)	
+crates/angzarr-embedded/src/served.rs	434	5	sampled	Unviable	unviable	no-default
+crates/angzarr-embedded/src/served.rs	443	5	entry	Unviable	unsupported	value-not-buildable
+crates/angzarr-embedded/src/store.rs	168	9	write	CaughtMutant	timeout	
+crates/angzarr-embedded/src/store.rs	168	9	write	CaughtMutant	timeout	

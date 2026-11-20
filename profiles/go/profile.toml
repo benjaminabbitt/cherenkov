@@ -1,0 +1,29 @@
+extensions = ["go"]
+exclude = ["**/*_test.go", "**/vendor/**", "**/testdata/**"]
+unit_types = []
+disabled_operators = []
+# The contents of a function body that returns a value; {} marks the value.
+body_template = "return {}"
+# Bodies are delimited by braces; their contents lie between.
+body_braces = true
+# Comment syntax: a body's contents start after leading comments.
+line_comment = "//"
+block_comment = ["/*", "*/"]
+
+[defaults]
+bool = "false"
+int = "0"
+int8 = "0"
+int16 = "0"
+int32 = "0"
+int64 = "0"
+uint = "0"
+uint8 = "0"
+uint16 = "0"
+uint32 = "0"
+uint64 = "0"
+uintptr = "0"
+float32 = "0"
+float64 = "0"
+string = '""'
+error = "nil"

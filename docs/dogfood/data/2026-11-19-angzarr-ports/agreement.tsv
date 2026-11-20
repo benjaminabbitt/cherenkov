@@ -1,0 +1,22 @@
+# one row per mutant: cargo-mutants verdict, Cherenkov verdict (reason code when unsupported). No source text.
+file	line	column	function	cargo_mutants	cherenkov	reason_code
+(cherenkov-only) src/contract.rs	2330	17	a_write_clears_outbox_entries_with_its_own	(no match)	unsupported	no-patch-rule
+(cherenkov-only) src/contract.rs	2330	17	a_write_clears_outbox_entries_with_its_own	(no match)	unsupported	no-patch-rule
+(cherenkov-only) src/contract.rs	2340	19	a_write_clears_outbox_entries_with_its_own	(no match)	unsupported	no-patch-rule
+(cherenkov-only) src/contract.rs	2340	19	a_write_clears_outbox_entries_with_its_own	(no match)	unsupported	no-patch-rule
+(cherenkov-only) src/contract.rs	2351	17	a_write_clears_outbox_entries_with_its_own	(no match)	unsupported	no-patch-rule
+(cherenkov-only) src/contract.rs	2351	17	a_write_clears_outbox_entries_with_its_own	(no match)	unsupported	no-patch-rule
+crates/angzarr-ports/src/contract.rs	2324	5	a_write_clears_outbox_entries_with_its_own	MissedMutant	survived	
+crates/angzarr-ports/src/contract.rs	2331	9	a_write_clears_outbox_entries_with_its_own	MissedMutant	(no match)	
+crates/angzarr-ports/src/contract.rs	2332	9	a_write_clears_outbox_entries_with_its_own	CaughtMutant	(no match)	
+crates/angzarr-ports/src/contract.rs	2341	9	a_write_clears_outbox_entries_with_its_own	MissedMutant	(no match)	
+crates/angzarr-ports/src/contract.rs	2342	9	a_write_clears_outbox_entries_with_its_own	MissedMutant	(no match)	
+crates/angzarr-ports/src/contract.rs	2352	9	a_write_clears_outbox_entries_with_its_own	CaughtMutant	(no match)	
+crates/angzarr-ports/src/contract.rs	2353	9	a_write_clears_outbox_entries_with_its_own	CaughtMutant	(no match)	
+crates/angzarr-ports/src/faulty.rs	441	9	pending	CaughtMutant	killed	
+crates/angzarr-ports/src/faulty.rs	441	9	pending	Unviable	unviable	no-default
+crates/angzarr-ports/src/faulty.rs	445	9	clear	CaughtMutant	killed	
+crates/angzarr-ports/src/faulty.rs	445	9	clear	CaughtMutant	killed	
+crates/angzarr-ports/src/memory.rs	613	9	write	CaughtMutant	unsupported	value-not-buildable
+crates/angzarr-ports/src/memory.rs	643	13	write	CaughtMutant	killed	
+crates/angzarr-ports/src/memory.rs	670	59	write	CaughtMutant	killed	

@@ -1,0 +1,20 @@
+[package]
+name = "cherenkov-core"
+description = "Pure domain core: concepts, operators, planner, verdicts, port traits. No I/O."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+# Allowed dependencies are enforced by tests/architecture.rs: pure computation only.
+[dependencies]
+bitflags.workspace = true
+serde.workspace = true
+sha2.workspace = true
+
+[dev-dependencies]
+toml.workspace = true
+
+[lints]
+workspace = true

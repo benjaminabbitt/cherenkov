@@ -1,0 +1,130 @@
+# Cherenkov's development image: the dev container (devcontainer.json beside
+# this file), and the image CI can run its just recipes in.
+#
+# Cherenkov drives real debuggers, so the image carries them: GDB (14 or
+# later, for the Rust and C/C++ driver; Debian 13 packages 16.x), Delve and Go
+# (the Go driver), debugpy (the Python driver), beside the Rust toolchain,
+# protoc (the run layer's messages are generated from proto/ at build time),
+# just, lefthook, gitleaks and cargo-mutants (the dogfood comparison), and
+# the profilers: perf (Debian's linux-perf), samply and cargo-flamegraph.
+#
+# Every tool is pinned: the base image by digest, downloads by version and
+# SHA-256, cargo and go installs by version, pip packages by version. What
+# still floats: Debian's packages (apt, the day the image is built, so GDB's
+# exact version is whatever Debian 13 ships), rustup's installer script (the
+# toolchain it installs is pinned), and the dependencies of the cargo, go and
+# pip installs beyond the pinned packages (cargo is --locked).
+#
+# Root-usable and user-usable alike: tools live under /usr/local and CARGO_HOME
+# and RUSTUP_HOME are world-writable, so a CI `container:` job (root) and the
+# dev container's `vscode` user (uid 1000, remapped to the host's by
+# updateRemoteUserUID) run the same recipes.
+
+# golang:1.26.9-trixie: Debian 13 with Go, gcc and git. The same digest as
+# ctxloom's image.
+FROM docker.io/library/golang:1.26.9-trixie@sha256:f06b7122f888680048afb247c4e5f49c0069eb6c4c1ccae0f3f4834527a8d22c
+
+ENV TERM=xterm-256color \
+    COLORTERM=truecolor
+
+# gdb: the Rust and C/C++ driver. python3-venv: debugpy's isolated install.
+# build-essential and pkg-config: build scripts and native crates. jq, git,
+# unzip, xz and curl: the recipes and the downloads below. procps and
+# util-linux: ps, pkill and flock. time: GNU time, for scripts/measure-run.sh.
+# sudo: in-container convenience. linux-perf: `perf`, the sampling profiler
+# samply and flamegraph build on (it needs perf_event_open: see the runArgs
+# in devcontainer.json).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gdb git jq time curl ca-certificates unzip xz-utils build-essential pkg-config \
+        python3 python3-venv procps util-linux less sudo linux-perf \
+    && rm -rf /var/lib/apt/lists/* \
+    && gdb --version | head -n1 \
+    && perf --version
+
+# protoc 21.12 (libprotoc 3.21.12), CI's own download and hash, for
+# angzarr-build's codegen.
+ARG PROTOC_VERSION=21.12
+ARG PROTOC_SHA256=3a4c1e5f2516c639d3079b1586e703fc7bcfa2136d58bda24d1d54f949c315e8
+RUN cd /tmp \
+    && curl -fsSLo protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip \
+    && echo "${PROTOC_SHA256}  protoc.zip" | sha256sum -c - \
+    && unzip -q protoc.zip -d /usr/local bin/protoc 'include/*' \
+    && chmod a+rx /usr/local/bin/protoc && chmod -R a+rX /usr/local/include \
+    && rm protoc.zip
+
+# Rust, pinned to Cargo.toml's rust-version line (1.96) at the patch release
+# CI's neighbours use, with clippy and rustfmt (just lint, just fmt-check).
+# Installed system-wide so whatever uid runs can use it.
+ARG RUST_TOOLCHAIN=1.96.1
+ENV RUSTUP_HOME=/usr/local/rustup \
+    CARGO_HOME=/usr/local/cargo \
+    PATH=/usr/local/cargo/bin:$PATH
+RUN curl -fsSL https://sh.rustup.rs | sh -s -- -y --no-modify-path --profile minimal \
+        --default-toolchain ${RUST_TOOLCHAIN} --component clippy,rustfmt \
+    && mkdir -p ${CARGO_HOME}/registry ${CARGO_HOME}/git \
+    && chmod -R a+rwX ${RUSTUP_HOME} ${CARGO_HOME}
+
+# cargo-mutants, the comparison tool of the dogfood records, built from
+# source at the version those records name.
+ARG CARGO_MUTANTS_VERSION=26.2.0
+RUN cargo install --locked cargo-mutants@${CARGO_MUTANTS_VERSION} \
+    && rm -rf ${CARGO_HOME}/registry/* ${CARGO_HOME}/git/* \
+    && chmod -R a+rwX ${CARGO_HOME}
+
+# Rust profilers, built from source at pinned versions: samply (a sampling
+# profiler with a Firefox Profiler UI) and cargo-flamegraph (flamegraphs from
+# perf). Profile a release build with line tables
+# (CARGO_PROFILE_RELEASE_DEBUG=line-tables-only) so frames carry source lines.
+ARG SAMPLY_VERSION=0.13.1
+ARG FLAMEGRAPH_VERSION=0.6.15
+RUN cargo install --locked samply@${SAMPLY_VERSION} flamegraph@${FLAMEGRAPH_VERSION} \
+    && rm -rf ${CARGO_HOME}/registry/* ${CARGO_HOME}/git/* \
+    && chmod -R a+rwX ${CARGO_HOME}
+
+# Prebuilt binaries, each checked against its SHA-256: just (the task runner,
+# CI's 1.40.0), lefthook (the git hooks) and gitleaks (the secrets scan; the
+# justfile's scan recipes run the same version's container image).
+ARG JUST_VERSION=1.40.0
+ARG JUST_SHA256=181b91d0ceebe8a57723fb648ed2ce1a44d849438ce2e658339df4f8db5f1263
+ARG LEFTHOOK_VERSION=1.13.6
+ARG LEFTHOOK_SHA256=c2406f881fd0ee1ddc5e1400d809d7d02ba6c908bb0118139689d925691e884e
+ARG GITLEAKS_VERSION=8.28.0
+ARG GITLEAKS_SHA256=a65b5253807a68ac0cafa4414031fd740aeb55f54fb7e55f386acb52e6a840eb
+RUN set -eu; cd /tmp; \
+    fetch() { curl -fsSLo "$1" "$2" && echo "$3  $1" | sha256sum -c -; }; \
+    fetch just.tar.gz https://github.com/casey/just/releases/download/${JUST_VERSION}/just-${JUST_VERSION}-x86_64-unknown-linux-musl.tar.gz ${JUST_SHA256}; \
+    tar -xzf just.tar.gz -C /usr/local/bin just; \
+    fetch lefthook.gz https://github.com/evilmartians/lefthook/releases/download/v${LEFTHOOK_VERSION}/lefthook_${LEFTHOOK_VERSION}_Linux_x86_64.gz ${LEFTHOOK_SHA256}; \
+    gunzip -c lefthook.gz > /usr/local/bin/lefthook; \
+    fetch gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz ${GITLEAKS_SHA256}; \
+    tar -xzf gitleaks.tar.gz -C /usr/local/bin gitleaks; \
+    chmod 0755 /usr/local/bin/just /usr/local/bin/lefthook /usr/local/bin/gitleaks; \
+    rm -f /tmp/*.gz
+
+# Delve, the Go driver's debugger, built with the image's Go.
+ARG DELVE_VERSION=v1.27.2
+RUN GOBIN=/usr/local/bin CGO_ENABLED=0 go install github.com/go-delve/delve/cmd/dlv@${DELVE_VERSION} \
+    && rm -rf /go/pkg
+
+# debugpy, the Python driver's debug adapter, in its own virtualenv (Debian's
+# Python is externally managed) put first on PATH.
+ARG DEBUGPY_VERSION=1.8.22
+RUN python3 -m venv /opt/py \
+    && /opt/py/bin/pip install --no-cache-dir debugpy==${DEBUGPY_VERSION} \
+    && chmod -R a+rX /opt/py
+ENV PATH=/opt/py/bin:$PATH
+
+# Non-root user (matches devcontainer.json remoteUser).
+ARG USERNAME=vscode
+ARG USER_UID=1000
+ARG USER_GID=$USER_UID
+RUN groupadd --gid $USER_GID $USERNAME \
+    && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
+    && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
+    && chmod 0440 /etc/sudoers.d/$USERNAME
+
+# Marks the container: justfile recipes run directly, with no nesting.
+ENV DEVCONTAINER=true
+
+USER $USERNAME

@@ -1,0 +1,16 @@
+extensions = ["py"]
+exclude = ["**/test_*.py", "**/*_test.py", "**/tests/**", "**/conftest.py", "**/.venv/**", "**/venv/**"]
+unit_types = ["None"]
+disabled_operators = []
+# The contents of a function body that returns a value; {} marks the value.
+body_template = "return {}"
+# Bodies are delimited by braces; their contents lie between.
+body_braces = false
+# Comment syntax: a body's contents start after leading comments.
+line_comment = "#"
+
+[defaults]
+bool = "False"
+int = "0"
+float = "0.0"
+str = '""'

@@ -1,0 +1,19 @@
+[package]
+name = "cherenkov-fs"
+description = "SourceReader adapter over the filesystem. Read-only."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+cherenkov-core.workspace = true
+globset.workspace = true
+walkdir.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+cherenkov-syntax.workspace = true

@@ -1,0 +1,17 @@
+{
+ "source": "cargo-mutants 26.2.0 me1/mutants.out/outcomes.json",
+ "total_mutants": 38,
+ "outcomes": {
+  "Unviable": 38
+ },
+ "start_time": "2026-11-19T22:23:27.297745172Z",
+ "end_time": null,
+ "wall_s": null,
+ "baseline": {
+  "build_s": 106.2,
+  "test_s": 52.0
+ },
+ "mutants_build_s": 1269.5,
+ "mutants_test_s": 0.0,
+ "sum_all_phases_s": 1427.7
+}

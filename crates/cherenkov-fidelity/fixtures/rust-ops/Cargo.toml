@@ -1,0 +1,14 @@
+[package]
+name = "ops"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+# The compiler's proc_macro only: async fn bodies compiled into async blocks.
+[dependencies]
+ops_futures = { path = "futures" }
+
+# A standalone package, not a member of the Cherenkov workspace around it.
+[workspace]

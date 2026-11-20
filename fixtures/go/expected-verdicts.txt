@@ -1,0 +1,15 @@
+calc.go:5:1 Total body-default killed p
+calc.go:6:2 Total aor killed p
+calc.go:7:2 Total delete-statement survived p
+calc.go:11:1 IsSmall body-default killed p
+calc.go:12:5 IsSmall negate-condition killed p
+calc.go:12:5 IsSmall ror survived p
+calc.go:13:3 IsSmall return-bool-flip killed p
+calc.go:15:2 IsSmall return-bool-flip killed p
+calc.go:18:1 CountUp body-default killed p
+calc.go:20:6 CountUp negate-condition killed p
+calc.go:20:6 CountUp ror killed p
+calc.go:21:3 CountUp aor timeout p
+calc.go:26:1 Sum body-default killed p
+calc.go:28:14 Sum negate-condition killed p
+calc.go:28:14 Sum ror killed p

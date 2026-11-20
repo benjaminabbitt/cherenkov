@@ -1,0 +1,170 @@
+# amd64 instruction shapes and patch rules for tier P (design section 8).
+# The patcher reads these; it has no amd64 knowledge of its own.
+
+# Condition codes: the low nibble of a Jcc opcode (70+cc rel8, 0F 80+cc rel32).
+# The inverse condition differs in the low bit.
+inverse_mask = 0x1
+
+# REX prefix bytes (inclusive range), which may precede a call's opcode.
+rex = [0x40, 0x4f]
+
+[condition_codes]
+o = 0x0
+no = 0x1
+b = 0x2
+ae = 0x3
+e = 0x4
+ne = 0x5
+be = 0x6
+a = 0x7
+s = 0x8
+ns = 0x9
+p = 0xa
+np = 0xb
+l = 0xc
+ge = 0xd
+le = 0xe
+g = 0xf
+
+# Conditional jumps: `prefix` bytes, then `opcode | cc`, then a signed
+# little-endian displacement of `rel` bytes, relative to the next instruction.
+[[jcc]]
+prefix = []
+opcode = 0x70
+rel = 1
+
+[[jcc]]
+prefix = [0x0f]
+opcode = 0x80
+rel = 4
+
+# Calls may follow one REX prefix byte (see [[call]] below). A call with
+# `length` is exactly that long (E8 rel32); one with `modrm_reg` is
+# identified by the reg field of its ModRM byte (FF /2: indirect through a
+# register or memory).
+
+[[call]]
+opcode = 0xe8
+length = 5
+
+[[call]]
+opcode = 0xff
+modrm_reg = 2
+
+# Unconditional jumps, shortest first; the patcher uses the first that fits.
+[[jmp]]
+opcode = 0xeb
+rel = 1
+
+[[jmp]]
+opcode = 0xe9
+rel = 4
+
+# The condition code that is true when `lhs <op> rhs` holds after
+# `CMP lhs, rhs`, by signedness. Keys are core token names.
+[relational.signed]
+lt = "l"
+le = "le"
+gt = "g"
+ge = "ge"
+eq = "e"
+ne = "ne"
+
+[relational.unsigned]
+lt = "b"
+le = "be"
+gt = "a"
+ge = "ae"
+eq = "e"
+ne = "ne"
+
+# Swapping the operands of a comparison: `a < b` is `b > a`.
+[relational.swapped]
+lt = "gt"
+le = "ge"
+gt = "lt"
+ge = "le"
+eq = "eq"
+ne = "ne"
+
+# Arithmetic operator replacement: add and sub encodings that differ only
+# in the opcode byte or the ModRM reg field, as (add form, sub form) pairs.
+# `inc`/`dec` count as add/sub of one. All may follow one REX prefix.
+[[arith]] # add r/m, r      <-> sub r/m, r
+add = { opcode = 0x01 }
+sub = { opcode = 0x29 }
+
+[[arith]] # 8-bit
+add = { opcode = 0x00 }
+sub = { opcode = 0x28 }
+
+[[arith]] # add r, r/m      <-> sub r, r/m
+add = { opcode = 0x03 }
+sub = { opcode = 0x2b }
+
+[[arith]] # 8-bit
+add = { opcode = 0x02 }
+sub = { opcode = 0x2a }
+
+[[arith]] # add eax, imm32  <-> sub eax, imm32
+add = { opcode = 0x05 }
+sub = { opcode = 0x2d }
+
+[[arith]] # add r/m, imm8   <-> sub r/m, imm8
+add = { opcode = 0x83, modrm_reg = 0 }
+sub = { opcode = 0x83, modrm_reg = 5 }
+
+[[arith]] # add r/m, imm32  <-> sub r/m, imm32
+add = { opcode = 0x81, modrm_reg = 0 }
+sub = { opcode = 0x81, modrm_reg = 5 }
+
+[[arith]] # 8-bit immediate forms
+add = { opcode = 0x80, modrm_reg = 0 }
+sub = { opcode = 0x80, modrm_reg = 5 }
+
+[[arith]] # inc r/m         <-> dec r/m
+add = { opcode = 0xff, modrm_reg = 0 }
+sub = { opcode = 0xff, modrm_reg = 1 }
+
+[[arith]] # 8-bit
+add = { opcode = 0xfe, modrm_reg = 0 }
+sub = { opcode = 0xfe, modrm_reg = 1 }
+
+# Stores of a boolean constant (`return true`/`return false`): the trailing
+# `imm` bytes hold 0 or 1. `reg_in_opcode` means the low three opcode bits
+# name the register (B0+r, B8+r). All may follow one REX prefix.
+[[bool_store]] # mov r/m8, imm8
+opcode = 0xc6
+modrm_reg = 0
+imm = 1
+
+[[bool_store]] # mov r/m32, imm32
+opcode = 0xc7
+modrm_reg = 0
+imm = 4
+
+[[bool_store]] # mov r8, imm8
+opcode = 0xb0
+reg_in_opcode = true
+imm = 1
+
+[[bool_store]] # mov r32, imm32
+opcode = 0xb8
+reg_in_opcode = true
+imm = 4
+
+# Zeroing idioms with no immediate, and a same-length store of 1 for each.
+[[bool_zero]] # xor eax, eax  ->  mov al, 1
+bytes = [0x31, 0xc0]
+one = [0xb0, 0x01]
+
+# Function body replaced by its result type's zero value: written over the
+# function's first bytes, before the prologue. Per calling convention, they
+# zero every register a register-returned result can occupy, and no
+# callee-saved register.
+[return_stub]
+# SysV (Rust, C): rax, xmm0. rbx is callee-saved and must not be touched.
+sysv = [0x31, 0xc0, 0x0f, 0x57, 0xc0, 0xc3]
+# Go ABIInternal: results in rax, rbx, rcx, rdi, rsi (first five words) and
+# x0; no general register is callee-saved.
+go = [0x31, 0xc0, 0x31, 0xdb, 0x31, 0xc9, 0x31, 0xff, 0x31, 0xf6, 0x0f, 0x57, 0xc0, 0xc3]

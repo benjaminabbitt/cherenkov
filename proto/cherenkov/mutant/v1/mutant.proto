@@ -1,0 +1,319 @@
+syntax = "proto3";
+
+// A mutant is one change to a project's source, its stream rooted at its
+// content hash, so every run that plans it finds the same stream and the
+// stream outlives the runs that plan it. It is planned once per asking run,
+// told what each test program made of it as facts (one for each program
+// run), and decides its verdict itself, once per asking run, from them: as
+// soon as a program detects it, or cannot apply it, or the last program has
+// run. Its decision carries the mutant as planned, the verdict, the run
+// and what the verdict depended on.
+//
+// A singular message field that a stream may hold unset is `optional`, so
+// its domain type keeps the absence.
+package cherenkov.mutant.v1;
+
+import "google/protobuf/duration.proto";
+import "io/angzarr/codegen/v1/codegen.proto";
+import "io/angzarr/v1/options.proto";
+import "io/angzarr/v1/types.proto";
+import "cherenkov/mutant/v1/plan.proto";
+
+// region vocabulary
+
+// What running a mutant came to. The values are the names a run's output
+// and verdict file print (`not-called`, written in kebab-case).
+enum Verdict {
+  option (io.angzarr.codegen.v1.enumeration) = {json_case: JSON_CASE_KEBAB};
+
+  VERDICT_UNSPECIFIED = 0;
+  // A test failed with the mutant in place.
+  VERDICT_KILLED = 1;
+  // Every test passed with the mutant in place.
+  VERDICT_SURVIVED = 2;
+  // The mutant hung: it ran past its time budget.
+  VERDICT_TIMEOUT = 3;
+  // The mutated source would not compile, or has no default to build.
+  VERDICT_UNVIABLE = 4;
+  // Cherenkov cannot run the mutant; a run accepts and logs it.
+  VERDICT_UNSUPPORTED = 5;
+  // No selected test calls the mutant's function: decided without a run.
+  VERDICT_NOT_CALLED = 6;
+  // The mutant's function is called, but no test reaches the site.
+  VERDICT_NOT_REACHED = 7;
+  // The mutant failed to run for a reason of its own.
+  VERDICT_ERROR = 8;
+  // The debugger could not evaluate the mutant's value.
+  VERDICT_UNEVALUABLE = 9;
+  // Evaluating the mutant's value raised in the program.
+  VERDICT_EVALUATOR_RAISED = 10;
+}
+
+// How a mutant was applied, when it ran.
+enum Tier {
+  option (io.angzarr.codegen.v1.enumeration) = {json_case: JSON_CASE_KEBAB};
+
+  TIER_UNSPECIFIED = 0;
+  // Pure debugger protocol: evaluate plus goto.
+  TIER_A = 1;
+  // The debugger protocol plus a native escape for jumps and returns.
+  TIER_B = 2;
+  // An instruction patch, armed once.
+  TIER_P = 3;
+}
+
+// endregion vocabulary
+
+// region what an executor observed
+
+// What an executor observed of one run of a test program: facts only, no
+// verdict. The run judges a baseline from it and the mutant its runs.
+message Observation {
+  oneof kind {
+    // The test process ran to completion with this exit code.
+    Exited exited = 1;
+    // The debugger caught the process crashing and stopped it there.
+    Crashed crashed = 2;
+    // The run exceeded its budget and was killed.
+    TimedOut timed_out = 3;
+    // The mutated code is not in what the executor runs.
+    NotReached not_reached = 4;
+    // The executor cannot apply the plan.
+    Unsupported unsupported = 5;
+    // The mutated source would not compile.
+    Unviable unviable = 6;
+  }
+}
+
+message Exited {
+  int32 code = 1;
+  Tier tier = 2;
+  optional google.protobuf.Duration wall = 3;
+}
+
+message Crashed {
+  string kind = 1;
+  string message = 2;
+  Tier tier = 3;
+  optional google.protobuf.Duration wall = 4;
+}
+
+message TimedOut {
+  Tier tier = 1;
+  optional google.protobuf.Duration wall = 2;
+}
+
+message NotReached {
+  string reason = 1;
+}
+
+message Unsupported {
+  string reason = 1;
+}
+
+message Unviable {
+  string reason = 1;
+}
+
+// endregion what an executor observed
+
+// A mutant's whole state, which loading it resumes from in place of folding
+// its stream: the runs that planned it, in ascending order of their keys.
+// It anchors the mutant component.
+message MutantSnapshot {
+  option (io.angzarr.v1.component) = {
+    component_name: "mutant"
+    aggregate: {domain: "cherenkov-mutant"}
+  };
+
+  repeated MutantRun runs = 1;
+}
+
+// One run that planned a mutant, as the mutant's state holds it: the run's
+// key (its id as text, empty for none), the mutant as that run planned it,
+// whether it is decided for that run, and what the programs made of it.
+message MutantRun {
+  string run = 1;
+  optional PlannedMutant mutant = 2;
+  bool decided = 3;
+  // How many test programs the run has, and what each that has run it made
+  // of it so far.
+  uint32 programs = 4;
+  repeated ProgramRun ran = 5;
+}
+
+// One planned mutant, as a reader needs it without the plan.
+message PlannedMutant {
+  option (io.angzarr.codegen.v1.message) = {
+    json_names: JSON_NAMES_PROTO
+    json_nulls: true
+    json_defaults: true
+  };
+
+  string id = 1;
+  string file = 2;
+  uint32 line = 3;
+  uint32 column = 4;
+  uint32 end_line = 5;
+  uint32 end_column = 6;
+  optional string function = 7;
+  string operator = 8;
+  string description = 9;
+  string original = 10;
+  optional string mutated = 11;
+}
+
+// One mutant, planned to run: the mutant as a reader needs it, and its plan
+// as an executor needs it.
+message ExecutableMutant {
+  optional PlannedMutant mutant = 1;
+  optional MutantPlan plan = 2;
+}
+
+// What running one mutant came to.
+message Outcome {
+  Verdict verdict = 1;
+  optional Tier tier = 2;
+  uint64 took_ms = 3;
+  repeated string tests_run = 4;
+  repeated KilledBy killed_by = 5;
+  optional string reason = 6;
+}
+
+// A test that killed a mutant, and how it failed.
+message KilledBy {
+  option (io.angzarr.codegen.v1.message) = {
+    json_names: JSON_NAMES_PROTO
+    json_nulls: true
+    json_defaults: true
+  };
+
+  string test = 1;
+  optional string location = 2;
+  string message = 3;
+  optional string got = 4;
+  optional string expected = 5;
+}
+
+// What one test program made of a mutant: how long its run took, the tests
+// it ran with, and what came of it.
+message ProgramRun {
+  // The program's index among the run's programs.
+  uint32 program = 1;
+  // What the program runs, where the executor says (empty: it does not).
+  string program_name = 2;
+  uint64 took_ms = 3;
+  // The tests the mutant ran with in this program; none: every test.
+  repeated string tests = 4;
+  oneof result {
+    // The executor ran it and observed this.
+    Ran ran = 5;
+    // No test of the program calls the mutant's function: not run.
+    Unit not_called = 6;
+    // The debugger failed on this mutant: not run to the end.
+    DebuggerFailed failed = 7;
+  }
+}
+
+// A run of a mutant, observed: what the executor saw, and, for a run that
+// detected the mutant, the tests that failed and how.
+message Ran {
+  optional Observation observation = 1;
+  repeated KilledBy killed_by = 2;
+}
+
+// The debugger (or the harness driving it) failed on a mutant; the mutant
+// costs nothing else, and the next gets a fresh session.
+message DebuggerFailed {
+  string reason = 1;
+}
+
+// region commands
+
+// Plan a mutant for a run: once per run.
+message PlanMutant {
+  option (io.angzarr.v1.command) = {
+    component: "cherenkov.mutant.v1.MutantSnapshot"
+    emits: ["cherenkov.mutant.v1.MutantPlanned"]
+    refuses: "cherenkov.mutant.v1.NoRun"
+    refuses: "cherenkov.mutant.v1.NoMutant"
+    refuses: "cherenkov.mutant.v1.PlannedForRun"
+  };
+
+  optional io.angzarr.v1.UUID run = 1 [(io.angzarr.codegen.v1.field) = {id_type: "RunId"}];
+  optional ExecutableMutant mutant = 2;
+  // How many test programs the run has: the mutant is run in each, unless
+  // one decides it first.
+  uint32 programs = 3;
+}
+
+// endregion commands
+
+// region facts (what already happened: recorded, never refused)
+
+// What a test program made of a mutant for a run, as its runner observed
+// it. Recorded once for each program, and the mutant decides from them.
+message ProgramRunReported {
+  option (io.angzarr.v1.fact) = {
+    component: "cherenkov.mutant.v1.MutantSnapshot"
+    emits: ["cherenkov.mutant.v1.ProgramRan", "cherenkov.mutant.v1.MutantDecided"]
+  };
+
+  optional io.angzarr.v1.UUID run = 1 [(io.angzarr.codegen.v1.field) = {id_type: "RunId"}];
+  optional ProgramRun ran = 2;
+}
+
+// endregion facts
+
+// region events
+
+// A mutant planned for a run: the mutant as planned, with the plan to run
+// it, and the run that asked.
+message MutantPlanned {
+  option (io.angzarr.v1.event) = {component: "cherenkov.mutant.v1.MutantSnapshot"};
+
+  optional io.angzarr.v1.UUID run = 1 [(io.angzarr.codegen.v1.field) = {id_type: "RunId"}];
+  optional ExecutableMutant mutant = 2;
+  uint32 programs = 3;
+}
+
+// A test program's run of a mutant, recorded for the run that asked.
+message ProgramRan {
+  option (io.angzarr.v1.event) = {component: "cherenkov.mutant.v1.MutantSnapshot"};
+
+  optional io.angzarr.v1.UUID run = 1 [(io.angzarr.codegen.v1.field) = {id_type: "RunId"}];
+  optional ProgramRun ran = 2;
+}
+
+// A mutant decided for a run: the mutant as planned, its verdict, the run
+// that asked, and what the verdict depended on (the test programs it ran
+// in; the tests are the verdict's own).
+message MutantDecided {
+  option (io.angzarr.v1.event) = {component: "cherenkov.mutant.v1.MutantSnapshot"};
+
+  optional PlannedMutant mutant = 1;
+  optional Outcome verdict = 2;
+  optional io.angzarr.v1.UUID run = 3 [(io.angzarr.codegen.v1.field) = {id_type: "RunId"}];
+  repeated string programs = 4;
+}
+
+// endregion events
+
+// region refusals
+
+// A plan for no run.
+message NoRun {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_INVALID_ARGUMENT;
+}
+
+// A plan for no mutant.
+message NoMutant {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_INVALID_ARGUMENT;
+}
+
+// A plan for a run that already planned the mutant.
+message PlannedForRun {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_ALREADY_EXISTS;
+}
+
+// endregion refusals

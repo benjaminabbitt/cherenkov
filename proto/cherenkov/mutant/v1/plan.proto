@@ -1,0 +1,274 @@
+syntax = "proto3";
+
+// The plan of one mutant: everything an executor needs to run it, so that a
+// runner given a mutant's stream and its run's needs nothing from the
+// process that planned it. The planner's own types (`cherenkov-core`'s
+// `MutantPlan` and the vocabulary it is made of) are what these messages
+// carry, field for field; the run layer converts between them at one
+// boundary, and a plan that round-trips through these is equal.
+//
+// A singular message field that a stream may hold unset is `optional`, so
+// its domain type keeps the absence.
+package cherenkov.mutant.v1;
+
+import "io/angzarr/codegen/v1/codegen.proto";
+
+// region vocabulary
+
+// An abstract token of the operators' language-neutral vocabulary, in the
+// planner's order.
+enum Token {
+  option (io.angzarr.codegen.v1.enumeration) = {json_case: JSON_CASE_KEBAB};
+
+  TOKEN_UNSPECIFIED = 0;
+  TOKEN_ADD = 1;
+  TOKEN_SUB = 2;
+  TOKEN_MUL = 3;
+  TOKEN_DIV = 4;
+  TOKEN_REM = 5;
+  TOKEN_BIT_AND = 6;
+  TOKEN_BIT_OR = 7;
+  TOKEN_BIT_XOR = 8;
+  TOKEN_SHL = 9;
+  TOKEN_SHR = 10;
+  TOKEN_ADD_ASSIGN = 11;
+  TOKEN_SUB_ASSIGN = 12;
+  TOKEN_MUL_ASSIGN = 13;
+  TOKEN_DIV_ASSIGN = 14;
+  TOKEN_REM_ASSIGN = 15;
+  TOKEN_BIT_AND_ASSIGN = 16;
+  TOKEN_BIT_OR_ASSIGN = 17;
+  TOKEN_BIT_XOR_ASSIGN = 18;
+  TOKEN_SHL_ASSIGN = 19;
+  TOKEN_SHR_ASSIGN = 20;
+  TOKEN_LT = 21;
+  TOKEN_LE = 22;
+  TOKEN_GT = 23;
+  TOKEN_GE = 24;
+  TOKEN_EQ = 25;
+  TOKEN_NE = 26;
+  TOKEN_AND = 27;
+  TOKEN_OR = 28;
+  TOKEN_ASSIGN = 29;
+  TOKEN_TRUE = 30;
+  TOKEN_FALSE = 31;
+  TOKEN_NOT = 32;
+  TOKEN_NEG = 33;
+  TOKEN_SEP = 34;
+}
+
+enum Capture {
+  option (io.angzarr.codegen.v1.enumeration) = {json_case: JSON_CASE_KEBAB};
+
+  CAPTURE_UNSPECIFIED = 0;
+  CAPTURE_OP = 1;
+  CAPTURE_LHS = 2;
+  CAPTURE_RHS = 3;
+  CAPTURE_OPERAND = 4;
+  CAPTURE_TARGET = 5;
+  CAPTURE_VALUE = 6;
+  CAPTURE_COND = 7;
+  CAPTURE_THEN = 8;
+  CAPTURE_ELSE = 9;
+  CAPTURE_CALLEE = 10;
+  CAPTURE_ARGS = 11;
+  CAPTURE_IDENT = 12;
+  CAPTURE_BASE = 13;
+  CAPTURE_INDEX = 14;
+  CAPTURE_NAME = 15;
+  CAPTURE_BODY = 16;
+  CAPTURE_RETURNS = 17;
+  CAPTURE_GUARD = 18;
+  CAPTURE_SCOPE = 19;
+  CAPTURE_CATCH_ALL = 20;
+  CAPTURE_ASYNC = 21;
+}
+// What a requirement of the evaluated text asks of a backend; a plan holds
+// the set.
+enum Requirement {
+  option (io.angzarr.codegen.v1.enumeration) = {json_case: JSON_CASE_KEBAB};
+
+  REQUIREMENT_UNSPECIFIED = 0;
+  // The evaluated text contains a call.
+  REQUIREMENT_CALL_IN_EVAL = 1;
+  // The evaluated text contains an assignment.
+  REQUIREMENT_ASSIGN_IN_EVAL = 2;
+  // The frame must be popped with a value.
+  REQUIREMENT_FORCE_RETURN = 3;
+}
+
+// endregion vocabulary
+
+// region where
+
+// A source position; line and column are 1-based, the column counts bytes.
+message Pos {
+  uint64 byte = 1;
+  uint32 line = 2;
+  uint32 col = 3;
+}
+
+// A half-open byte range with its line and column endpoints.
+message Span {
+  optional Pos start = 1;
+  optional Pos end = 2;
+}
+
+// Where a jump resumes; the driver resolves it, because only it knows the
+// line table.
+message Target {
+  oneof kind {
+    // Just past the statement.
+    Span after_statement = 1;
+    // The first statement of a then-block or else-branch.
+    Span block_start = 2;
+  }
+}
+
+// endregion where
+
+// region what
+
+// A value given in the edit.
+message Lit {
+  oneof kind {
+    bool flag = 1;
+    // The default value of the function's result type.
+    Unit default = 2;
+    // A value given as source text (a function body replacement).
+    string text = 3;
+  }
+}
+
+// Nothing: a variant that holds no data.
+message Unit {}
+
+// An abstract edit an operator emits.
+message Edit {
+  oneof kind {
+    ReplaceToken replace_token = 1;
+    DeleteToken delete_token = 2;
+    WrapNot wrap_not = 3;
+    ReplaceWithLiteral replace_with_literal = 4;
+    Unit delete_statement = 5;
+    Unit delete_match = 6;
+  }
+}
+
+// `original` is the token the source has, so a backend can map the edit onto
+// machine code without re-reading the source. (Not `from`: prost gives an
+// enum field an accessor of its name, which would shadow `From::from` in
+// the generated conversions.)
+message ReplaceToken {
+  Capture capture = 1;
+  Token original = 2;
+  Token replacement = 3;
+}
+
+// Delete an operator token, leaving its operand.
+message DeleteToken {
+  Capture capture = 1;
+  Token token = 2;
+}
+
+// Wrap the capture in a logical not.
+message WrapNot {
+  Capture capture = 1;
+}
+
+// Replace the capture with a literal.
+message ReplaceWithLiteral {
+  Capture capture = 1;
+  optional Lit lit = 2;
+}
+
+// How an executor applies a mutant.
+message Action {
+  oneof kind {
+    EvalThenJump eval_then_jump = 1;
+    JumpOnly jump_only = 2;
+    EvalBranch eval_branch = 3;
+    EvalReturn eval_return = 4;
+    InPlace in_place = 5;
+    Redirect redirect = 6;
+    ReturnDefault return_default = 7;
+  }
+}
+
+// Stop at the statement, evaluate the mutated value, assign it and resume.
+message EvalThenJump {
+  // The mutated statement, as source text.
+  string text = 1;
+  // What is assigned: the target and the mutated value, apart.
+  string target = 2;
+  string value = 3;
+  optional Target resume = 4;
+}
+
+// Skip the statement and resume.
+message JumpOnly {
+  optional Target resume = 1;
+}
+
+// Evaluate a mutated condition and branch.
+message EvalBranch {
+  string cond_text = 1;
+  optional Target if_true = 2;
+  optional Target if_false = 3;
+}
+
+// Evaluate a value and return it.
+message EvalReturn {
+  string value_text = 1;
+}
+
+// Apply the mutation at the edited expression itself, with no stop and
+// evaluation at the statement.
+message InPlace {
+  // The mutated expression, for display.
+  string expr_text = 1;
+}
+
+// Run `to` wherever `from` would run.
+message Redirect {
+  optional Span from = 1;
+  optional Span to = 2;
+}
+
+// Return a value at function entry instead of running the body.
+message ReturnDefault {
+  // The literal, when the profile maps the return type.
+  optional string value_text = 1;
+  // The value is the result type's all-zero bits.
+  bool zero_bits = 2;
+  // The function is `async`: the value is what its future yields.
+  bool async_fn = 3;
+}
+
+// endregion what
+
+// One mutant, planned: where it is, what it changes and how an executor
+// applies it.
+message MutantPlan {
+  string id = 1;
+  // The operator that planned it, by its id.
+  string operator = 2;
+  // The named mutation it is, where it is one.
+  optional string mutation = 3;
+  string file = 4;
+  // The innermost enclosing function; none at module level.
+  optional string function = 5;
+  optional Pos stop_at = 6;
+  optional Action action = 7;
+  optional Edit edit = 8;
+  // The span of the capture the edit applies to.
+  optional Span site = 9;
+  repeated Requirement requires = 10;
+  // The operands of the mutated operator, and their source text.
+  repeated Span operands = 11;
+  repeated string operand_texts = 12;
+  // The source text at `site`, and what the mutant has there instead (none
+  // when the mutant has no source form).
+  string original = 13;
+  optional string mutated = 14;
+}

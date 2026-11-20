@@ -1,0 +1,20 @@
+{
+ "source": "cargo-mutants 26.2.0 m3/mutants.out/outcomes.json",
+ "total_mutants": 363,
+ "outcomes": {
+  "CaughtMutant": 236,
+  "Unviable": 104,
+  "Timeout": 9,
+  "MissedMutant": 14
+ },
+ "start_time": "2026-11-19T22:23:02.263946052Z",
+ "end_time": null,
+ "wall_s": null,
+ "baseline": {
+  "build_s": 14.0,
+  "test_s": 3.1
+ },
+ "mutants_build_s": 5719.0,
+ "mutants_test_s": 1264.1,
+ "sum_all_phases_s": 7000.2
+}

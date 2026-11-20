@@ -1,0 +1,9 @@
+# cargo-mutants configuration for this workspace.
+
+# Copy only tracked sources into each mutant's scratch tree. Without this,
+# build output (target/, fixtures/*/target/) is copied too, gigabytes per run,
+# and stale fixture binaries are reused under the copy's paths.
+gitignore = true
+
+# The generated DAP protocol types are not hand-written logic.
+exclude_globs = ["crates/cherenkov-dap-types/src/generated.rs"]

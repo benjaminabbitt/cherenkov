@@ -1,0 +1,13 @@
+src/lib.rs:3:1 total body-default return-default "0" [force-return]
+src/lib.rs:4:5 total aor eval-then-jump "s = a - b" [assign]
+src/lib.rs:5:5 total delete-statement jump-only
+src/lib.rs:9:1 is_small body-default return-default "false" [force-return]
+src/lib.rs:10:8 is_small negate-condition eval-branch "!(n < 10)"
+src/lib.rs:10:8 is_small ror eval-branch "n <= 10"
+src/lib.rs:11:9 is_small return-bool-flip eval-return "false" [force-return]
+src/lib.rs:13:5 is_small return-bool-flip eval-return "true" [force-return]
+src/lib.rs:16:1 count_up body-default return-default "0" [force-return]
+src/lib.rs:18:11 count_up negate-condition eval-branch "!(i < n)"
+src/lib.rs:18:11 count_up ror eval-branch "i <= n"
+src/lib.rs:19:9 count_up aor eval-then-jump "i = i - 1" [assign]
+src/lib.rs:24:1 first body-default return-default "0" [force-return]

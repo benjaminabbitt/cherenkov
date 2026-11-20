@@ -1,0 +1,15 @@
+calc.go:5:1 Total body-default return-default "0" [force-return]
+calc.go:6:2 Total aor eval-then-jump "s = a - b" [assign]
+calc.go:7:2 Total delete-statement jump-only
+calc.go:11:1 IsSmall body-default return-default "false" [force-return]
+calc.go:12:5 IsSmall negate-condition eval-branch "!(n < 10)"
+calc.go:12:5 IsSmall ror eval-branch "n <= 10"
+calc.go:13:3 IsSmall return-bool-flip eval-return "false" [force-return]
+calc.go:15:2 IsSmall return-bool-flip eval-return "true" [force-return]
+calc.go:18:1 CountUp body-default return-default "0" [force-return]
+calc.go:20:6 CountUp negate-condition eval-branch "!(i < n)"
+calc.go:20:6 CountUp ror eval-branch "i <= n"
+calc.go:21:3 CountUp aor eval-then-jump "i = i - 1" [assign]
+calc.go:26:1 Sum body-default return-default "0" [force-return]
+calc.go:28:14 Sum negate-condition eval-branch "!(j < len(xs))" [call]
+calc.go:28:14 Sum ror eval-branch "j <= len(xs)" [call]

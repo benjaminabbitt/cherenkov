@@ -1,0 +1,12 @@
+calc.py:5:1 total body-default return-default "0" [force-return]
+calc.py:6:5 total aor eval-then-jump "s = a - b" [assign]
+calc.py:7:5 total delete-statement jump-only
+calc.py:11:1 is_small body-default return-default "False" [force-return]
+calc.py:12:8 is_small negate-condition eval-branch "not (n < 10)"
+calc.py:12:8 is_small ror eval-branch "n <= 10"
+calc.py:13:9 is_small return-bool-flip eval-return "False" [force-return]
+calc.py:14:5 is_small return-bool-flip eval-return "True" [force-return]
+calc.py:17:1 count_up body-default return-default "0" [force-return]
+calc.py:19:11 count_up negate-condition eval-branch "not (i < n)"
+calc.py:19:11 count_up ror eval-branch "i <= n"
+calc.py:20:9 count_up aor eval-then-jump "i = i - 1" [assign]

@@ -1,0 +1,23 @@
+schema_version: 3
+bundles:
+  ctxloom+git://github.com/benjaminabbitt/ctxloom-personal//bundles/unattended:
+    sha: 4c9aa89a7060aaa73dd0405cb4aac8e9bb4b1bcd
+    url: https://github.com/benjaminabbitt/ctxloom-personal
+    kind: branch
+  ctxloom+git://github.com/ctxloom/ctxloom-default//bundles/ai-coding-general:
+    sha: 48be92083f6006faecb2adf0252d7fd8e64ea9ea
+    url: https://github.com/ctxloom/ctxloom-default
+    kind: branch
+  ctxloom+git://github.com/ctxloom/ctxloom-default//bundles/ai-developer:
+    sha: 48be92083f6006faecb2adf0252d7fd8e64ea9ea
+    url: https://github.com/ctxloom/ctxloom-default
+    requested_version: branch:main
+    kind: branch
+  ctxloom+git://github.com/ctxloom/ctxloom-default//bundles/git:
+    sha: 48be92083f6006faecb2adf0252d7fd8e64ea9ea
+    url: https://github.com/ctxloom/ctxloom-default
+    kind: branch
+  ctxloom+git://github.com/ctxloom/ctxloom-default//bundles/testing:
+    sha: 48be92083f6006faecb2adf0252d7fd8e64ea9ea
+    url: https://github.com/ctxloom/ctxloom-default
+    kind: branch

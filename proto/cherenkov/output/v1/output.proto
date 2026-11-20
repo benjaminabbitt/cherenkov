@@ -1,0 +1,179 @@
+syntax = "proto3";
+
+// The documents a run prints, one for each event (`docs/output-events.md`):
+// the published schema of `cherenkov run --format json`. A document is its
+// event's name under `event`, then the run's id and when the event was
+// recorded, then the event's own fields. Field names are snake_case, an
+// unset field a reader may expect is `null`, and the verdicts, tiers and
+// selections are written in kebab-case.
+//
+// They are written for a reader and not recorded: no stream holds one, so
+// their durations are milliseconds in 32 bits (49 days), which a JSON
+// number holds exactly where a 64-bit integer is written as text.
+package cherenkov.output.v1;
+
+import "google/protobuf/timestamp.proto";
+import "io/angzarr/codegen/v1/codegen.proto";
+import "io/angzarr/v1/types.proto";
+import "cherenkov/mutant/v1/mutant.proto";
+import "cherenkov/run/v1/run.proto";
+
+// One printed document: whichever event it is, under `event`.
+message Document {
+  option (io.angzarr.codegen.v1.message) = {json_names: JSON_NAMES_PROTO};
+
+  oneof event {
+    option (io.angzarr.codegen.v1.choice) = {json_tag_key: "event"};
+
+    Started started = 1;
+    Planned planned = 2;
+    Prepared prepared = 3;
+    Failed failed = 4;
+    Decided decided = 5;
+    Finished finished = 6;
+  }
+}
+
+// A run began.
+message Started {
+  option (io.angzarr.codegen.v1.message) = {
+    json_names: JSON_NAMES_PROTO
+    json_tag: "run.started"
+    json_defaults: true
+  };
+
+  io.angzarr.v1.UUID run = 1;
+  google.protobuf.Timestamp at = 2;
+  string root = 3;
+  string language = 4;
+  string operators = 5;
+  uint32 jobs = 6;
+  bool fast = 7;
+  uint32 mutants = 8;
+}
+
+// One mutant of the run, planned.
+message Planned {
+  option (io.angzarr.codegen.v1.message) = {
+    json_names: JSON_NAMES_PROTO
+    json_tag: "mutant.planned"
+  };
+
+  io.angzarr.v1.UUID run = 1;
+  google.protobuf.Timestamp at = 2;
+  cherenkov.mutant.v1.PlannedMutant mutant = 3 [(io.angzarr.codegen.v1.field) = {json_flatten: true}];
+}
+
+// A test program, prepared.
+message Prepared {
+  option (io.angzarr.codegen.v1.message) = {
+    json_names: JSON_NAMES_PROTO
+    json_tag: "program.prepared"
+    json_defaults: true
+  };
+
+  io.angzarr.v1.UUID run = 1;
+  google.protobuf.Timestamp at = 2;
+  string program = 3;
+  uint32 baseline_ms = 4;
+  uint32 prepared_ms = 5;
+  // How many tests it has; null when the executor cannot list them.
+  optional uint32 tests = 6 [(io.angzarr.codegen.v1.field) = {json_null: true}];
+  cherenkov.run.v1.Selection selection = 7;
+  // Under a selection that recorded failures, the tests that failed.
+  optional FailedTests failures = 8 [(io.angzarr.codegen.v1.field) = {json_flatten: true}];
+  // Under a selection of every test, why.
+  optional string reason = 9;
+}
+
+// The tests that failed while a program's calls were recorded.
+message FailedTests {
+  option (io.angzarr.codegen.v1.message) = {
+    json_names: JSON_NAMES_PROTO
+    json_defaults: true
+  };
+
+  repeated string failed_tests = 1;
+}
+
+// A test program that did not prepare, and why.
+message Failed {
+  option (io.angzarr.codegen.v1.message) = {
+    json_names: JSON_NAMES_PROTO
+    json_tag: "program.failed"
+    json_defaults: true
+  };
+
+  io.angzarr.v1.UUID run = 1;
+  google.protobuf.Timestamp at = 2;
+  optional string program = 3 [(io.angzarr.codegen.v1.field) = {json_null: true}];
+  string reason = 4;
+}
+
+// A mutant, decided: self-contained.
+message Decided {
+  option (io.angzarr.codegen.v1.message) = {
+    json_names: JSON_NAMES_PROTO
+    json_tag: "mutant.decided"
+    json_defaults: true
+  };
+
+  io.angzarr.v1.UUID run = 1;
+  google.protobuf.Timestamp at = 2;
+  cherenkov.mutant.v1.PlannedMutant mutant = 3 [(io.angzarr.codegen.v1.field) = {json_flatten: true}];
+  cherenkov.mutant.v1.Verdict verdict = 4;
+  // When it ran.
+  optional cherenkov.mutant.v1.Tier tier = 5;
+  uint32 took_ms = 6;
+  repeated string tests_run = 7;
+  // For a killed mutant, who killed it.
+  optional Killers killers = 8 [(io.angzarr.codegen.v1.field) = {json_flatten: true}];
+  // For a survivor, the tests that executed the mutated code unnoticed.
+  optional Executors executors = 9 [(io.angzarr.codegen.v1.field) = {json_flatten: true}];
+  // For a mutant not run or not reached, why, and the reason's short
+  // machine-readable form.
+  optional string reason = 10;
+  optional string reason_code = 11;
+}
+
+// The tests that killed a mutant, and whether that is all of them: a run
+// that stops at its first failing test lists one.
+message Killers {
+  option (io.angzarr.codegen.v1.message) = {
+    json_names: JSON_NAMES_PROTO
+    json_defaults: true
+  };
+
+  repeated cherenkov.mutant.v1.KilledBy killed_by = 1;
+  bool complete = 2;
+}
+
+// The tests that executed a surviving mutant.
+message Executors {
+  option (io.angzarr.codegen.v1.message) = {
+    json_names: JSON_NAMES_PROTO
+    json_defaults: true
+  };
+
+  repeated string executed_by = 1;
+}
+
+// A run, over.
+message Finished {
+  option (io.angzarr.codegen.v1.message) = {
+    json_names: JSON_NAMES_PROTO
+    json_tag: "run.finished"
+    json_defaults: true
+  };
+
+  io.angzarr.v1.UUID run = 1;
+  google.protobuf.Timestamp at = 2;
+  // How many mutants got each verdict, by the verdict's name.
+  map<string, uint32> counts = 3;
+  uint32 took_ms = 4;
+  // The process's exit code.
+  int32 exit = 5;
+  cherenkov.run.v1.RunStatus status = 6;
+  // How many mutants could not be run, by the reason's code.
+  map<string, uint32> deficiencies = 7;
+}

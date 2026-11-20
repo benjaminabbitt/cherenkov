@@ -1,0 +1,7 @@
+# What is specific to Cherenkov for the dev module (rust-support's tools/dev).
+# Its git dependencies are in Cargo.toml (full-hash revs); no pin lives outside
+# it (no constant, golden manifest or document carries a rev), so there is no
+# [[site]]. `just dev::repin` moves Cargo.toml's pins, `just dev::land` pushes
+# the repositories in dependency order.
+schema = 1
+min_version = "1.0.0"

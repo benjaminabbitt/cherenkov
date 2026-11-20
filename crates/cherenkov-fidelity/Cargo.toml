@@ -1,0 +1,20 @@
+[package]
+name = "cherenkov-fidelity"
+description = "Test support: judge run-time mutants against compiled source mutants (Cherenkov's fidelity tests). Writes mutated sources, but only into its own scratch copies."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+cherenkov-core.workspace = true
+cherenkov-exec-dap.workspace = true
+walkdir.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+cherenkov-fs.workspace = true
+cherenkov-syntax.workspace = true

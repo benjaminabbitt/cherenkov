@@ -1,0 +1,480 @@
+# one row per mutant: cargo-mutants verdict, Cherenkov verdict (reason code when unsupported). No source text.
+file	line	column	function	cargo_mutants	cherenkov	reason_code
+crates/angzarr-bus/src/contract.rs	205	5	a_crash_hands_again_exactly_what_the_stored_position_does_not_cover	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	213	68	a_crash_hands_again_exactly_what_the_stored_position_does_not_cover	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	219	58	a_crash_hands_again_exactly_what_the_stored_position_does_not_cover	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	232	5	a_re_served_policy_delivers_nothing_twice	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	239	59	a_re_served_policy_delivers_nothing_twice	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	249	58	a_re_served_policy_delivers_nothing_twice	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	261	5	several_subscriptions_on_one_bus_are_each_served_their_scope	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	289	19	several_subscriptions_on_one_bus_are_each_served_their_scope	Timeout	unsupported	no-patch-rule
+crates/angzarr-bus/src/contract.rs	319	5	a_streams_events_are_handed_one_at_a_time_in_order_by_default	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	337	57	a_streams_events_are_handed_one_at_a_time_in_order_by_default	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	345	52	a_streams_events_are_handed_one_at_a_time_in_order_by_default	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	355	5	credit_bounds_what_is_in_flight	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	364	62	credit_bounds_what_is_in_flight	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	375	5	a_policys_position_moves_only_with_its_outputs	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	384	9	a_policys_position_moves_only_with_its_outputs	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	384	32	a_policys_position_moves_only_with_its_outputs	MissedMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	384	45	a_policys_position_moves_only_with_its_outputs	Timeout	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	406	5	a_held_failure_is_handed_again	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	414	73	a_held_failure_is_handed_again	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	433	5	a_projectors_bug_is_dead_lettered_and_its_stream_goes_on	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	441	40	a_projectors_bug_is_dead_lettered_and_its_stream_goes_on	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	441	45	a_projectors_bug_is_dead_lettered_and_its_stream_goes_on	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	441	56	a_projectors_bug_is_dead_lettered_and_its_stream_goes_on	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	457	5	a_policys_bug_is_dead_lettered_or_held	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	464	30	a_policys_bug_is_dead_lettered_or_held	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	464	53	a_policys_bug_is_dead_lettered_or_held	MissedMutant	unsupported	function-not-found
+crates/angzarr-bus/src/contract.rs	464	64	a_policys_bug_is_dead_lettered_or_held	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	476	9	a_policys_bug_is_dead_lettered_or_held	MissedMutant	not-called	
+crates/angzarr-bus/src/contract.rs	495	5	a_purged_stream_is_handed_to_a_projector_once_as_gone_and_forgotten_by_a_policy	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	504	65	a_purged_stream_is_handed_to_a_projector_once_as_gone_and_forgotten_by_a_policy	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	506	38	a_purged_stream_is_handed_to_a_projector_once_as_gone_and_forgotten_by_a_policy	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	506	43	a_purged_stream_is_handed_to_a_projector_once_as_gone_and_forgotten_by_a_policy	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	506	54	a_purged_stream_is_handed_to_a_projector_once_as_gone_and_forgotten_by_a_policy	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	518	62	a_purged_stream_is_handed_to_a_projector_once_as_gone_and_forgotten_by_a_policy	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	528	5	a_commit_wakes_the_bus_with_no_poll	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	536	45	a_commit_wakes_the_bus_with_no_poll	MissedMutant	unsupported	value-not-buildable
+crates/angzarr-bus/src/contract.rs	544	23	a_commit_wakes_the_bus_with_no_poll	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	558	5	out_of_order_deliveries_are_served_in_stream_order_from_the_store	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	576	29	out_of_order_deliveries_are_served_in_stream_order_from_the_store	Timeout	unsupported	no-patch-rule
+crates/angzarr-bus/src/contract.rs	597	5	a_policys_out_of_order_triggers_are_reacted_to_in_stream_order	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	609	29	a_policys_out_of_order_triggers_are_reacted_to_in_stream_order	Timeout	unsupported	no-patch-rule
+crates/angzarr-bus/src/contract.rs	619	5	a_held_delivery_is_settled_held_and_delivered_again	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	630	29	a_held_delivery_is_settled_held_and_delivered_again	Timeout	unsupported	no-patch-rule
+crates/angzarr-bus/src/contract.rs	646	5	seventy_delivered_last_first_are_handled_in_order	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	656	29	seventy_delivered_last_first_are_handled_in_order	Timeout	unsupported	no-patch-rule
+crates/angzarr-bus/src/contract.rs	673	5	a_missing_predecessor_holds_and_is_never_skipped	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	688	34	a_missing_predecessor_holds_and_is_never_skipped	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	706	5	a_poison_event_recovered_from_the_store_is_dead_lettered_at_the_cap	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	724	24	a_poison_event_recovered_from_the_store_is_dead_lettered_at_the_cap	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	734	5	a_long_gap_is_recovered_within_credit	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	748	29	a_long_gap_is_recovered_within_credit	Timeout	unsupported	no-patch-rule
+crates/angzarr-bus/src/contract.rs	766	5	a_held_delivery_carries_its_delay	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	777	29	a_held_delivery_carries_its_delay	Timeout	unsupported	no-patch-rule
+crates/angzarr-bus/src/contract.rs	897	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	897	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	897	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	897	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	902	9	settled	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	902	9	settled	Unviable	unviable	no-default
+crates/angzarr-bus/src/contract.rs	902	9	settled	Unviable	unviable	no-default
+crates/angzarr-bus/src/contract.rs	902	9	settled	Unviable	unviable	no-default
+crates/angzarr-bus/src/contract.rs	902	9	settled	Unviable	unviable	no-default
+crates/angzarr-bus/src/contract.rs	915	9	open	Unviable	unviable	no-default
+crates/angzarr-bus/src/contract.rs	924	9	next	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	924	9	next	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	924	9	next	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	924	9	next	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	924	9	next	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	924	9	next	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	924	9	next	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	930	32	next	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	930	32	next	Timeout	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	943	20	next	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	952	9	settle	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	959	76	settle	CaughtMutant	unsupported	no-patch-rule
+crates/angzarr-bus/src/contract.rs	959	76	settle	CaughtMutant	unsupported	no-patch-rule
+crates/angzarr-bus/src/contract.rs	1009	9	gated	MissedMutant	unsupported	value-not-buildable
+crates/angzarr-bus/src/contract.rs	1015	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1015	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1015	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1015	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1019	9	handed	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1019	9	handed	Unviable	unsupported	value-not-buildable
+crates/angzarr-bus/src/contract.rs	1023	9	done	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1023	9	done	Unviable	unsupported	value-not-buildable
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1029	9	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1031	19	enter	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	1031	19	enter	Timeout	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	1033	17	enter	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	1033	17	enter	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	1037	52	enter	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	1041	64	enter	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1043	58	enter	MissedMutant	not-called	
+crates/angzarr-bus/src/contract.rs	1050	9	handle	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1050	9	handle	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1050	9	handle	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1050	9	handle	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1061	59	handle	MissedMutant	not-called	
+crates/angzarr-bus/src/contract.rs	1068	27	handle	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	1068	27	handle	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	1070	29	handle	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	1070	29	handle	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	1104	9	to	Timeout	unsupported	value-not-buildable
+crates/angzarr-bus/src/contract.rs	1112	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1112	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1112	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1112	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1116	9	triggers	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1116	9	triggers	CaughtMutant	unsupported	value-not-buildable
+crates/angzarr-bus/src/contract.rs	1122	9	react	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1122	9	react	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1122	9	react	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1122	9	react	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1122	9	react	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1122	9	react	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1122	9	react	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1145	9	absorb	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1145	22	absorb	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	1145	22	absorb	Timeout	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	1147	20	absorb	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	1147	20	absorb	Timeout	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/contract.rs	1157	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1157	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1157	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1157	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1161	9	take	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1167	5	subscribe	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1181	5	project	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1193	5	react	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1205	5	serve	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1220	5	serve_beside	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1224	9	serve_beside	Timeout	unsupported	generic-copies
+crates/angzarr-bus/src/contract.rs	1234	12	serve_beside	Timeout	unsupported	generic-copies
+crates/angzarr-bus/src/contract.rs	1234	25	serve_beside	CaughtMutant	unsupported	generic-copies
+crates/angzarr-bus/src/contract.rs	1254	5	crash_when	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1276	5	until	CaughtMutant	unsupported	generic-copies
+crates/angzarr-bus/src/contract.rs	1276	11	until	CaughtMutant	unsupported	generic-copies
+crates/angzarr-bus/src/contract.rs	1289	9	poll	Unviable	unviable	does-not-compile
+crates/angzarr-bus/src/contract.rs	1289	9	poll	Unviable	unviable	does-not-compile
+crates/angzarr-bus/src/contract.rs	1289	9	poll	Unviable	unviable	does-not-compile
+crates/angzarr-bus/src/contract.rs	1289	9	poll	Timeout	unsupported	value-not-buildable
+crates/angzarr-bus/src/contract.rs	1306	9	ring	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	1311	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1311	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1311	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1311	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1311	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1311	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1311	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/contract.rs	1330	5	nonzero	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1334	5	credit	Unviable	unviable	no-default
+crates/angzarr-bus/src/contract.rs	1339	5	stream	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1347	5	append	Timeout	timeout	
+crates/angzarr-bus/src/contract.rs	1353	5	event	Unviable	unsupported	value-not-buildable
+crates/angzarr-bus/src/contract.rs	1360	5	events	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1360	5	events	Unviable	unsupported	value-not-buildable
+crates/angzarr-bus/src/contract.rs	1364	5	stream_of	CaughtMutant	unsupported	value-not-buildable
+crates/angzarr-bus/src/contract.rs	1370	5	trigger	CaughtMutant	unsupported	value-not-buildable
+crates/angzarr-bus/src/contract.rs	1379	5	derived	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1388	5	causes	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1388	5	causes	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1400	5	sorted	CaughtMutant	killed	
+crates/angzarr-bus/src/contract.rs	1400	5	sorted	Unviable	unsupported	value-not-buildable
+crates/angzarr-bus/src/contract.rs	1414	5	ids	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	1414	5	ids	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	1414	5	ids	MissedMutant	survived	
+crates/angzarr-bus/src/contract.rs	1414	5	ids	MissedMutant	survived	
+crates/angzarr-bus/src/credit.rs	31	9	admits	CaughtMutant	killed	
+crates/angzarr-bus/src/credit.rs	31	9	admits	CaughtMutant	timeout	
+crates/angzarr-bus/src/credit.rs	31	9	admits	CaughtMutant	timeout	
+crates/angzarr-bus/src/credit.rs	31	22	admits	CaughtMutant	unsupported	function-not-found
+crates/angzarr-bus/src/credit.rs	31	25	admits	CaughtMutant	timeout	
+crates/angzarr-bus/src/credit.rs	37	9	full	CaughtMutant	timeout	
+crates/angzarr-bus/src/credit.rs	37	9	full	CaughtMutant	killed	
+crates/angzarr-bus/src/credit.rs	37	20	full	CaughtMutant	timeout	
+crates/angzarr-bus/src/credit.rs	42	9	take	CaughtMutant	killed	
+crates/angzarr-bus/src/credit.rs	42	20	take	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/credit.rs	42	20	take	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/credit.rs	43	50	take	CaughtMutant	unsupported	function-not-found
+crates/angzarr-bus/src/credit.rs	43	50	take	MissedMutant	unsupported	function-not-found
+crates/angzarr-bus/src/credit.rs	48	9	release	CaughtMutant	timeout	
+crates/angzarr-bus/src/credit.rs	51	20	release	CaughtMutant	timeout	
+crates/angzarr-bus/src/credit.rs	59	9	unsettled	MissedMutant	survived	
+crates/angzarr-bus/src/credit.rs	59	9	unsettled	CaughtMutant	killed	
+crates/angzarr-bus/src/hub.rs	179	9	is_policy	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	179	9	is_policy	MissedMutant	survived	
+crates/angzarr-bus/src/hub.rs	214	9	reading	Unviable	unviable	no-default
+crates/angzarr-bus/src/hub.rs	233	9	retrying	Unviable	unsupported	generic-copies
+crates/angzarr-bus/src/hub.rs	241	9	ahead	Unviable	not-called	
+crates/angzarr-bus/src/hub.rs	247	9	dispatch	Unviable	not-called	
+crates/angzarr-bus/src/hub.rs	252	9	transport	Unviable	not-called	
+crates/angzarr-bus/src/hub.rs	273	9	subscribe	Timeout	unsupported	generic-copies
+crates/angzarr-bus/src/hub.rs	275	51	subscribe	CaughtMutant	killed	
+crates/angzarr-bus/src/hub.rs	307	5	key	Timeout	unsupported	value-not-buildable
+crates/angzarr-bus/src/hub.rs	319	5	fill_slot	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	323	5	settled	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	323	5	settled	Unviable	unviable	no-default
+crates/angzarr-bus/src/hub.rs	344	9	at	Unviable	unsupported	value-not-buildable
+crates/angzarr-bus/src/hub.rs	352	9	waiting	MissedMutant	survived	
+crates/angzarr-bus/src/hub.rs	352	9	waiting	MissedMutant	survived	
+crates/angzarr-bus/src/hub.rs	380	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/hub.rs	380	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/hub.rs	380	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/hub.rs	380	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/hub.rs	384	9	quiet	MissedMutant	survived	
+crates/angzarr-bus/src/hub.rs	384	9	quiet	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	385	20	quiet	MissedMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/hub.rs	385	35	quiet	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	389	9	fail	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	399	9	attempt	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	399	9	attempt	Timeout	unsupported	value-not-buildable
+crates/angzarr-bus/src/hub.rs	406	9	attempted	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	407	69	attempted	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/hub.rs	407	69	attempted	Timeout	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/hub.rs	412	9	with_lane	Unviable	unviable	no-default
+crates/angzarr-bus/src/hub.rs	460	5	serve	CaughtMutant	unsupported	generic-copies
+crates/angzarr-bus/src/hub.rs	511	9	deliver	Unviable	unviable	no-default
+crates/angzarr-bus/src/hub.rs	514	25	deliver	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/hub.rs	514	25	deliver	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/hub.rs	525	26	deliver	Timeout	unsupported	function-not-found
+crates/angzarr-bus/src/hub.rs	525	26	deliver	Timeout	unsupported	function-not-found
+crates/angzarr-bus/src/hub.rs	531	9	idle	Unviable	unsupported	value-not-buildable
+crates/angzarr-bus/src/hub.rs	534	25	idle	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/hub.rs	534	25	idle	Timeout	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/hub.rs	569	9	steer	CaughtMutant	unsupported	generic-copies
+crates/angzarr-bus/src/hub.rs	573	22	steer	Timeout	unsupported	generic-copies
+crates/angzarr-bus/src/hub.rs	573	37	steer	MissedMutant	unsupported	generic-copies
+crates/angzarr-bus/src/hub.rs	583	20	steer	Timeout	unsupported	generic-copies
+crates/angzarr-bus/src/hub.rs	595	9	place	Unviable	unviable	no-default
+crates/angzarr-bus/src/hub.rs	597	26	place	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	605	25	place	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	605	25	place	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	605	25	place	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	608	25	place	MissedMutant	survived	
+crates/angzarr-bus/src/hub.rs	608	25	place	MissedMutant	survived	
+crates/angzarr-bus/src/hub.rs	608	25	place	MissedMutant	survived	
+crates/angzarr-bus/src/hub.rs	608	37	place	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	608	55	place	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	617	26	place	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	634	30	place	CaughtMutant	survived	
+crates/angzarr-bus/src/hub.rs	638	16	place	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	647	9	drive	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	656	9	walk	Timeout	unsupported	value-not-buildable
+crates/angzarr-bus/src/hub.rs	668	36	walk	MissedMutant	survived	
+crates/angzarr-bus/src/hub.rs	668	36	walk	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	668	42	walk	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	682	16	walk	MissedMutant	survived	
+crates/angzarr-bus/src/hub.rs	698	9	arrived	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	698	9	arrived	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	702	13	arrived	MissedMutant	not-called	
+crates/angzarr-bus/src/hub.rs	723	9	recover	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	723	9	recover	Timeout	unsupported	value-not-buildable
+crates/angzarr-bus/src/hub.rs	727	40	recover	MissedMutant	survived	
+crates/angzarr-bus/src/hub.rs	727	40	recover	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	727	59	recover	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	728	17	recover	MissedMutant	unsupported	other
+crates/angzarr-bus/src/hub.rs	743	17	recover	MissedMutant	killed	
+crates/angzarr-bus/src/hub.rs	754	16	recover	MissedMutant	unsupported	no-patch-rule
+crates/angzarr-bus/src/hub.rs	772	9	hand_at_mark	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	772	9	hand_at_mark	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	796	12	hand_at_mark	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	797	45	hand_at_mark	CaughtMutant	unsupported	no-patch-rule
+crates/angzarr-bus/src/hub.rs	797	45	hand_at_mark	Timeout	unsupported	no-patch-rule
+crates/angzarr-bus/src/hub.rs	801	27	hand_at_mark	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/hub.rs	801	27	hand_at_mark	Timeout	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/hub.rs	801	47	hand_at_mark	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	804	73	hand_at_mark	CaughtMutant	killed	
+crates/angzarr-bus/src/hub.rs	804	73	hand_at_mark	Timeout	unsupported	evaluator-cannot-apply
+crates/angzarr-bus/src/hub.rs	806	13	hand_at_mark	CaughtMutant	killed	
+crates/angzarr-bus/src/hub.rs	817	9	hand	Unviable	unviable	no-default
+crates/angzarr-bus/src/hub.rs	831	9	after	MissedMutant	survived	
+crates/angzarr-bus/src/hub.rs	837	9	hold_all	MissedMutant	survived	
+crates/angzarr-bus/src/hub.rs	854	9	missed	Timeout	unsupported	value-not-buildable
+crates/angzarr-bus/src/hub.rs	866	12	missed	CaughtMutant	killed	
+crates/angzarr-bus/src/hub.rs	889	9	load	CaughtMutant	killed	
+crates/angzarr-bus/src/hub.rs	908	9	write	Timeout	timeout	
+crates/angzarr-bus/src/hub.rs	924	9	gone	Unviable	unviable	no-default
+crates/angzarr-bus/src/hub.rs	943	51	Serve<'s, P, D, R>::gone	CaughtMutant	(no match)	
+crates/angzarr-bus/src/hub.rs	943	51	Serve<'s, P, D, R>::gone	Timeout	(no match)	
+crates/angzarr-bus/src/hub.rs	951	13	gone	MissedMutant	survived	
+crates/angzarr-bus/src/hub.rs	958	9	forget	CaughtMutant	killed	
+crates/angzarr-bus/src/pump.rs	27	9	inner	Unviable	not-called	
+crates/angzarr-bus/src/pump.rs	39	9	run	Timeout	timeout	
+crates/angzarr-bus/src/pump.rs	56	5	pump	Timeout	unsupported	generic-copies
+crates/angzarr-bus/src/pump.rs	79	27	pump	Timeout	unsupported	generic-copies
+crates/angzarr-bus/src/pump.rs	79	42	pump	Timeout	unsupported	generic-copies
+crates/angzarr-bus/src/pump.rs	79	42	pump	Timeout	unsupported	generic-copies
+crates/angzarr-bus/src/pump.rs	79	42	pump	CaughtMutant	unsupported	generic-copies
+crates/angzarr-bus/src/recovery.rs	91	9	recover	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/recovery.rs	91	9	recover	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/recovery.rs	91	9	recover	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/recovery.rs	91	9	recover	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/recovery.rs	116	9	next	Timeout	timeout	
+crates/angzarr-bus/src/recovery.rs	116	9	next	Unviable	unviable	no-default
+crates/angzarr-bus/src/recovery.rs	116	33	next	MissedMutant	survived	
+crates/angzarr-bus/src/recovery.rs	116	36	next	Timeout	timeout	
+crates/angzarr-bus/src/recovery.rs	116	48	next	MissedMutant	survived	
+crates/angzarr-bus/src/recovery.rs	116	61	next	Timeout	unsupported	function-not-found
+crates/angzarr-bus/src/recovery.rs	116	61	next	Timeout	unsupported	function-not-found
+crates/angzarr-bus/src/recovery.rs	116	61	next	MissedMutant	unsupported	function-not-found
+crates/angzarr-bus/src/recovery.rs	121	44	next	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/recovery.rs	121	44	next	Timeout	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/recovery.rs	147	9	resolve	Timeout	timeout	
+crates/angzarr-bus/src/recovery.rs	147	9	resolve	MissedMutant	unsupported	value-not-buildable
+crates/angzarr-bus/src/recovery.rs	150	51	resolve	Timeout	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/recovery.rs	150	51	resolve	Timeout	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/retry.rs	48	9	last	CaughtMutant	timeout	
+crates/angzarr-bus/src/retry.rs	48	9	last	CaughtMutant	timeout	
+crates/angzarr-bus/src/retry.rs	48	44	last	CaughtMutant	timeout	
+crates/angzarr-bus/src/retry.rs	54	9	after	CaughtMutant	killed	
+crates/angzarr-bus/src/retry.rs	55	47	after	CaughtMutant	unsupported	evaluator-cannot-apply
+crates/angzarr-bus/src/retry.rs	55	47	after	CaughtMutant	unsupported	evaluator-cannot-apply
+crates/angzarr-bus/src/retry.rs	57	50	after	CaughtMutant	unsupported	evaluator-cannot-apply
+crates/angzarr-bus/src/retry.rs	57	50	after	CaughtMutant	unsupported	evaluator-cannot-apply
+crates/angzarr-bus/src/retry.rs	58	38	after	CaughtMutant	unsupported	value-not-buildable
+crates/angzarr-bus/src/retry.rs	58	38	after	CaughtMutant	unsupported	value-not-buildable
+crates/angzarr-bus/src/retry.rs	58	45	after	CaughtMutant	unsupported	value-not-buildable
+crates/angzarr-bus/src/retry.rs	58	45	after	CaughtMutant	unsupported	value-not-buildable
+crates/angzarr-bus/src/retry.rs	76	9	hold	MissedMutant	survived	
+crates/angzarr-bus/src/retry.rs	81	9	is_empty	MissedMutant	not-called	
+crates/angzarr-bus/src/retry.rs	81	9	is_empty	MissedMutant	not-called	
+crates/angzarr-bus/src/retry.rs	87	9	due	MissedMutant	survived	
+crates/angzarr-bus/src/retry.rs	87	9	due	Unviable	unsupported	value-not-buildable
+crates/angzarr-bus/src/served.rs	37	9	handled	CaughtMutant	timeout	
+crates/angzarr-bus/src/served.rs	37	9	handled	CaughtMutant	killed	
+crates/angzarr-bus/src/served.rs	42	9	failures	CaughtMutant	unsupported	value-not-buildable
+crates/angzarr-bus/src/served.rs	42	9	failures	Unviable	unviable	does-not-compile
+crates/angzarr-bus/src/served.rs	47	9	is_empty	CaughtMutant	killed	
+crates/angzarr-bus/src/served.rs	47	9	is_empty	CaughtMutant	killed	
+crates/angzarr-bus/src/served.rs	47	22	is_empty	CaughtMutant	unsupported	function-not-found
+crates/angzarr-bus/src/served.rs	47	27	is_empty	CaughtMutant	killed	
+crates/angzarr-bus/src/served.rs	52	9	add_handled	CaughtMutant	timeout	
+crates/angzarr-bus/src/served.rs	52	22	add_handled	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/served.rs	52	22	add_handled	CaughtMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/served.rs	57	9	push	CaughtMutant	timeout	
+crates/angzarr-bus/src/store.rs	71	9	pushed_by	Unviable	unviable	no-default
+crates/angzarr-bus/src/store.rs	95	9	open	Unviable	unviable	no-default
+crates/angzarr-bus/src/store.rs	120	5	key	Timeout	unsupported	value-not-buildable
+crates/angzarr-bus/src/store.rs	170	9	kept	CaughtMutant	killed	
+crates/angzarr-bus/src/store.rs	170	9	kept	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	170	21	kept	CaughtMutant	unsupported	function-not-found
+crates/angzarr-bus/src/store.rs	170	21	kept	MissedMutant	unsupported	function-not-found
+crates/angzarr-bus/src/store.rs	170	21	kept	CaughtMutant	unsupported	function-not-found
+crates/angzarr-bus/src/store.rs	170	25	kept	MissedMutant	survived	
+crates/angzarr-bus/src/store.rs	170	40	kept	CaughtMutant	unsupported	function-not-found
+crates/angzarr-bus/src/store.rs	170	40	kept	MissedMutant	unsupported	function-not-found
+crates/angzarr-bus/src/store.rs	170	40	kept	CaughtMutant	unsupported	function-not-found
+crates/angzarr-bus/src/store.rs	170	44	kept	MissedMutant	survived	
+crates/angzarr-bus/src/store.rs	176	9	owed	Timeout	unsupported	value-not-buildable
+crates/angzarr-bus/src/store.rs	176	9	owed	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	176	9	owed	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	176	9	owed	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	176	9	owed	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	176	31	owed	CaughtMutant	killed	
+crates/angzarr-bus/src/store.rs	185	22	owed	Timeout	unsupported	value-not-buildable
+crates/angzarr-bus/src/store.rs	185	22	owed	Timeout	unsupported	value-not-buildable
+crates/angzarr-bus/src/store.rs	185	22	owed	Timeout	unsupported	value-not-buildable
+crates/angzarr-bus/src/store.rs	190	9	owes	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	190	9	owes	MissedMutant	survived	
+crates/angzarr-bus/src/store.rs	191	13	owes	Timeout	unsupported	function-not-found
+crates/angzarr-bus/src/store.rs	192	13	owes	Timeout	unsupported	function-not-found
+crates/angzarr-bus/src/store.rs	192	27	owes	MissedMutant	survived	
+crates/angzarr-bus/src/store.rs	192	51	owes	MissedMutant	survived	
+crates/angzarr-bus/src/store.rs	192	66	owes	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	192	66	owes	MissedMutant	survived	
+crates/angzarr-bus/src/store.rs	192	66	owes	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	229	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/store.rs	229	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/store.rs	229	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/store.rs	229	9	lock	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/store.rs	234	9	scan	Timeout	unsupported	value-not-buildable
+crates/angzarr-bus/src/store.rs	258	21	scan	Timeout	unsupported	function-not-found
+crates/angzarr-bus/src/store.rs	258	21	scan	CaughtMutant	unsupported	function-not-found
+crates/angzarr-bus/src/store.rs	258	21	scan	Timeout	unsupported	function-not-found
+crates/angzarr-bus/src/store.rs	258	35	scan	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	264	43	scan	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	264	58	scan	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	265	60	scan	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	273	9	pick	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	273	9	pick	Unviable	unviable	no-default
+crates/angzarr-bus/src/store.rs	283	56	pick	CaughtMutant	unsupported	evaluator-cannot-apply
+crates/angzarr-bus/src/store.rs	283	56	pick	Timeout	unsupported	evaluator-cannot-apply
+crates/angzarr-bus/src/store.rs	308	9	owes	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	308	9	owes	MissedMutant	survived	
+crates/angzarr-bus/src/store.rs	314	9	release	MissedMutant	survived	
+crates/angzarr-bus/src/store.rs	317	25	release	MissedMutant	survived	
+crates/angzarr-bus/src/store.rs	335	9	woken	Unviable	unviable	no-default
+crates/angzarr-bus/src/store.rs	346	16	woken	Timeout	unsupported	evaluation-hung
+crates/angzarr-bus/src/store.rs	360	9	next	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/store.rs	360	9	next	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/store.rs	360	9	next	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/store.rs	360	9	next	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/store.rs	374	24	next	Timeout	unsupported	evaluation-hung
+crates/angzarr-bus/src/store.rs	374	37	next	Timeout	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/store.rs	374	40	next	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	389	33	next	MissedMutant	unsupported	symbol-not-in-scope
+crates/angzarr-bus/src/store.rs	389	48	next	MissedMutant	survived	
+crates/angzarr-bus/src/store.rs	402	9	settle	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	408	61	settle	Timeout	timeout	
+crates/angzarr-bus/src/store.rs	416	28	settle	MissedMutant	survived	
+crates/angzarr-bus/src/store.rs	421	40	settle	CaughtMutant	killed	
+crates/angzarr-bus/src/store.rs	421	40	settle	MissedMutant	survived	
+crates/angzarr-bus/src/subscription.rs	17	9	of	Unviable	unviable	no-default
+crates/angzarr-bus/src/subscription.rs	19	16	of	CaughtMutant	timeout	
+crates/angzarr-bus/src/subscription.rs	19	48	of	CaughtMutant	timeout	
+crates/angzarr-bus/src/subscription.rs	28	9	domain	Unviable	unviable	no-default
+crates/angzarr-bus/src/subscription.rs	33	9	domains	CaughtMutant	timeout	
+crates/angzarr-bus/src/subscription.rs	33	9	domains	CaughtMutant	timeout	
+crates/angzarr-bus/src/subscription.rs	33	9	domains	CaughtMutant	timeout	
+crates/angzarr-bus/src/subscription.rs	38	9	holds	CaughtMutant	killed	
+crates/angzarr-bus/src/subscription.rs	38	9	holds	CaughtMutant	timeout	
+crates/angzarr-bus/src/subscription.rs	57	9	instances	CaughtMutant	unsupported	value-not-buildable
+crates/angzarr-bus/src/subscription.rs	89	9	projector	Unviable	unviable	no-default
+crates/angzarr-bus/src/subscription.rs	97	9	policy	Unviable	unviable	no-default
+crates/angzarr-bus/src/subscription.rs	105	9	handler	Unviable	unviable	does-not-compile
+crates/angzarr-bus/src/subscription.rs	110	9	credit	Unviable	unsupported	generic-copies
+crates/angzarr-bus/src/subscription.rs	115	9	is_policy	CaughtMutant	unsupported	generic-copies
+crates/angzarr-bus/src/subscription.rs	115	9	is_policy	CaughtMutant	killed	
+crates/angzarr-bus/src/subscription.rs	120	9	into_parts	Unviable	unviable	no-default
+crates/angzarr-bus/src/transport.rs	49	9	of	Unviable	unviable	no-default
+crates/angzarr-bus/src/transport.rs	59	9	as_str	CaughtMutant	killed	
+crates/angzarr-bus/src/transport.rs	59	9	as_str	CaughtMutant	killed	
+crates/angzarr-bus/src/transport_contract.rs	59	5	a_delivery_carries_its_stream_sequence_key_and_body	MissedMutant	survived	
+crates/angzarr-bus/src/transport_contract.rs	66	43	a_delivery_carries_its_stream_sequence_key_and_body	CaughtMutant	unsupported	no-patch-rule
+crates/angzarr-bus/src/transport_contract.rs	66	43	a_delivery_carries_its_stream_sequence_key_and_body	MissedMutant	unsupported	no-patch-rule
+crates/angzarr-bus/src/transport_contract.rs	87	5	an_unsettled_delivery_is_delivered_again_after_reopening	MissedMutant	survived	
+crates/angzarr-bus/src/transport_contract.rs	107	5	a_handled_and_recorded_delivery_is_not_delivered_again	MissedMutant	survived	
+crates/angzarr-bus/src/transport_contract.rs	126	5	a_held_delivery_is_delivered_again_one_attempt_more	MissedMutant	survived	
+crates/angzarr-bus/src/transport_contract.rs	146	5	a_held_delivery_waits_out_its_delay	MissedMutant	survived	
+crates/angzarr-bus/src/transport_contract.rs	165	5	credit_bounds_what_is_unsettled	MissedMutant	survived	
+crates/angzarr-bus/src/transport_contract.rs	187	5	a_purged_stream_is_delivered_gone	MissedMutant	survived	
+crates/angzarr-bus/src/transport_contract.rs	224	5	stream	CaughtMutant	killed	
+crates/angzarr-bus/src/transport_contract.rs	232	5	credit	Unviable	unviable	no-default
+crates/angzarr-bus/src/transport_contract.rs	236	5	append	Timeout	timeout	
+crates/angzarr-bus/src/transport_contract.rs	246	5	open	Unviable	unviable	no-default
+crates/angzarr-bus/src/transport_contract.rs	258	5	settle	Timeout	timeout	
+crates/angzarr-bus/src/transport_contract.rs	265	5	bounded	Unviable	unsupported	value-not-buildable
+crates/angzarr-bus/src/transport_contract.rs	295	5	delivered	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/transport_contract.rs	295	5	delivered	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/transport_contract.rs	295	5	delivered	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/transport_contract.rs	295	5	delivered	Unviable	unsupported	value-name-unresolved
+crates/angzarr-bus/src/transport_contract.rs	322	5	delivers_now	CaughtMutant	killed	
+crates/angzarr-bus/src/transport_contract.rs	322	5	delivers_now	MissedMutant	survived	

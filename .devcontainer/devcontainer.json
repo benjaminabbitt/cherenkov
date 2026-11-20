@@ -1,0 +1,50 @@
+{
+  "name": "cherenkov",
+  "build": {
+    "dockerfile": "Containerfile",
+    "context": "."
+  },
+  // GDB and Delve debug other processes with ptrace(2). Depending on the
+  // runtime, the default seccomp profile can block ptrace and personality(2)
+  // (GDB's disabling of address randomisation), and the default capability
+  // set lacks CAP_SYS_PTRACE, which attaching to a process that is not the
+  // debugger's child needs when Yama's ptrace_scope is 1 or more. These two
+  // flags make the debuggers work regardless of the runtime; nothing else is
+  // relaxed (no --privileged). Checked on rootless podman 5.4: GDB attaches
+  // and launches with them (it also did without, there; Docker and other hosts
+  // are why they stay).
+  //
+  // The profilers (perf, samply, cargo flamegraph) call perf_event_open(2):
+  // seccomp=unconfined lets it through, and CAP_PERFMON lets it sample
+  // beyond the user's own processes. The host's kernel.perf_event_paranoid
+  // still applies: at 3 (some hardened distributions) sampling fails until
+  // the host sets it to 2 or lower.
+  "runArgs": [
+    "--cap-add=SYS_PTRACE",
+    "--cap-add=PERFMON",
+    "--security-opt=seccomp=unconfined"
+  ],
+  "mounts": [
+    // The cargo registry and git caches, kept across rebuilds of the container.
+    "source=cherenkov-cargo-registry,target=/usr/local/cargo/registry,type=volume",
+    "source=cherenkov-cargo-git,target=/usr/local/cargo/git,type=volume"
+  ],
+  // No secrets are baked into the image or this file; a token a recipe needs
+  // comes from the host environment at run time.
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true,
+  "postCreateCommand": "just devcontainer-setup",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "golang.go"
+      ],
+      "settings": {
+        "rust-analyzer.check.command": "clippy",
+        "editor.formatOnSave": true
+      }
+    }
+  }
+}

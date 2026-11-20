@@ -1,0 +1,77 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+exclude = ["fixtures"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.96"
+license = "Apache-2.0 OR BSD-3-Clause"
+publish = false
+
+[workspace.dependencies]
+cherenkov-core = { path = "crates/cherenkov-core" }
+cherenkov-dap-types = { path = "crates/cherenkov-dap-types" }
+cherenkov-exec-dap = { path = "crates/cherenkov-exec-dap" }
+cherenkov-syntax = { path = "crates/cherenkov-syntax" }
+cherenkov-fs = { path = "crates/cherenkov-fs" }
+cherenkov-run-wire = { path = "crates/cherenkov-run-wire" }
+cherenkov-run-domain = { path = "crates/cherenkov-run-domain" }
+cherenkov-run-application = { path = "crates/cherenkov-run-application" }
+cherenkov-run-store = { path = "crates/cherenkov-run-store" }
+# The angzarr family, pinned by full commit to one revision of the one angzarr
+# workspace (github.com/angzarr-io/angzarr), so the lock holds one core:
+# angzarr-embedded (its kernel, bus and markup macros), angzarr-ports (the
+# in-memory store), the diagnostics and the presentation the CLI renders
+# through, angzarr-proto and angzarr-build (with angzarr-codegen: the wire and
+# domain crates' build dependency, generating from proto/ into OUT_DIR).
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr", rev = "52d48ccf4005da563fcf63c4e7babe66e281e53b" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr", rev = "52d48ccf4005da563fcf63c4e7babe66e281e53b" }
+angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "52d48ccf4005da563fcf63c4e7babe66e281e53b" }
+angzarr-presentation = { git = "https://github.com/angzarr-io/angzarr", rev = "52d48ccf4005da563fcf63c4e7babe66e281e53b" }
+angzarr-ports = { git = "https://github.com/angzarr-io/angzarr", rev = "52d48ccf4005da563fcf63c4e7babe66e281e53b", features = ["memory"] }
+# angzarr's own messages, which the run layer's protos embed (its UUID).
+angzarr-proto = { git = "https://github.com/angzarr-io/angzarr", rev = "52d48ccf4005da563fcf63c4e7babe66e281e53b" }
+angzarr-build = { git = "https://github.com/angzarr-io/angzarr", rev = "52d48ccf4005da563fcf63c4e7babe66e281e53b" }
+# rust-support, shared with ctxloom, taskloom and angzarr-cli: the CLI's
+# failure, its reporter and the exit-code convention, on the same angzarr rev.
+cli-support = { git = "https://github.com/benjaminabbitt/rust-support", rev = "ad7f37de79fe31916ce87c605dc2ec1f104d56aa" }
+# prost must be the version angzarr-proto generates for.
+prost = "0.14"
+prost-types = "0.14"
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
+uuid = { version = "1", features = ["v7"] }
+base64 = "0.23.1"
+rustix = { version = "1.1.6", features = ["process"] }
+# A process's state by pid, the same on every OS (a zombie is not running).
+sysinfo = { version = "0.40.4", default-features = false, features = ["system"] }
+bitflags = { version = "2.13.2", features = ["serde"] }
+clap = { version = "4.6.8", features = ["derive"] }
+globset = "0.4.21"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["preserve_order"] }
+sha2 = "0.11.1"
+streaming-iterator = "0.1.9"
+toml = "1.2.1"
+tree-sitter = "0.27.2"
+tree-sitter-go = "0.25.0"
+tree-sitter-python = "0.25.0"
+tree-sitter-rust = "0.24.2"
+iced-x86 = { version = "1.22.0", default-features = false, features = ["std", "decoder", "instr_info"] }
+gimli = { version = "0.34.0", default-features = false, features = ["read", "std", "endian-reader"] }
+object = { version = "0.41.0", default-features = false, features = ["read", "std"] }
+walkdir = "2.5.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+invisible_characters = "deny"
+unicode_not_nfc = "deny"
+non_ascii_literal = "deny"
+# Complexity, at clippy's defaults except nesting, whose threshold is in
+# clippy.toml. A warning is fixed by refactoring, never suppressed.
+cognitive_complexity = "warn"
+too_many_lines = "warn"
+excessive_nesting = "warn"

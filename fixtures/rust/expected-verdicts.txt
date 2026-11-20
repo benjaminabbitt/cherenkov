@@ -1,0 +1,13 @@
+src/lib.rs:3:1 total body-default killed p
+src/lib.rs:4:5 total aor killed p
+src/lib.rs:5:5 total delete-statement survived p
+src/lib.rs:9:1 is_small body-default killed p
+src/lib.rs:10:8 is_small negate-condition killed p
+src/lib.rs:10:8 is_small ror survived p
+src/lib.rs:11:9 is_small return-bool-flip killed p
+src/lib.rs:13:5 is_small return-bool-flip killed p
+src/lib.rs:16:1 count_up body-default killed p
+src/lib.rs:18:11 count_up negate-condition killed p
+src/lib.rs:18:11 count_up ror killed p
+src/lib.rs:19:9 count_up aor timeout p
+src/lib.rs:24:1 first body-default killed p

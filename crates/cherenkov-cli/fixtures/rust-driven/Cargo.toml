@@ -1,0 +1,8 @@
+[package]
+name = "driven"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# A standalone package, not a member of the Cherenkov workspace around it.
+[workspace]

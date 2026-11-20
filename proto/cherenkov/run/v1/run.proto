@@ -1,0 +1,281 @@
+syntax = "proto3";
+
+// A run is one mutation-test run, its stream rooted at its id. It is planned
+// once, by one command, on a stream with no history: its start and its
+// mutants in plan order. It then records what it is told as facts, never
+// refused: each program's preparation, which it judges (a baseline that
+// fails, or a program that did not prepare, finishes the run, failed; the
+// last program prepared makes it ready), and each of its own mutants'
+// decisions, once per mutant, counted in its tallies; the last of them
+// finishes it. Nothing is recorded after it finishes.
+//
+// A singular message field that a stream may hold unset is `optional`, so
+// its domain type keeps the absence.
+package cherenkov.run.v1;
+
+import "google/protobuf/timestamp.proto";
+import "io/angzarr/codegen/v1/codegen.proto";
+import "io/angzarr/v1/options.proto";
+import "cherenkov/mutant/v1/mutant.proto";
+import "cherenkov/mutant/v1/plan.proto";
+
+// region vocabulary
+
+// How a test program's mutants choose their tests.
+enum Selection {
+  option (io.angzarr.codegen.v1.enumeration) = {json_case: JSON_CASE_KEBAB};
+
+  SELECTION_UNSPECIFIED = 0;
+  // Each mutant runs the tests that call its function.
+  SELECTION_RECORDED = 1;
+  // As recorded, but the tests that failed while recording run for every
+  // mutant.
+  SELECTION_RECORDED_WITH_FAILURES = 2;
+  // Every mutant runs every test, for a reason the program's report gives.
+  SELECTION_EVERY_TEST = 3;
+}
+
+// How a run ended.
+enum RunStatus {
+  option (io.angzarr.codegen.v1.enumeration) = {json_case: JSON_CASE_KEBAB};
+
+  RUN_STATUS_UNSPECIFIED = 0;
+  // Every mutant was decided.
+  RUN_STATUS_COMPLETE = 1;
+  // A test program did not prepare: the mutants could not run.
+  RUN_STATUS_FAILED = 2;
+}
+
+// How many mutants got a verdict.
+message VerdictCount {
+  cherenkov.mutant.v1.Verdict verdict = 1;
+  uint32 count = 2;
+}
+
+// Which of a test program's tests call a mutant's function, as one
+// unmutated run saw it.
+message Driven {
+  oneof kind {
+    // No selected test calls it: the mutant says nothing about them.
+    cherenkov.mutant.v1.Unit not_called = 1;
+    // These tests call it, and only they can detect the mutant.
+    TestList tests = 2;
+    // Every test, as far as the run could tell.
+    cherenkov.mutant.v1.Unit every = 3;
+  }
+}
+
+message TestList {
+  repeated string tests = 1;
+}
+
+// Which tests call one planned mutant's function.
+message Drive {
+  string mutant = 1;
+  optional Driven driven = 2;
+}
+
+// For each planned mutant, which of a program's tests call its function.
+message Drives {
+  repeated Drive drives = 1;
+}
+
+// endregion vocabulary
+
+// A run's whole state, which loading it resumes from in place of folding
+// its stream: when it started, how many test programs it is to prepare and
+// which are, the plans of its mutants until it is ready, its undecided
+// mutants' ids in ascending order, how many mutants got each verdict, and
+// whether it finished. It anchors the run component.
+message RunSnapshot {
+  option (io.angzarr.v1.component) = {
+    component_name: "run"
+    aggregate: {domain: "cherenkov-run"}
+  };
+
+  optional google.protobuf.Timestamp started_at = 1;
+  repeated string undecided = 2;
+  // In ascending order of verdict, one entry for each.
+  repeated VerdictCount counts = 3;
+  bool finished = 4;
+  uint32 programs = 5;
+  // The indexes of the programs prepared, in ascending order.
+  repeated uint32 prepared = 6;
+  // The mutants as planned, until every program is prepared.
+  repeated cherenkov.mutant.v1.ExecutableMutant plans = 7;
+  bool ready = 8;
+}
+
+// region commands
+
+// Plan a run: its settings and its mutants, in plan order. Once, on a
+// stream with no history; a run of no mutants finishes with its plan.
+message PlanRun {
+  option (io.angzarr.v1.command) = {
+    component: "cherenkov.run.v1.RunSnapshot"
+    emits: ["cherenkov.run.v1.RunStarted", "cherenkov.run.v1.MutantsPlanned", "cherenkov.run.v1.RunFinished"]
+    refuses: "cherenkov.run.v1.AlreadyPlanned"
+  };
+
+  string root = 1;
+  string language = 2;
+  string operators = 3;
+  uint32 jobs = 4;
+  bool fast = 5;
+  repeated cherenkov.mutant.v1.ExecutableMutant mutants = 6;
+  // How many test programs are to be prepared before the mutants can run:
+  // none for a dry run.
+  uint32 programs = 7;
+}
+
+// endregion commands
+
+// region facts (what already happened: recorded, never refused)
+
+// What preparing a test program found, reported to the run, which judges
+// it: the unmutated run's raw outcome, and, when it passed, what recording
+// it found. Recorded while the run is live.
+message PreparationReported {
+  option (io.angzarr.v1.fact) = {
+    component: "cherenkov.run.v1.RunSnapshot"
+    emits: ["cherenkov.run.v1.ProgramPrepared", "cherenkov.run.v1.ProgramFailed", "cherenkov.run.v1.RunFinished", "cherenkov.run.v1.RunReady"]
+  };
+
+  reserved 2;
+  reserved "baseline_ms";
+
+  string program = 1;
+  uint64 prepared_ms = 3;
+  optional uint32 tests = 4;
+  Selection selection = 5;
+  repeated string failed_tests = 6;
+  optional string selection_reason = 7;
+  // The program's index among the run's programs.
+  uint32 index = 8;
+  // The unmutated run, as the executor observed it.
+  optional cherenkov.mutant.v1.Observation baseline = 9;
+  // When it did not pass, the failing tests the program's output names.
+  repeated string baseline_failures = 10;
+  // Which tests call each mutant's function, where the executor can tell.
+  optional Drives drives = 11;
+}
+
+// A test program did not prepare: the run cannot go on. Recorded while the
+// run is live, and the run finishes, failed.
+message PreparationFailed {
+  option (io.angzarr.v1.fact) = {
+    component: "cherenkov.run.v1.RunSnapshot"
+    emits: ["cherenkov.run.v1.ProgramFailed", "cherenkov.run.v1.RunFinished"]
+  };
+
+  optional string program = 1;
+  string reason = 2;
+}
+
+// A mutant's decision, reported to the run that asked for it: the mutant's
+// id and its verdict's name. Recorded once for each of the run's undecided
+// mutants while it is live, and the last finishes the run.
+message DecisionReported {
+  option (io.angzarr.v1.fact) = {
+    component: "cherenkov.run.v1.RunSnapshot"
+    emits: ["cherenkov.run.v1.DecisionRecorded", "cherenkov.run.v1.RunFinished"]
+  };
+
+  string mutant = 1;
+  cherenkov.mutant.v1.Verdict verdict = 2;
+}
+
+// endregion facts
+
+// region events
+
+// A run began: its settings and how many mutants it planned.
+message RunStarted {
+  option (io.angzarr.v1.event) = {component: "cherenkov.run.v1.RunSnapshot"};
+
+  string root = 1;
+  string language = 2;
+  string operators = 3;
+  uint32 jobs = 4;
+  bool fast = 5;
+  uint32 mutants = 6;
+  optional google.protobuf.Timestamp started_at = 7;
+  uint32 programs = 8;
+}
+
+// The run's mutants, in plan order, each with the plan to run it.
+message MutantsPlanned {
+  option (io.angzarr.v1.event) = {component: "cherenkov.run.v1.RunSnapshot"};
+
+  repeated cherenkov.mutant.v1.ExecutableMutant mutants = 1;
+}
+
+// A test program, prepared: the run judged its baseline, and found the
+// time one mutant may run in it.
+message ProgramPrepared {
+  option (io.angzarr.v1.event) = {component: "cherenkov.run.v1.RunSnapshot"};
+
+  string program = 1;
+  uint64 baseline_ms = 2;
+  uint64 prepared_ms = 3;
+  optional uint32 tests = 4;
+  Selection selection = 5;
+  repeated string failed_tests = 6;
+  optional string selection_reason = 7;
+  uint32 index = 8;
+  // The time one mutant may run in the program.
+  uint64 budget_ms = 9;
+  optional Drives drives = 10;
+}
+
+// Every test program is prepared: the mutants can run, and are handed on,
+// each with its plan.
+message RunReady {
+  option (io.angzarr.v1.event) = {component: "cherenkov.run.v1.RunSnapshot"};
+
+  uint32 programs = 1;
+  repeated cherenkov.mutant.v1.ExecutableMutant mutants = 2;
+}
+
+// A test program that did not prepare, and why.
+message ProgramFailed {
+  option (io.angzarr.v1.event) = {component: "cherenkov.run.v1.RunSnapshot"};
+
+  optional string program = 1;
+  string reason = 2;
+}
+
+// One of the run's mutants decided, counted in its tallies. Its detail is on
+// the mutant's own stream.
+message DecisionRecorded {
+  option (io.angzarr.v1.event) = {component: "cherenkov.run.v1.RunSnapshot"};
+
+  string mutant = 1;
+  cherenkov.mutant.v1.Verdict verdict = 2;
+}
+
+// The run is over: how many mutants got each verdict, in ascending order of
+// verdict, how long it took and whether it completed: with its last mutant's
+// decision, or with a test program that did not prepare. The process's exit
+// code is the program's to say, from the status.
+message RunFinished {
+  option (io.angzarr.v1.event) = {component: "cherenkov.run.v1.RunSnapshot"};
+
+  reserved 3;
+  reserved "exit";
+
+  repeated VerdictCount counts = 1;
+  uint64 took_ms = 2;
+  RunStatus status = 4;
+}
+
+// endregion events
+
+// region refusals
+
+// A plan for a run already planned.
+message AlreadyPlanned {
+  option (io.angzarr.v1.refusal_status) = REFUSAL_STATUS_ALREADY_EXISTS;
+}
+
+// endregion refusals

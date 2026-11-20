@@ -1,0 +1,32 @@
+[package]
+name = "cherenkov-run-domain"
+description = "A mutation-test run's aggregates on angzarr-embedded: the run (its plan, its mutants' decisions, tallies and finish) and the mutant (planned and decided per asking run)."
+version = "0.4.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+angzarr-diagnostic.workspace = true
+angzarr-embedded.workspace = true
+angzarr-embedded-macros.workspace = true
+cherenkov-core.workspace = true
+cherenkov-run-wire.workspace = true
+prost.workspace = true
+prost-types.workspace = true
+
+[build-dependencies]
+angzarr-build.workspace = true
+
+[dev-dependencies]
+angzarr-ports.workspace = true
+# Its Harness: given/when/then on one stream, through the kernel.
+angzarr-embedded = { workspace = true, features = ["test-support"] }
+cherenkov-fs.workspace = true
+cherenkov-syntax.workspace = true
+tokio.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

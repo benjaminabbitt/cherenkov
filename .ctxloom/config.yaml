@@ -1,0 +1,13 @@
+agents:
+  default:
+    engine: claude-code
+    engines:
+      claude-code:
+        model: opus
+    profiles:
+      - default
+    runtime: host
+config:
+  content_form: distilled
+default_agent: default
+schema_version: 9
