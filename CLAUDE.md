@@ -36,7 +36,7 @@ the `encodings.txt` beside `cherenkov-run-wire`'s and `cherenkov-run-domain`'s
 tests holds every message's and refusal's bytes, and those tests fail on any
 change to them.
 
-The angzarr pins are one full commit, `52d48ccf` of github.com/angzarr-io/angzarr
+The angzarr pins are one full commit, `71b453a` of github.com/angzarr-io/angzarr
 (core, embedded, router, build and platform are crates of that one workspace),
 and rust-support (cli-support) is on the same one, so the lock holds one core. A change to what an aggregate's state holds or how its events
 fold bumps `cherenkov-run-domain`'s minor version: it is the rules version

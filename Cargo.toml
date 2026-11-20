@@ -25,17 +25,17 @@ cherenkov-run-store = { path = "crates/cherenkov-run-store" }
 # in-memory store), the diagnostics and the presentation the CLI renders
 # through, angzarr-proto and angzarr-build (with angzarr-codegen: the wire and
 # domain crates' build dependency, generating from proto/ into OUT_DIR).
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr", rev = "52d48ccf4005da563fcf63c4e7babe66e281e53b" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr", rev = "52d48ccf4005da563fcf63c4e7babe66e281e53b" }
-angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "52d48ccf4005da563fcf63c4e7babe66e281e53b" }
-angzarr-presentation = { git = "https://github.com/angzarr-io/angzarr", rev = "52d48ccf4005da563fcf63c4e7babe66e281e53b" }
-angzarr-ports = { git = "https://github.com/angzarr-io/angzarr", rev = "52d48ccf4005da563fcf63c4e7babe66e281e53b", features = ["memory"] }
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
+angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
+angzarr-presentation = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
+angzarr-ports = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59", features = ["memory"] }
 # angzarr's own messages, which the run layer's protos embed (its UUID).
-angzarr-proto = { git = "https://github.com/angzarr-io/angzarr", rev = "52d48ccf4005da563fcf63c4e7babe66e281e53b" }
-angzarr-build = { git = "https://github.com/angzarr-io/angzarr", rev = "52d48ccf4005da563fcf63c4e7babe66e281e53b" }
+angzarr-proto = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
+angzarr-build = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
 # rust-support, shared with ctxloom, taskloom and angzarr-cli: the CLI's
 # failure, its reporter and the exit-code convention, on the same angzarr rev.
-cli-support = { git = "https://github.com/benjaminabbitt/rust-support", rev = "ad7f37de79fe31916ce87c605dc2ec1f104d56aa" }
+cli-support = { git = "https://github.com/benjaminabbitt/rust-support", rev = "d543b4e903371d89e87e504d9ebb8ea212330673" }
 # prost must be the version angzarr-proto generates for.
 prost = "0.14"
 prost-types = "0.14"

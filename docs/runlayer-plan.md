@@ -137,7 +137,7 @@ executable and put the run on the bus.
   an unmerged branch. Since the angzarr repositories were merged (core,
   router, embedded, build and platform are crates of one workspace,
   github.com/angzarr-io/angzarr), every angzarr crate is pinned to the same
-  commit, `52d48ccf`, and rust-support (the former rust-support) to `ad7f37d`,
+  commit, `71b453a`, and rust-support (the former rust-support) to `d543b4e`,
   which is on it. The earlier pins (core `3535a54a`, embedded `bce1ff2`,
   build `2e072571`) are gone from that repository.
 - **rust-support**, shared with ctxloom and taskloom and bumped in its order
@@ -506,7 +506,7 @@ run then ends `Stalled`, naming how many mutants it owes).
   already (5.2).
 - Both policies and the runner are registered in `host::serve`, not
   generated: `register` waits for the codegen to cover policies.
-- cli-support (rust-support `ad7f37d`) is on the same angzarr commit as the
+- cli-support (rust-support `d543b4e`) is on the same angzarr commit as the
   rest, so the CLI uses `angzarr-diagnostic` and `angzarr-presentation`
   directly and a cause of the run layer is held as `Report::of(cause)`; the
   `cli-diagnostic` and `cli-presentation` aliases and the bridge between
@@ -525,7 +525,7 @@ before, 430 us falling to 73 us over the run; a whole run took 1.11 s before
 the bus's scans, not the aggregates.
 
 **Change feed (2026-11-20).** The bus follows the store with
-`Following::Changes(core.store())` (angzarr `52d48ccf`); `RunStore` requires
+`Following::Changes(core.store())` (angzarr `71b453a`); `RunStore` requires
 `Changes`, and `FullScan` is no longer used (no natural place for an explicit
 fallback: every `RunStore` has a feed). Measured with `CHERENKOV_MEASURE`,
 release, instant mutants on 8 workers, in-memory store, whole run:
@@ -559,7 +559,7 @@ here, because the in-memory store lists streams cheaply. The fan in costs
 > - a real run (build, test processes) was not compared before and after the
 >   bus; only instant mutants were.
 > - angzarr-bus: a feed that yields to the runtime stalled the 64-mutant
->   run with 8 workers; fixed upstream (`52d48ccf`), and the test store's
+>   run with 8 workers; fixed upstream (`71b453a`), and the test store's
 >   feed yields again (`yielding.test.rs`).
 
 Exit: `workers.rs` names no verdict; `FanIn`, `NOT_CALLED` and `ERROR` are
