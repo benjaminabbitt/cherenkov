@@ -1,0 +1,23 @@
+[package]
+name = "cherenkov-embedded-edge"
+description = "The run layer's ports served in process: angzarr-embedded's App over one store, its bus hosted on tokio's timer, with the root's clock and ids."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+angzarr-embedded.workspace = true
+angzarr-embedded-host.workspace = true
+cherenkov-run-ports.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+angzarr-embedded = { workspace = true, features = ["test-support"] }
+angzarr-ports.workspace = true
+cherenkov-run-domain.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+
+[lints]
+workspace = true
