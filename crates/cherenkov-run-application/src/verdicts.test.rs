@@ -265,3 +265,9 @@ async fn test_a_stream_with_no_root_is_passed_over() {
         .unwrap();
     assert!(file.writes.lock().unwrap().is_empty());
 }
+
+#[test]
+fn test_the_projection_is_named_for_its_subscription() {
+    let projection = VerdictProjection::new(Arc::new(Written::default()));
+    assert_eq!(projection.name(), VERDICTS);
+}
