@@ -13,16 +13,13 @@ the runners), resume after a crash, incremental runs, and a committed
 verdict file that diffs as one line per changed verdict.
 
 ## Where it stands
-After 5.4 the aggregates decide (the Mutant its own verdict, from the facts
+After 5.5 the root hosts the core (below); after 5.4 the aggregates decide (the Mutant its own verdict, from the facts
 of its programs' runs), the streams can be executed (a runner needs the
 streams alone), and the run is served by angzarr's bus: the runners, both
 policies and the live-runs read model, built in one place
 (`cherenkov-run-application/src/host.rs`). The system around them still
 works its own way:
 
-- **The kernel is hosted by hand** in the application: its own clock and
-  ids (`core.rs`), a `Kernel` per call, no `App`, no resume, a runtime built
-  inside (`layer.rs`). 5.5.
 - **The read side is a loop**: the follower re-reads a mutant's whole
   stream per decision to print it (`layer.rs`, `Printer::decision`), and
   `Follow` polls. 5.6 makes the output a projector.
@@ -568,15 +565,45 @@ test per verdict path. Not met: a killed Go fixture mutant naming its
 killer (the Go run's output is still parsed by the libtest parser; with
 typed observations it will). Unblocks: 5.6, phase 6.
 
-**5.5 App and core_link.** Goal: the root hosts the core; the application
-sees ports. Changes: `cherenkov-wiring` with `App::builder(..).start()` over
-the store, the registry, clock, ids, runtime, the bus over `App`'s store,
-and the runner's `Wait` and `Jitter` (`TokioWait` goes);
-`cherenkov-run-ports` with the edge and its adapter over `App`; `RunCore`
-and `Undelivered` go (dead letters are `App`'s); `FaultyStore` replaces
-`Yielding`. Upstream: none (`App` hosting the bus is an option,
-angzarr-embedded). Exit: the application depends on neither `uuid` nor
-tokio's runtime builder and reads no clock; its tests run on `Samples`.
+**5.5 App and core_link.** Done. Goal: the root hosts the core; the
+application sees ports. What was done:
+- `cherenkov-run-ports` (core/ports): `Edge` (handle a book, read a stream,
+  arm a wait for the next commit; `command` and `report` are provided
+  methods) and `Serving` (serve a set of bus subscriptions until told to
+  stop), with errors as angzarr's `Report`. The executor port stays where it
+  is until 5.8.
+- `cherenkov-embedded-edge` (driven adapter, as ctxloom's `embedded-edge`):
+  `EmbeddedEdge<S>` is `angzarr_embedded_host::App` over one store
+  (`App::builder(..).on_retryable(..).wait_with(..).start()`, so the owed
+  policy work is resumed at start) and implements both ports; the bus is
+  built in `serve` on `app.kernel()` and `app.store()` (no change to `App`
+  was needed). It knows no domain (the registry is the caller's) and no
+  clock (the caller's sample stamps each call and the bus's records).
+  `POLL`, `RETRY`, `TokioWait` and the `RunStore` bound moved here from the
+  application.
+- `cherenkov-wiring` (root/lib): the clock and ids (`sample`, `new_run`),
+  the registry (`cherenkov_run_domain::register`), the current-thread
+  runtime, and `run`, which the CLI calls. `layer::run` is async over a
+  core and takes the run's id.
+- `RunCore`, `Undelivered` (a bus-served policy runs no chain in a call, so
+  a call has no dead letters of its own; the bus reports its own as served
+  failures) and `core.rs` went; the stream covers are `covers.rs`. Every
+  application test runs on `testing::new_core` (`Samples` for the calls,
+  a counter for run ids).
+- **Not done: `FaultyStore` in place of `Yielding`.** `Yielding` yields to
+  the runtime inside every store call, which is what lets the
+  one-writer-per-stream test interleave instances on one thread; `FaultyStore`
+  has hooks at a call but cannot yield, and does not push commits. It stays
+  (now with `ListStreams`) and is 5.10's.
+- The adapter is a crate of its own, not in the wiring, because the
+  application's tests need the same `App` the root uses and the wiring
+  depends on the application.
+
+Exit met: the application depends on neither `uuid` nor tokio's runtime
+builder (tests excepted) and reads no clock; its tests run on `Samples`.
+Measured (`CHERENKOV_MEASURE`, release, instant mutants on 8 workers, at a
+load of 23): 500 mutants 158 ms, 1,000 414 ms, 2,000 1.03 s (the figures
+above were taken at a load of 2.6 to 3.8, so not comparable).
 Unblocks: 5.6, 5.7.
 
 **5.6 Projectors for the output and the verdict projection; live runs.**

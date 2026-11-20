@@ -1,5 +1,5 @@
 //! Where a run's streams are kept. The run application asks only for
-//! angzarr's store ports (`RunStore` in `cherenkov-run-application`), so
+//! angzarr's store ports (`RunStore` in `cherenkov-embedded-edge`), so
 //! any store with them serves: today angzarr-ports' in-memory store, which
 //! keeps a run for the process's life. A durable store (angzarr-platform's
 //! store-jsonl, angzarr's SQLite store) is opened here instead when runs
