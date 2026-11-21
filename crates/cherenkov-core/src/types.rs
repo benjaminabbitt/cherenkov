@@ -15,7 +15,8 @@ pub enum SourceDefault {
     /// Defined in the project with no default at all: a mutant that asks
     /// for one does not compile.
     Absent,
-    /// Not the project's, or defined more than once: no claim.
+    /// Not the project's, or defined more than once with a default in one
+    /// of them: no claim.
     Unknown,
 }
 
@@ -73,13 +74,15 @@ impl DefaultFacts {
     }
 
     /// What the source says about `name`'s default. A name defined more
-    /// than once could be either type: no claim.
+    /// than once could be either type: no claim, unless neither has a
+    /// default.
     pub fn of(&self, name: &str) -> SourceDefault {
         let base = name.split('<').next().unwrap_or(name).trim();
         match self.by_name.get(base) {
             Some(f) if f.definitions == 1 && f.implemented => SourceDefault::Implemented,
             Some(f) if f.definitions == 1 && f.derived => SourceDefault::Derived,
-            Some(f) if f.definitions == 1 => SourceDefault::Absent,
+            // Several definitions, none with a default: the one meant has none.
+            Some(f) if !f.derived && !f.implemented => SourceDefault::Absent,
             _ => SourceDefault::Unknown,
         }
     }
