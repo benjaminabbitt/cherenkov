@@ -287,7 +287,7 @@ pub fn outcome_judged(
     judged: Duration,
     budget: Budget,
 ) -> RawOutcome {
-    if judged > budget.timeout {
+    if spent(judged, budget) {
         return RawOutcome::TimedOut { tier, wall };
     }
     match end {
@@ -299,6 +299,25 @@ pub fn outcome_judged(
             wall,
         },
         RunEnd::TimedOut => RawOutcome::TimedOut { tier, wall },
+    }
+}
+
+/// True once a run judged on `judged` has used more than its budget.
+fn spent(judged: Duration, budget: Budget) -> bool {
+    judged > budget.timeout
+}
+
+/// A tier B run the evaluator refused: unsupported, unless the run had used
+/// its whole budget by then, when it is a timeout like any run that ran out
+/// of time (a hot site's stop per hit cannot finish), never a refusal.
+fn refusal_outcome(reason: String, wall: Duration, judged: Duration, budget: Budget) -> RawOutcome {
+    if spent(judged, budget) {
+        RawOutcome::TimedOut {
+            tier: Tier::B,
+            wall,
+        }
+    } else {
+        RawOutcome::Unsupported { reason }
     }
 }
 
@@ -935,9 +954,12 @@ impl<L: Launcher> TierPExecutor<L> {
             let unsteered = unsteered
                 .map(|e| format!(" (not steered: {e})"))
                 .unwrap_or_default();
-            return unsupported(format!(
+            let reason = format!(
                 "the evaluator cannot apply the mutant: {why}{unsteered} (tier P: {tier_p})"
-            ));
+            );
+            let wall = start.elapsed();
+            let judged = wall.saturating_sub(session.lost_to_load());
+            return Ok((refusal_outcome(reason, wall, judged, budget), output));
         }
         if !run.reached && matches!(run.end, RunEnd::Exited(_)) {
             let reason = "the selected tests never execute the mutated code".to_string();
@@ -1554,6 +1576,41 @@ mod tests {
             RawOutcome::TimedOut {
                 tier: Tier::B,
                 wall
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_refusal_after_the_whole_budget_is_spent_is_a_timeout_not_unsupported() {
+        let wall = Duration::from_secs(9);
+        assert_eq!(
+            refusal_outcome("it did not finish".into(), wall, wall, budget_of(5)),
+            RawOutcome::TimedOut {
+                tier: Tier::B,
+                wall
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_refusal_with_budget_left_stays_unsupported() {
+        let wall = Duration::from_secs(5);
+        assert_eq!(
+            refusal_outcome("no".into(), wall, wall, budget_of(5)),
+            RawOutcome::Unsupported {
+                reason: "no".into()
+            }
+        );
+        // Time lost to a busy machine is not the program's.
+        assert_eq!(
+            refusal_outcome(
+                "no".into(),
+                Duration::from_secs(9),
+                Duration::from_secs(4),
+                budget_of(5)
+            ),
+            RawOutcome::Unsupported {
+                reason: "no".into()
             }
         );
     }

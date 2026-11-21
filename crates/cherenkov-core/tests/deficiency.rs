@@ -16,6 +16,10 @@ fn test_each_way_a_mutant_cannot_run_has_a_short_machine_readable_code() {
             "evaluation-hung",
         ),
         (
+            "the evaluator cannot apply the mutant: the evaluation did not finish within 5 s with the program's other threads stopped (tier P: a return stub cannot produce the value true)",
+            "evaluation-hung",
+        ),
+        (
             "the evaluator cannot apply the mutant: only scalar results are returned (core::time::Duration) (tier P: x)",
             "value-not-buildable",
         ),

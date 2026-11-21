@@ -19,13 +19,13 @@ pub fn unviable_code(reason: &str) -> &'static str {
 /// unsupported, or as an error), in the order of what blocked it first:
 /// - `inlined`: the function has no out-of-line copy to return from;
 /// - `generic-copies`: a generic function's copies cannot all be patched;
+/// - `evaluation-hung`: the debugger's evaluation never returned;
 /// - `value-not-buildable`: the replacement value cannot be built in the
 ///   debugger (a type with no layout, a name the support library cannot
 ///   import, a result that is not a scalar);
 /// - `value-name-unresolved`: the replacement names something the support
 ///   library does not import (often a name the source would not resolve
 ///   either, so the mutant may be unviable);
-/// - `evaluation-hung`: the debugger's evaluation never returned;
 /// - `function-not-found`: the debugger cannot find a function to call;
 /// - `symbol-not-in-scope`: a name the expression needs is not visible;
 /// - `evaluator-cannot-apply`: another limit of the debugger's evaluator;
@@ -39,6 +39,10 @@ pub fn unsupported_code(reason: &str) -> &'static str {
         "inlined"
     } else if reason.starts_with("a generic function's copies") {
         "generic-copies"
+    } else if has("evaluation did not finish") {
+        // Before the value's reasons: the tier P refusal that rides along
+        // ("a return stub cannot produce the value") is not why it hung.
+        "evaluation-hung"
     } else if has("a name the support library does not import") {
         "value-name-unresolved"
     } else if has("needs more of a mirrored type")
@@ -46,8 +50,6 @@ pub fn unsupported_code(reason: &str) -> &'static str {
         || has("cannot produce the value")
     {
         "value-not-buildable"
-    } else if has("evaluation did not finish") {
-        "evaluation-hung"
     } else if has("Could not find function named") {
         "function-not-found"
     } else if has("No symbol") || has("There is no member named") || has("no local ") {
