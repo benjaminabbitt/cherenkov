@@ -127,8 +127,14 @@ impl Waiting for Scheduling {
     fn waited(&mut self) -> Duration {
         let debugger = remember(&mut self.seen[0], process_wait(self.debugger));
         let debuggee = remember(&mut self.seen[1], process_wait(self.debuggee));
-        thread_wait() + debugger + debuggee
+        chain(thread_wait(), debugger, debuggee)
     }
+}
+
+/// The wait of a run's causal chain: its waiting thread, then the debugger
+/// and the debuggee.
+fn chain(thread: Duration, debugger: Duration, debuggee: Duration) -> Duration {
+    thread + debugger + debuggee
 }
 
 /// `read` if there is one, else what was `seen` last.
@@ -268,9 +274,15 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn test_a_thread_competing_for_one_cpu_waits() {
-        // Pin two busy threads to this thread's CPU: the one that gets
-        // preempted waits, and the reading shows it.
         let before = thread_wait();
+        compete_for_one_cpu();
+        assert!(thread_wait() > before + Duration::from_millis(20));
+    }
+
+    /// Pin two busy threads to this thread's CPU: the one that gets
+    /// preempted waits, and the readings show it.
+    #[cfg(target_os = "linux")]
+    fn compete_for_one_cpu() {
         let busy = |until: Instant| while Instant::now() < until {};
         let until = Instant::now() + Duration::from_millis(300);
         let pinned = pin_to_one_cpu();
@@ -281,7 +293,6 @@ mod tests {
         pin_to(pinned);
         busy(until);
         rival.join().unwrap();
-        assert!(thread_wait() > before + Duration::from_millis(20));
     }
 
     #[cfg(target_os = "linux")]
@@ -298,10 +309,23 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn test_scheduling_reads_the_thread_though_the_processes_are_gone() {
-        let before = thread_wait();
+    fn test_scheduling_reads_the_waiting_thread_though_the_processes_are_gone() {
         let mut s = Scheduling::new(u32::MAX, u32::MAX);
-        assert!(s.waited() >= before);
+        let before = s.waited();
+        compete_for_one_cpu();
+        assert!(s.waited() > before + Duration::from_millis(20));
+    }
+
+    #[test]
+    fn test_the_chain_waits_for_the_thread_the_debugger_and_the_debuggee() {
+        assert_eq!(chain(secs(1), secs(2), secs(4)), secs(7));
+    }
+
+    #[test]
+    fn test_a_new_allowance_has_all_its_budget_left() {
+        let mut a = Allowance::new(secs(60), Box::new(Fake::default()));
+        let left = a.left();
+        assert!(left > secs(30) && left <= secs(60), "{left:?}");
     }
 
     #[test]
