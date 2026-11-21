@@ -7,6 +7,7 @@
 
 pub mod profiles;
 pub mod rust_modules;
+pub mod rust_names;
 pub mod rust_scope;
 pub mod rust_types;
 pub mod rust_values;
