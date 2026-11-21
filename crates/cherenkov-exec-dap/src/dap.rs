@@ -129,17 +129,12 @@ impl EventQueue {
 
     /// Remove and return the earliest-arrived event named one of `names`.
     fn pop_first_of(&mut self, names: &[&str]) -> Option<Value> {
-        let mut first: Option<(u64, &str)> = None;
-        for name in names {
-            let head = self.by_name.get(*name).and_then(|q| q.front());
-            self.inspections.set(self.inspections.get() + 1);
-            if let Some(&(arrival, _)) = head
-                && first.is_none_or(|(best, _)| arrival < best)
-            {
-                first = Some((arrival, name));
-            }
-        }
-        let (_, name) = first?;
+        self.inspections
+            .set(self.inspections.get() + names.len() as u64);
+        let (_, name) = names
+            .iter()
+            .filter_map(|name| Some((self.by_name.get(*name)?.front()?.0, *name)))
+            .min_by_key(|&(arrival, _)| arrival)?;
         self.by_name
             .get_mut(name)
             .and_then(VecDeque::pop_front)
@@ -265,10 +260,7 @@ impl DapClient {
                 break m;
             }
             let message = self.next(deadline, || format!("response to request {seq}"))?;
-            match classify(message) {
-                Incoming::Response(s, message) if s == seq => break message,
-                other => self.file(other),
-            }
+            self.file(classify(message));
         };
         if message["success"].as_bool() != Some(true) {
             let command = message["command"].as_str().unwrap_or("request").to_string();

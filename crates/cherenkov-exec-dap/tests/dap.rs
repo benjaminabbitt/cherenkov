@@ -392,3 +392,75 @@ fn test_wait_any_event_takes_events_of_several_names_in_arrival_order() {
     assert_eq!(dap.queued().named("output").count(), 1);
     adapter.join().unwrap();
 }
+
+#[test]
+fn test_looks_are_counted_one_per_name_waited_for_and_one_per_event_taken() {
+    let (mut dap, adapter) = client_with_queued_outputs(5);
+    let before = dap.event_inspections();
+    dap.wait_event("stopped", T).unwrap();
+    assert_eq!(dap.event_inspections() - before, 1);
+    let before = dap.event_inspections();
+    assert!(
+        dap.wait_any_event(&["exited", "stopped"], Duration::from_millis(50))
+            .is_err()
+    );
+    assert_eq!(dap.event_inspections() - before, 2);
+    let before = dap.event_inspections();
+    assert_eq!(dap.queued().named("output").count(), 5);
+    assert_eq!(dap.event_inspections() - before, 5);
+    let before = dap.event_inspections();
+    assert_eq!(dap.take_events("output").len(), 5);
+    assert_eq!(dap.event_inspections() - before, 5);
+    adapter.join().unwrap();
+}
+
+#[test]
+fn test_an_event_arriving_during_the_wait_is_returned_and_others_are_queued() {
+    let (stream, adapter) = fake_adapter(vec![Box::new(|r| {
+        vec![
+            event("output", json!({"output": "a"})),
+            event("stopped", json!({"reason": "step"})),
+            response(r, true, Value::Null),
+        ]
+    })]);
+    let mut dap = DapClient::new(stream, T);
+    let seq = dap.send("next", Value::Null).unwrap();
+    let stopped = dap.wait_event("stopped", T).unwrap();
+    assert_eq!(stopped["body"]["reason"], "step");
+    assert_eq!(dap.queued().named("output").count(), 1);
+    assert_eq!(dap.response(seq, T).unwrap(), Value::Null);
+    adapter.join().unwrap();
+}
+
+/// A client whose adapter has sent two `output` events and then a response
+/// that has not been collected.
+fn client_with_unread_outputs() -> (DapClient, JoinHandle<Vec<Value>>) {
+    let (stream, adapter) = fake_adapter(vec![Box::new(|r| {
+        vec![
+            event("output", json!({"output": "a"})),
+            event("output", json!({"output": "b"})),
+            response(r, true, Value::Null),
+        ]
+    })]);
+    let mut dap = DapClient::new(stream, T);
+    dap.send("next", Value::Null).unwrap();
+    (dap, adapter)
+}
+
+#[test]
+fn test_settle_queues_what_arrives_until_it_goes_quiet() {
+    let (mut dap, adapter) = client_with_unread_outputs();
+    dap.settle(Duration::from_millis(200));
+    assert_eq!(dap.queued().named("output").count(), 2);
+    adapter.join().unwrap();
+}
+
+#[test]
+fn test_settle_until_queues_events_until_the_condition_holds() {
+    let (mut dap, adapter) = client_with_unread_outputs();
+    dap.settle_until(Duration::from_millis(200), |q| {
+        q.named("output").count() >= 2
+    });
+    assert_eq!(dap.queued().named("output").count(), 2);
+    adapter.join().unwrap();
+}
