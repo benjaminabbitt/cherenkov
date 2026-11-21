@@ -445,6 +445,12 @@ fn run_lines() -> Vec<String> {
             program: None,
             reason: "build failed".to_string(),
         }),
+        line(&Abandoned {
+            reason: "the plan changed".to_string(),
+        }),
+        line(&RunAbandoned {
+            reason: "the plan changed".to_string(),
+        }),
     ]
 }
 
@@ -471,6 +477,11 @@ fn decision_lines() -> Vec<String> {
             counts: counts(),
             took_ms: 9_876,
             status: RunStatus::Failed.into(),
+        }),
+        line(&RunFinished {
+            counts: Vec::new(),
+            took_ms: 5,
+            status: RunStatus::Abandoned.into(),
         }),
         line(&DecisionReported {
             mutant: "f2ba84283a346cc0".to_string(),

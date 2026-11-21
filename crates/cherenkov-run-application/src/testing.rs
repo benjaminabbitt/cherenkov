@@ -81,6 +81,7 @@ pub fn event_name(event: &RunEvent) -> &'static str {
         RunEvent::MutantsPlanned(_) => "mutant.planned",
         RunEvent::ProgramPrepared(_) => "program.prepared",
         RunEvent::ProgramFailed(_) => "program.failed",
+        RunEvent::RunAbandoned(_) => "run.abandoned",
         RunEvent::RunReady(_) => "run.ready",
         RunEvent::DecisionRecorded(_) => "mutant.decided",
         RunEvent::RunFinished(_) => "run.finished",

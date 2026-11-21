@@ -578,7 +578,7 @@ const VANISHED: &str = "cherenkov_vanished";
 /// dying is also not reaped: it stays a zombie, which still exists but runs
 /// no more, so the process's state decides, as the OS reports it (sysinfo,
 /// the same on every OS).
-fn alive(pid: u32) -> bool {
+pub(crate) fn alive(pid: u32) -> bool {
     use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
     let pid = Pid::from_u32(pid);
     // Without the OS's process list, say yes: the wait falls back to GDB's

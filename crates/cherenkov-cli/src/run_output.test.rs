@@ -440,10 +440,10 @@ fn test_two_runs_of_a_project_write_the_same_verdict_file() {
     );
     for path in [&first, &second] {
         let runs = Arc::new(AtomicUsize::new(0));
-        let readers = Readers {
-            output: printing(Box::new(JsonLines(std::io::sink()))),
-            verdicts: Some(Arc::new(crate::output::JsonVerdictFile::new(path.clone()))),
-        };
+        let readers = Readers::new(
+            printing(Box::new(JsonLines(std::io::sink()))),
+            Some(Arc::new(crate::output::JsonVerdictFile::new(path.clone()))),
+        );
         let status = cherenkov_wiring::run(
             MemoryStore::new(),
             &plans(),

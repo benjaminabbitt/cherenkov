@@ -13,6 +13,9 @@ pub enum RunLayerError {
     /// The core could not take a call for now (its store down, a write that
     /// lost its race): worth making again.
     Unavailable { cause: Report },
+    /// The run's store could not be opened (a file that is not a store, a
+    /// directory that cannot be written).
+    Store { cause: Report },
     /// The run's kernel or bus did not take what the run registers.
     Misconfigured { cause: Report },
     /// The run's async runtime did not start (the root's).
@@ -58,6 +61,7 @@ impl Diagnostic for RunLayerError {
         match self {
             RunLayerError::Kernel { .. } => code!("kernel"),
             RunLayerError::Unavailable { .. } => code!("unavailable"),
+            RunLayerError::Store { .. } => code!("store"),
             RunLayerError::Misconfigured { .. } => code!("misconfigured"),
             RunLayerError::Runtime { .. } => code!("runtime"),
             RunLayerError::Workers { .. } => code!("workers"),
@@ -69,6 +73,7 @@ impl Diagnostic for RunLayerError {
         match self {
             RunLayerError::Kernel { cause }
             | RunLayerError::Unavailable { cause }
+            | RunLayerError::Store { cause }
             | RunLayerError::Misconfigured { cause } => {
                 vec![("cause", Arg::nested(cause))]
             }
@@ -103,6 +108,7 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
     vec![
         Box::new(RunLayerError::Kernel { cause: cause() }),
         Box::new(RunLayerError::Unavailable { cause: cause() }),
+        Box::new(RunLayerError::Store { cause: cause() }),
         Box::new(RunLayerError::Misconfigured { cause: cause() }),
         Box::new(RunLayerError::Runtime { reason: "r".into() }),
         Box::new(RunLayerError::Workers { reason: "r".into() }),

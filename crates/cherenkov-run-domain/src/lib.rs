@@ -75,10 +75,10 @@ pub use mutant::{
     Unit, Verdict,
 };
 pub use run::{
-    AlreadyPlanned, DecisionRecorded, DecisionReported, Drive, Driven, DrivenKind, Drives,
-    MutantsPlanned, OperatorSet, PlanRun, PreparationFailed, PreparationReported, ProgramFailed,
-    ProgramPrepared, RunFinished, RunReady, RunSnapshot, RunStarted, RunStatus, Selection,
-    TestList, VerdictCount,
+    Abandoned, AlreadyPlanned, DecisionRecorded, DecisionReported, Drive, Driven, DrivenKind,
+    Drives, MutantsPlanned, OperatorSet, PlanRun, PreparationFailed, PreparationReported,
+    ProgramFailed, ProgramPrepared, RunAbandoned, RunFinished, RunReady, RunSnapshot, RunStarted,
+    RunStatus, Selection, TestList, VerdictCount,
 };
 
 /// The run domain: a stream per run.
@@ -375,6 +375,21 @@ impl Run {
         })
     }
 
+    /// The run superseded by a later one: recorded while it is live, and it
+    /// finishes, abandoned, with the tallies it had.
+    #[handles_fact(Abandoned)]
+    fn abandoned(&self, fact: Abandoned, ctx: &Context) -> Result<FactEmit<Self>, Bug> {
+        if !self.live() {
+            return Ok(FactEmit::none());
+        }
+        Ok(FactEmit::of([
+            pack_message(&RunAbandoned {
+                reason: fact.reason,
+            }),
+            pack_message(&self.finish(&self.counts, &ctx.recorded_at(), RunStatus::Abandoned)),
+        ]))
+    }
+
     /// A mutant's decision: recorded once for each of the run's undecided
     /// mutants while it is live, and the last finishes the run.
     #[handles_fact(DecisionReported)]
@@ -430,6 +445,11 @@ impl Run {
 
     #[applies(ProgramFailed)]
     fn program_failed(&mut self, event: ProgramFailed) {
+        let _ = event;
+    }
+
+    #[applies(RunAbandoned)]
+    fn run_abandoned(&mut self, event: RunAbandoned) {
         let _ = event;
     }
 

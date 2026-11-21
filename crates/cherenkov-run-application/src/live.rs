@@ -64,7 +64,7 @@ impl Live {
             RunEvent::ProgramPrepared(program) => {
                 self.prepared.insert(program.index, program);
             }
-            RunEvent::RunStarted(_) | RunEvent::ProgramFailed(_) => {}
+            RunEvent::RunStarted(_) | RunEvent::ProgramFailed(_) | RunEvent::RunAbandoned(_) => {}
         }
     }
 }

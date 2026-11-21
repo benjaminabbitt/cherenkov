@@ -15,7 +15,7 @@ use angzarr_embedded::angzarr_bus::Outcome;
 use angzarr_embedded::v1::Uuid;
 use cherenkov_core::execution::MutantExecutor;
 use cherenkov_core::plan::MutantPlan;
-use cherenkov_run_ports::{Edge, Serving, Subscriptions};
+use cherenkov_run_ports::{Edge, Listing, Serving, Subscriptions};
 use tokio::sync::mpsc::unbounded_channel;
 
 use crate::covers::run_cover;
@@ -24,6 +24,7 @@ use crate::host::{self, Readers};
 use crate::live::LiveRuns;
 use crate::pool::Pool;
 use crate::programs;
+use crate::resume;
 use crate::runner::Runner;
 use crate::workers::{self, Explain, Failed, Preparation, Worker};
 use cherenkov_run_domain::events::{RunEvent, run_event};
@@ -49,7 +50,70 @@ pub struct Workers {
     pub explain: Explain,
 }
 
-/// Plan `plans` as the run `run` with `settings` on `core` and, given
+/// What a started run came to: which run it was, how it ended, and whether
+/// it carried on a run an earlier process left.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Started {
+    pub run: Uuid,
+    /// How it ended; none for a run that has not finished (a dry run).
+    pub status: Option<RunStatus>,
+    pub resumed: bool,
+}
+
+impl Workers {
+    /// How many test programs each worker drives.
+    fn programs(&self) -> usize {
+        self.sets.first().map_or(0, Vec::len)
+    }
+}
+
+/// Run `plans` on `core`: the unfinished run an earlier process left, if the
+/// store holds one planned as these are (the same settings and mutants, each
+/// with its plan), else a new run `fresh`. Every other unfinished run is
+/// abandoned first, so the store holds one live run. A run given no workers
+/// (a dry run) and a run of no mutants are planned afresh and touch no other
+/// run: they carry nothing on and leave nothing owed. See [`run`], which
+/// plans a run that is new.
+pub async fn start<C: Serving + Listing + 'static>(
+    core: &Arc<C>,
+    fresh: Uuid,
+    plans: &[MutantPlan],
+    settings: &Settings,
+    workers: Option<Workers>,
+    readers: Readers,
+) -> Result<Started, RunLayerError> {
+    let Some(workers) = workers.filter(|_| !plans.is_empty()) else {
+        let status = run(core, fresh.clone(), plans, settings, None, readers).await?;
+        return Ok(Started {
+            run: fresh,
+            status,
+            resumed: false,
+        });
+    };
+    let wanted = plan_run(plans, settings, workers.programs());
+    match resume::settle(core.as_ref(), &wanted).await? {
+        Some(earlier) => {
+            let live = LiveRuns::default();
+            let readers = readers.of(earlier.clone());
+            work(core, &earlier, plans, workers, &live, readers).await?;
+            Ok(Started {
+                status: live.status(&earlier),
+                run: earlier,
+                resumed: true,
+            })
+        }
+        None => {
+            let status = run(core, fresh.clone(), plans, settings, Some(workers), readers).await?;
+            Ok(Started {
+                run: fresh,
+                status,
+                resumed: false,
+            })
+        }
+    }
+}
+
+/// Plan `plans` as the new run `run` with `settings` on `core` and, given
 /// `workers`, run it; with none, a dry run: planned, never run. The bus is
 /// served from the start, and the `readers` print each event of the run the
 /// moment it is recorded and write its verdict file when it finishes. Returns the status the run finished with, none
@@ -64,12 +128,11 @@ pub async fn run<C: Serving + 'static>(
     workers: Option<Workers>,
     readers: Readers,
 ) -> Result<Option<RunStatus>, RunLayerError> {
-    let programs = workers
-        .as_ref()
-        .map_or(0, |w| w.sets.first().map_or(0, Vec::len));
+    let programs = workers.as_ref().map_or(0, Workers::programs);
     core.command(run_cover(&run), &plan_run(plans, settings, programs))
         .await?;
     let live = LiveRuns::default();
+    let readers = readers.of(run.clone());
     match workers.filter(|_| !plans.is_empty()) {
         Some(workers) => work(core, &run, plans, workers, &live, readers).await?,
         None => print(core.as_ref(), &live, readers).await?,
@@ -292,7 +355,7 @@ async fn serve<C: Serving>(
 
 /// The command that plans `plans` with `settings`, for a run that prepares
 /// `programs` test programs before its mutants run (none: a dry run).
-fn plan_run(plans: &[MutantPlan], settings: &Settings, programs: usize) -> PlanRun {
+pub(crate) fn plan_run(plans: &[MutantPlan], settings: &Settings, programs: usize) -> PlanRun {
     PlanRun {
         programs: u32::try_from(programs).unwrap_or(u32::MAX),
         root: settings.root.clone(),

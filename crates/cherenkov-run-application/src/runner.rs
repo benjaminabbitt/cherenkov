@@ -54,8 +54,8 @@ pub struct Runner<E> {
     /// before a run's stream is.
     live: Option<LiveRuns>,
     /// What each run prepared, by the run's id: read from its stream when
-    /// one of its mutants is first handed.
-    programs: Mutex<BTreeMap<String, Arc<Programs>>>,
+    /// one of its mutants is first handed. None for a run that has ended.
+    programs: Mutex<BTreeMap<String, Option<Arc<Programs>>>>,
 }
 
 /// What is already recorded of a mutant for one run.
@@ -113,27 +113,41 @@ impl<E> Runner<E> {
 }
 
 impl<E: Edge> Runner<E> {
-    /// What `run` prepared: as the live runs model knows it, else read from
-    /// the run's stream.
-    async fn prepared(&self, run: &Uuid) -> Result<Programs, RunLayerError> {
-        if let Some(known) = self.live.as_ref().and_then(|live| live.programs(run)) {
-            return Ok(known);
+    /// What `run` prepared, as the live runs model knows it, else read from
+    /// the run's stream; none for a run that has ended (finished or
+    /// abandoned), whose mutants are not run.
+    async fn prepared(&self, run: &Uuid) -> Result<Option<Programs>, RunLayerError> {
+        if let Some(live) = &self.live {
+            if live.status(run).is_some() {
+                return Ok(None);
+            }
+            if let Some(known) = live.programs(run) {
+                return Ok(Some(known));
+            }
         }
-        let prepared: Vec<_> = self
+        let events: Vec<RunEvent> = self
             .core
             .events(&run_cover(run), 0)
             .await?
             .iter()
-            .filter_map(|page| match run_event(page) {
-                Some(RunEvent::ProgramPrepared(prepared)) => Some(prepared),
+            .filter_map(run_event)
+            .collect();
+        if events.iter().any(|e| matches!(e, RunEvent::RunFinished(_))) {
+            return Ok(None);
+        }
+        let prepared = events
+            .into_iter()
+            .filter_map(|event| match event {
+                RunEvent::ProgramPrepared(prepared) => Some(prepared),
                 _ => None,
             })
             .collect();
-        Ok(programs::programs(prepared))
+        Ok(Some(programs::programs(prepared)))
     }
 
-    /// What `run` prepared: read the first time, then kept.
-    async fn programs_of(&self, run: &Uuid) -> Result<Arc<Programs>, RunLayerError> {
+    /// What `run` prepared: read the first time, then kept. None for a run
+    /// that has ended.
+    async fn programs_of(&self, run: &Uuid) -> Result<Option<Arc<Programs>>, RunLayerError> {
         let key = run.to_string();
         let kept = self
             .programs
@@ -144,8 +158,11 @@ impl<E: Edge> Runner<E> {
         if let Some(kept) = kept {
             return Ok(kept);
         }
-        let programs = Arc::new(self.prepared(run).await?);
-        if programs.is_empty() {
+        let programs = self.prepared(run).await?.map(Arc::new);
+        if programs
+            .as_ref()
+            .is_some_and(|programs| programs.is_empty())
+        {
             return Err(RunLayerError::Workers {
                 reason: format!("run {run} prepared no test program"),
             });
@@ -192,7 +209,9 @@ impl<E: Edge> Runner<E> {
         if done.decided {
             return Ok(());
         }
-        let programs = self.programs_of(run).await?;
+        let Some(programs) = self.programs_of(run).await? else {
+            return Ok(());
+        };
         for program in (0..count).filter(|program| !done.programs.contains(program)) {
             let ran = self
                 .run_in(program as usize, plan.clone(), programs.clone())

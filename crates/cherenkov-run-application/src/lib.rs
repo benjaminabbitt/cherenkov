@@ -24,6 +24,7 @@ pub mod live;
 pub mod policies;
 pub mod pool;
 pub mod programs;
+pub mod resume;
 pub mod runner;
 pub mod verdicts;
 pub mod workers;
@@ -38,6 +39,10 @@ mod test_plans;
 #[cfg(test)]
 #[path = "restart.test.rs"]
 mod restart;
+
+#[cfg(test)]
+#[path = "resume.test.rs"]
+mod resumed;
 
 #[cfg(test)]
 #[path = "yielding.test.rs"]

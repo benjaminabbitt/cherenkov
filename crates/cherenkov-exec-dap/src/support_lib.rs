@@ -879,6 +879,35 @@ pub fn remove_scratch() {
     let _ = std::fs::remove_dir_all(scratch_dir());
 }
 
+/// Remove the scratch directories (`cherenkov-support-<pid>`, and
+/// `cherenkov-run-<pid>` of a Go run) that processes no longer running left
+/// behind: a run killed with SIGKILL cannot remove its own, and each holds a
+/// few hundred megabytes. Returns how many were removed.
+pub fn sweep_stale_scratch() -> usize {
+    sweep_stale_in(&std::env::temp_dir(), crate::gdb::alive)
+}
+
+/// [`sweep_stale_scratch`] in `temp`, `alive` saying whether a process runs.
+fn sweep_stale_in(temp: &Path, alive: impl Fn(u32) -> bool) -> usize {
+    let Ok(entries) = std::fs::read_dir(temp) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter(|entry| owner_gone(&entry.file_name().to_string_lossy(), &alive))
+        .filter(|entry| std::fs::remove_dir_all(entry.path()).is_ok())
+        .count()
+}
+
+/// Whether directory `name` is a scratch directory of a process that is gone.
+fn owner_gone(name: &str, alive: &impl Fn(u32) -> bool) -> bool {
+    ["cherenkov-support-", "cherenkov-run-"]
+        .iter()
+        .find_map(|prefix| name.strip_prefix(prefix))
+        .and_then(|pid| pid.parse::<u32>().ok())
+        .is_some_and(|pid| !alive(pid))
+}
+
 /// Ask for a constructor in the next build; nothing is built yet.
 pub fn request(toolchain: Option<&str>, request: &Request) {
     if let Ok(mut libs) = LIBRARIES.lock() {
@@ -1180,3 +1209,7 @@ fn exports(path: &Path) -> HashMap<String, u64> {
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "support_lib.test.rs"]
+mod tests;

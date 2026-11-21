@@ -33,9 +33,12 @@
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
-use angzarr_embedded::BusPolicy;
 use angzarr_embedded::angzarr_bus::{Credit, Scope, Served, Subscription};
+use angzarr_embedded::angzarr_router::error::CodedError;
+use angzarr_embedded::angzarr_router::hpb::{ProjectRequest, ProjectResponse};
 use angzarr_embedded::angzarr_router::router::DynProjectorHandler;
+use angzarr_embedded::v1::Uuid;
+use angzarr_embedded::{BusPolicy, ProjectorHandler};
 use cherenkov_run_domain::{MUTANT_DOMAIN, RUN_DOMAIN};
 use cherenkov_run_ports::{Serving, Subscriptions};
 
@@ -64,6 +67,10 @@ pub type Output = Box<dyn DynProjectorHandler>;
 pub struct Readers {
     pub output: Output,
     pub verdicts: Option<Arc<dyn VerdictFile>>,
+    /// The one run they read, when a store holds others: the readers are
+    /// ephemeral, handed every run's stream from its first event, and print
+    /// and write only this run's.
+    pub only: Option<Uuid>,
 }
 
 impl Readers {
@@ -72,6 +79,62 @@ impl Readers {
         Readers {
             output,
             verdicts: None,
+            only: None,
+        }
+    }
+
+    /// Readers that print with `output` and, if there is one, write `file`.
+    pub fn new(output: Output, verdicts: Option<Arc<dyn VerdictFile>>) -> Readers {
+        Readers {
+            output,
+            verdicts,
+            only: None,
+        }
+    }
+
+    /// The same readers, reading `run` alone.
+    pub fn of(self, run: Uuid) -> Readers {
+        Readers {
+            only: Some(run),
+            ..self
+        }
+    }
+}
+
+/// `reader`, handed the stream of `only` alone when there is one.
+fn scoped(
+    only: &Option<Uuid>,
+    reader: Box<dyn DynProjectorHandler>,
+) -> Box<dyn DynProjectorHandler> {
+    match only {
+        Some(run) => Box::new(OfRun {
+            run: run.clone(),
+            reader,
+        }),
+        None => reader,
+    }
+}
+
+/// A reader handed one run's stream and no other.
+struct OfRun {
+    run: Uuid,
+    reader: Box<dyn DynProjectorHandler>,
+}
+
+impl ProjectorHandler for OfRun {
+    fn name(&self) -> &str {
+        DynProjectorHandler::name(&*self.reader)
+    }
+
+    async fn dispatch(&self, request: &ProjectRequest) -> Result<ProjectResponse, CodedError> {
+        let root = request
+            .events
+            .as_ref()
+            .and_then(|book| book.cover.as_ref())
+            .and_then(|cover| cover.root.as_ref());
+        match root == Some(&self.run) {
+            true => DynProjectorHandler::dispatch(&*self.reader, request).await,
+            false => Ok(ProjectResponse::default()),
         }
     }
 }
@@ -84,13 +147,18 @@ pub type Runners = (Box<dyn DynProjectorHandler>, NonZeroUsize);
 /// and, for a run that runs its mutants, the runners with `instances` at
 /// once and both policies.
 pub fn subscriptions(live: &LiveRuns, readers: Readers, runners: Option<Runners>) -> Subscriptions {
-    let Readers { output, verdicts } = readers;
+    let Readers {
+        output,
+        verdicts,
+        only,
+    } = readers;
+    let output = scoped(&only, output);
     let mut subscriptions = vec![
         projector(RUN_DOMAIN, NonZeroUsize::MIN, Box::new(live.clone())).ephemeral(),
         projector(RUN_DOMAIN, NonZeroUsize::MIN, output).ephemeral(),
     ];
     if let Some(file) = verdicts {
-        let projection = Box::new(VerdictProjection::new(file));
+        let projection = scoped(&only, Box::new(VerdictProjection::new(file)));
         subscriptions.push(projector(RUN_DOMAIN, NonZeroUsize::MIN, projection).ephemeral());
     }
     if let Some((runner, instances)) = runners {

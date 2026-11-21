@@ -20,8 +20,8 @@ policies and the live-runs read model, built in one place
 (`cherenkov-run-application/src/host.rs`). The system around them still
 works its own way:
 
-- **Each process mints a new run id**, and the store is in memory. There is
-  nothing to resume from yet. 5.7.
+- **The store is SQLite** (5.7, below): a run survives the process, and a
+  killed run is carried on by the next `cherenkov run` of the same plan.
 - **The executor port returns raw outcomes**, and the CLI hands the
   workers a libtest parser (`Explain`). Typed observations from each
   adapter are the next step.
@@ -62,7 +62,9 @@ executable and put the run on the bus.
   `UUID` message) to clean domain types happens in one place,
   `markup_domain`, never by hand. What `markup_domain` cannot express is an
   angzarr-build gap to close.
-- **The store** is a rework of angzarr-platform's store-jsonl (below).
+- **The store** is angzarr's SQLite store, `angzarr-store-sqlite` (below).
+  The owner dropped store-jsonl and DuckDB as stores; JSONL import and
+  export come later.
 - **Pins**: angzarr core moves now to the in-memory store fix.
 - **Layout**: ctxloom's rings, held by arch-lint.
 - **Policies only move work across domains**, and both are served on the
@@ -99,10 +101,11 @@ executable and put the run on the bus.
   subscription trait in angzarr core, which angzarr-embedded's `Bus` and the
   distributed coordinator each implement (below).
 - **Resume is automatic** when the project has an unfinished run with the
-  same plan (mutant ids and settings); otherwise the old run is recorded
-  abandoned and a new one starts.
-- **Locations**: the store in `.cherenkov/store/`, git-ignored; the verdict
-  file `.cherenkov/verdicts.jsonl`, committed.
+  same plan (the settings but the worker count, and every mutant with its
+  plan); otherwise the old run is recorded abandoned and a new one starts.
+- **Locations**: the store in `.cherenkov/store/runs.sqlite`, git-ignored by
+  a `.gitignore` of its own directory; the verdict file
+  `.cherenkov/verdicts.jsonl`, committed.
 
 ## What we build on
 - **angzarr-embedded**: the kernel and markup; the bus (to implement
@@ -113,8 +116,10 @@ executable and put the run on the bus.
 - **angzarr-build** and angzarr-codegen: `wire`, `markup_domain`,
   `register`; once extended (5.1), serde from the proto's JSON annotations
   in place of pbjson.
-- **angzarr-platform**: store-jsonl (reworked, 5.7); `os::spawn_tree` and
-  `kill_tree`, `file-system`, `file-lock`.
+- **angzarr-store-sqlite** (5.7): the durable store, on the ports'
+  events, snapshots, positions, outbox, change feed and commit signal;
+  angzarr-platform's `os::spawn_tree` and `kill_tree`, `file-system` and
+  `file-lock`.
 - **angzarr core**: angzarr-ports (store ports, the in-memory store,
   `FaultyStore`, the contract suite), angzarr-proto, angzarr-diagnostic,
   angzarr-presentation.
@@ -192,51 +197,39 @@ does not repeat its ring.
   root; executors stay synchronous on the blocking pool.
 
 ## The store
-angzarr-platform's store-jsonl, reworked into a store with its own engine
-(its format 2):
+angzarr's SQLite store (`angzarr-store-sqlite`, a leaf over angzarr-ports),
+opened by `cherenkov-run-store` in `.cherenkov/store/runs.sqlite` (or the
+file `--store` names; `--ephemeral` keeps a run in memory):
 
-- **Segments**: numbered `seg-NNNNNN.jsonl`, append-only, rolled at 32 to
-  64 MB, read newest-first. A torn tail is only ever in the newest.
-- **Lines**: one per operation, keys in a fixed order, the stream, expected
-  sequence, page sequences and command ids lifted into the envelope, and a
-  CRC32C last. A failing last line is a torn tail, truncated; a failing
-  earlier line is corruption.
-- **Catalog on open**: heads, forks and editions, page offsets, each
-  stream's command ids (so `find_command` reads nothing for a new command),
-  positions, outbox and dead letters, held in memory. It is written as a
-  checkpoint line every few MB and at close; open reads backwards from the
-  newest segment's tail to the newest checkpoint and folds the lines after
-  it, falling back to an older checkpoint if one is bad. Pages are read
-  with `pread` when asked for. Measured shape: 0.1 to 0.3 s to open at 100
-  runs, flat as history grows, against 150 to 200 s today.
-- **Snapshots are latest-only**: kept in memory and written out whole beside
-  each checkpoint, replacing the last, never appended (appended, Cherenkov's
-  snapshot after every write costs about 70 MB a run). A crash loses at
-  most the snapshots since the last checkpoint; those streams fold from an
-  older one.
-- **Positions**, 57% of the lines, are all in each checkpoint, so compaction
-  can drop the superseded ones from old segments. Events are never dropped.
-- **The store knows no types.** A payload is embedded verbatim as nested
-  JSON (`RawValue`), never base64 or a JSON string.
-- **The codec layer** beside it holds the type registry, filled from each
-  wire crate's generated registration, and turns the `Any` bytes of an
-  `EventPage` or snapshot into JSON and back (microseconds a page). An
-  unknown type is kept as `{"@type": .., "@base64": ..}`, bit-exact.
-  Removing the bytes step would need angzarr core's `EventPage` to carry a
-  typed or JSON payload: an option, not planned.
-- **One process writes**, under a directory lock. **DuckDB** is a separate,
-  read-only tool for queries and exports, and how a second process reads:
-  it scans the segments with no lock. It is never in the live path (a point
-  lookup there is 1 to 3 ms against 0.2 µs in memory).
+- **What it gives**: every port the run layer needs, in one WAL database:
+  events with the expected-sequence check, snapshots (`SnapshotStore`:
+  the newest only, each write replaces the one before), the bus's
+  positions (`PositionStore` and `Processed`), the outbox a policy's outputs
+  commit through, the change feed (`Changes`) the bus follows with its
+  cursor kept in the store, and a commit signal that wakes the bus. A step's
+  write is one `BEGIN IMMEDIATE` transaction; a commit survives the process
+  being killed with SIGKILL (the WAL), so the next open finds every
+  committed write and no half of one.
+- **One process writes a store at a time** (the handle has one connection;
+  a second process waits on the write lock for five seconds and then fails).
+  Two `cherenkov run`s of one project at once are not supported: the second
+  would resume the first's run.
+- **The positions** of the runner and both policies are the store's, under
+  their names: a serve starts each stream at its mark. The output, the
+  verdict projection and the live runs are **ephemeral** (positions in
+  memory): see 5.7 for what that means across a restart.
+- **Snapshots**: the run and the mutant offer one after every write
+  (`markup::Snapshots`), the kernel stores it at the head, and a load reads
+  it and the events after it. A snapshot is used only under the same
+  rules version (`cherenkov-run-domain`'s major and minor), so a change to
+  what an aggregate holds or how its events fold bumps the minor version and
+  the next load replays the stream.
+- **Querying** is `sqlite3` on the file (a read, WAL, no lock on the
+  writer); the events are protobuf blobs. A query tool with a decoder is
+  not planned.
 - **The committed artifact is the verdict projection**: one line per mutant,
-  sorted by id, holding nothing that varies between identical runs. Event
-  segments are not committed (about 0.9 GB at 100 runs).
-- **Why a rework, not a new store**: about 45% of store-jsonl survives (the
-  lock, file seam, commit-then-append, poisoning, commit signal, error
-  catalog, most of the schema). The engine over a catalog is new in either
-  crate (about 2,250 lines and as many of tests). A second store would
-  duplicate what survives and leave a format neither DuckDB nor a diff can
-  read. Format 1 journals are refused, not migrated: they are pre-release.
+  sorted by id, holding nothing that varies between identical runs. The
+  store is never committed.
 
 ## The bus interface
 The event-store-backed bus in process and the distributed bus
@@ -660,22 +653,77 @@ stream (none, once the model knows the run) and none of the mutant's per
 decision; a run whose handler fails once completes; two runs of a fixture
 write identical verdict files. Unblocks: 5.7.
 
-**5.7 The durable store and resume.** Goal: a run survives the process.
-Upstream (angzarr-platform): store-jsonl's format 2 and the codec layer,
-exiting on the contract suite, a differential test against the in-memory
-store with reopens at random points, a kill -9 loop, and open under 0.5 s
-at 100 runs of 2,000 mutants. Changes: `cherenkov-run-store` opens it with
-Cherenkov's codec; the wiring resumes at start, automatically when the
-unfinished run's plan matches (else the old run is recorded abandoned):
-the bus serves each subscription from its positions, so the runners are
-handed again every `MutantPlanned` they had not finished and the policies
-their unhandled triggers, and what is recorded twice is a duplicate by its
-derived id;
-SQL files for the DuckDB CLI (queries, the projection's export). Exit: a
-fixture run killed partway and run again with the same plan resumes on its
-own, runs no decided mutant again, and writes the same verdict file as an
-uninterrupted run; run again with a changed plan, it records the old run
-abandoned. Unblocks: phase 6.
+**5.7 The durable store and resume.** Done, on SQLite. Goal: a run survives
+the process. The owner dropped store-jsonl and DuckDB as stores in favour of
+angzarr's `angzarr-store-sqlite` (pinned at the same commit, `71b453a`, which
+has it; no bump was needed). What was done:
+- `cherenkov-run-store` opens it (`open(path)`, `in_project(root)` for
+  `.cherenkov/store/runs.sqlite` with a `.gitignore` of `*` beside it,
+  `memory()` for the in-memory store). `cherenkov run` keeps the run there by
+  default; `--store FILE` names another, `--ephemeral` keeps nothing.
+  `cherenkov-wiring` has `start`, `start_on` and `start_in_file`, which open
+  the store on the runtime the run is served on.
+- **Resume** (`resume.rs`, `layer::start`): a run that begins lists the run
+  streams (`Listing` in the ports: `streams` with heads, and `window`),
+  reads each one's last event and, if it is not `RunFinished`, its first two
+  (the start and the plan). The newest unfinished run planned as this one is
+  carried on: the same settings but the worker count, and the same mutants
+  with their plans, in order. Every other unfinished run is told it is
+  abandoned. A dry run and a run of no mutants touch no other run. The
+  carried-on run re-prepares its test programs (the workers' executors need
+  it; the facts are duplicates by their ids, and a baseline that now fails
+  finishes the run, failed) and the bus serves from the stored positions: the
+  runner is handed again the mutants it had not finished, the policies their
+  unhandled triggers, and what is recorded twice is a duplicate by its
+  derived id.
+- **Abandoned**: the fact `Abandoned` (wire: `Abandoned`, `RunAbandoned`,
+  `RUN_STATUS_ABANDONED`) records `RunAbandoned` and finishes the run with
+  that status while it is live, and nothing otherwise. The state and the
+  folds did not change (the new event folds to nothing), so
+  `cherenkov-run-domain` stays 0.4. `encodings.txt` gained the lines of the
+  new messages. A runner handed a mutant planned for a run that has ended
+  (a crash left it) runs nothing: it reads the run's end from the live runs
+  model, else from the run's stream.
+- **Ephemeral subscriptions: reprint, not resume.** The output, the verdict
+  projection and the live runs keep their positions in memory, so a serve
+  hands them every run's stream from its first event. They are scoped to the
+  run being served (`Readers::of`), so a store holding earlier runs prints
+  and writes only this one's. A carried-on run therefore **reprints** itself
+  from `run.started`, then goes on. Resuming them from a stored mark was
+  rejected: the output's contract is that a run's documents are a whole
+  stream, from `run.started` to `run.finished` (a consumer pipes it through
+  `jq`), and the verdict file is written whole at the finish from every
+  decision of the run, which a tail alone does not hold. The cost is a read of
+  the run's events and of the earlier runs' streams (handed and dropped) at
+  each start. In text mode a notice on stderr says the run was carried on.
+- **Snapshots**: unchanged (the run and the mutant offer one after every
+  write; the store keeps the newest); a test reads them back from the file
+  at the head of each stream.
+- **Killed with SIGKILL**: a test runs a run in a child process, kills it
+  in its fourth mutant, and carries on in the parent: the run is resumed,
+  the three decided mutants ran once, the fourth twice, none is lost, and
+  the verdict lines equal an uninterrupted run's
+  (`cherenkov-wiring/tests/killed.rs`). A slow test does the same with
+  the CLI and GDB on the Rust fixture. A killed run leaves its scratch
+  directory (`cherenkov-support-<pid>`, hundreds of MB), so a run begins by
+  removing those of processes no longer running.
+- **Measured** (`CHERENKOV_MEASURE=500,1000,2000`, release, instant mutants
+  on 8 workers; the machine at a load of 30 to 45, so the figures are an
+  upper bound and noisy): in memory 171 ms, 387 ms, 1.75 s; on SQLite 1.9 s,
+  3.4 s, 16.8 s; the same project run again on that file after three earlier
+  runs of it (readers handed them all): 2.2 s, 19 s (17 s on a repeat),
+  39 s. The store costs about 4 to 8 ms a mutant under that load, in commits
+  (each step is a transaction); and the earlier runs' streams are read at each
+  start. See the open question on retention.
+- **Open for the owner**: how many finished runs a store keeps (it keeps
+  all; every start reads their run streams, and a mutant's stream gains a
+  run's asking each run); whether `run` writes `.cherenkov/verdicts.jsonl`
+  by default (unchanged from 5.6); a store lock for two `cherenkov run`s of
+  one project at once (the second would carry on the first's run).
+Upstream: none. Exit met: a fixture run killed partway and run again with
+the same plan resumes on its own, runs no decided mutant again, and writes
+the same verdict file as an uninterrupted run; run again with a changed plan,
+it records the old run abandoned. Unblocks: phase 6.
 
 **5.8 Layout, names and arch-lint.** Goal: the rings above, held, under the
 names in "Naming". Changes: crates moved to
@@ -756,8 +804,8 @@ no test builds its own kernel, clock or ids.
 - **angzarr-embedded**: its `Bus` implementing the subscription trait, with
   both projector and policy subscriptions (5.4); optionally, `App` hosting
   the bus (5.5).
-- **angzarr** (`store-jsonl`, formerly angzarr-platform): store-jsonl format 2 and the codec
-  layer (5.7).
+- **angzarr** (`angzarr-store-sqlite`): none needed; JSONL import and export
+  come later (the owner's).
 - **rust-support**: the extraction (8).
 
 ## Open questions
@@ -777,11 +825,11 @@ no test builds its own kernel, clock or ids.
 5. **Output documents: proto or CLI structs?** Decided (5.2): proto, in a
    package of their own (`cherenkov.output.v1`), with snake_case
    annotations, so one generator writes all of Cherenkov's JSON.
-6. **DuckDB: a crate, or SQL for its CLI?** Recommendation: SQL files and
-   `just` recipes; a crate only when a command needs one, never in the main
-   binary.
-7. **A bad old line in a segment.** Recommendation: it fails the reads of
-   its stream, not the open, and a store check command reports it.
+6. **DuckDB.** Dropped as a store (the owner); queries are `sqlite3` on the
+   store's file.
+7. **A damaged store file.** The open refuses it
+   (`angzarr-store-sqlite-damaged-file`) and leaves it as it was; an
+   integrity check command is not planned.
 8. **Generated `register` and `descriptors`.** Recommendation: `register`
    once it covers policies (hand registration drifts from the protos);
    `descriptors` when a tool reads them.
@@ -792,9 +840,6 @@ no test builds its own kernel, clock or ids.
 - The bus interface (angzarr core's trait, then angzarr-embedded's `Bus`)
   landed before 5.4, which moved both policies and the runners onto it;
   fan out was inline, on `RunReady`, between 5.3 and 5.4.
-- The store rework, the long item (three to five weeks), starts once 5.1's
-  codec registration is settled and runs beside 5.2 to 5.6, which stay on
-  the in-memory store.
 - The language and debugger port extraction can run alongside: the run
   layer depends only on the executor port, reshaped in 5.4, moved in 5.8.
 
@@ -804,15 +849,13 @@ no test builds its own kernel, clock or ids.
   all three.
 - **Wire churn after 5.7** needs upcasters or new package versions; the
   enums and facts are cheapest to get right in 5.2 to 5.4.
-- **The store's rules drift** from the in-memory store's; the differential
-  test with reopens guards it, since the contract suite never reopens.
+- **A durable store grows**: every run is kept (no retention rule yet) and
+  each start reads the earlier runs' streams (5.7's measurement).
 - **Generated serde** keeps pbjson's traps unless 5.1 closes them.
 - **Speed**: more facts per mutant, the fan-out and fan-in hops and durable
   syncs all add latency to a path that must stay an order of magnitude
   faster than cargo-mutants. Group commit, and the measurement after each
   phase.
-- **DuckDB** reads a live segment as of its scan, with no documented row
-  order and a torn line as a row of nulls: for queries, never decisions.
 - **Stable ids**: resume and reuse are only as sound as the mutant ids and
   the plan match.
 - **Incremental reuse** is only as sound as its key: start by hashing the

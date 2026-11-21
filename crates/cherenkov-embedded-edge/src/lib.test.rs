@@ -11,7 +11,7 @@ use angzarr_embedded::testing::Samples;
 use angzarr_embedded::v1::{Cover, Uuid};
 use angzarr_embedded::{BusPolicy, ProjectorHandler, Registry};
 use cherenkov_run_domain::{ExecutableMutant, PlanRun, PlannedMutant, RUN_DOMAIN, register};
-use cherenkov_run_ports::{Delivery, Edge, Recovery, Serving};
+use cherenkov_run_ports::{Delivery, Edge, Listing, Recovery, Serving};
 
 use super::*;
 
@@ -175,4 +175,27 @@ async fn events_are_read_from_the_sequence_asked() {
         .map(|p| p.sequence)
         .collect();
     assert_eq!(from, [2]);
+}
+
+#[tokio::test]
+async fn the_streams_of_a_domain_are_listed_with_their_heads() {
+    let edge = edge().await;
+    assert!(edge.streams(RUN_DOMAIN).await.unwrap().is_empty());
+    edge.command(run(), &PlanRun::default()).await.unwrap();
+    let listed = edge.streams(RUN_DOMAIN).await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].cover, run());
+    assert_eq!(listed[0].head, 3);
+    assert!(edge.streams("another-domain").await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_window_of_a_stream_is_the_pages_between_two_sequences() {
+    let edge = edge().await;
+    edge.command(run(), &PlanRun::default()).await.unwrap();
+    let all = edge.events(&run(), 0).await.unwrap();
+    let window = edge.window(&run(), 1, 2).await.unwrap();
+    assert_eq!(window.len(), 1);
+    assert_eq!(window[0].sequence, all[1].sequence);
+    assert!(edge.window(&run(), 3, 9).await.unwrap().is_empty());
 }

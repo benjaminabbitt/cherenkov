@@ -553,9 +553,11 @@ dependencies = [
 
 [[package]]
 name = "cherenkov-run-store"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "angzarr-ports",
+ "angzarr-store-sqlite",
+ "tokio",
 ]
 
 [[package]]
@@ -596,6 +598,8 @@ dependencies = [
  "cherenkov-run-application",
  "cherenkov-run-domain",
  "cherenkov-run-ports",
+ "cherenkov-run-store",
+ "cherenkov-run-wire",
  "cherenkov-syntax",
  "tokio",
  "uuid",

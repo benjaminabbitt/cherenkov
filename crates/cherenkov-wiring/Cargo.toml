@@ -13,12 +13,14 @@ cherenkov-core.workspace = true
 cherenkov-embedded-edge.workspace = true
 cherenkov-run-application.workspace = true
 cherenkov-run-domain.workspace = true
+cherenkov-run-store.workspace = true
 tokio.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
 angzarr-ports.workspace = true
 cherenkov-run-ports.workspace = true
+cherenkov-run-wire.workspace = true
 cherenkov-syntax.workspace = true
 
 [lints]

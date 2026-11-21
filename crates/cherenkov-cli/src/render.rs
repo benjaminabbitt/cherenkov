@@ -70,8 +70,9 @@ pub fn documents(run: &Uuid, page: &EventPage) -> Vec<Document> {
             .map(document)
             .into_iter()
             .collect(),
-        // Readiness is no event a reader needs.
-        RunEvent::RunReady(_) => Vec::new(),
+        // Readiness is no event a reader needs, and a run that was
+        // superseded is not one that is printed: its `run.finished` says so.
+        RunEvent::RunReady(_) | RunEvent::RunAbandoned(_) => Vec::new(),
         RunEvent::RunFinished(f) => vec![document(Event::Finished(finished(run, at, f)))],
     }
 }

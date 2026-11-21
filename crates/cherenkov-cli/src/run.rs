@@ -59,6 +59,12 @@ pub struct Tools {
     pub viability: bool,
     /// Which mutants are planned (test code, files, names).
     pub selection: Selection,
+    /// Where the run is kept so a killed run can be resumed: a file of the
+    /// SQLite store. Default: `.cherenkov/store/runs.sqlite` under the project.
+    pub store: Option<PathBuf>,
+    /// Keep the run in memory: it is lost with the process and cannot be
+    /// resumed. Wins over `store`.
+    pub ephemeral: bool,
 }
 
 /// The plans whose spans touch a line the unified diff in `file` adds. The
@@ -123,6 +129,8 @@ pub fn run(
     if format == Format::Text {
         eprintln!("operators: {}", crate::set_names(&sets));
     }
+    // A run killed with SIGKILL could not remove its scratch space.
+    cherenkov_exec_dap::support_lib::sweep_stale_scratch();
     let asked = Asked {
         root: &root,
         tools,
@@ -423,6 +431,31 @@ fn on_run_layer(
         }
         None => None,
     };
+    let readers = run_readers(asked, log);
+    let started = match store_file(asked)? {
+        Some(path) => {
+            cherenkov_wiring::start_in_file(&path, plans, &settings, Some(workers), readers)
+        }
+        None => cherenkov_wiring::start(
+            cherenkov_run_store::memory(),
+            plans,
+            &settings,
+            Some(workers),
+            readers,
+        ),
+    }
+    .map_err(|e| CliError::run(&e))?;
+    // Under JSON the stream says so: the run it prints begins again with
+    // `run.started`, under the id of the run that was carried on.
+    if started.resumed && asked.format == Format::Text {
+        eprintln!("cherenkov: carried on run {}", started.run);
+    }
+    Ok(())
+}
+
+/// The readers of a run: its output through the sinks the options ask for,
+/// and the verdict file if there is one.
+fn run_readers(asked: &Asked, log: Option<Box<dyn std::io::Write + Send>>) -> Readers {
     let in_diff = asked.tools.in_diff.is_some();
     let mut sink = output::sink(asked.format, Listed::Decided, log);
     if in_diff {
@@ -433,26 +466,35 @@ fn on_run_layer(
         ));
     }
     let sink = Box::new(Phases::new(sink, Box::new(std::io::stderr())));
-    cherenkov_wiring::run(
-        cherenkov_run_store::open(),
-        plans,
-        &settings,
-        Some(workers),
-        Readers {
-            output: output::printing(sink),
-            verdicts: asked.tools.verdict_file.clone().map(|path| {
-                let file = output::JsonVerdictFile::new(path);
-                let file = if in_diff {
-                    file.without_not_called()
-                } else {
-                    file
-                };
-                Arc::new(file) as Arc<dyn VerdictFile>
-            }),
-        },
+    Readers::new(
+        output::printing(sink),
+        asked.tools.verdict_file.clone().map(|path| {
+            let file = output::JsonVerdictFile::new(path);
+            let file = if in_diff {
+                file.without_not_called()
+            } else {
+                file
+            };
+            Arc::new(file) as Arc<dyn VerdictFile>
+        }),
     )
-    .map(drop)
-    .map_err(|e| CliError::run(&e))
+}
+
+/// The file the run is kept in, none for a run kept in memory. Its
+/// directory is made.
+fn store_file(asked: &Asked) -> Result<Option<PathBuf>, CliError> {
+    if asked.tools.ephemeral {
+        return Ok(None);
+    }
+    let Some(path) = &asked.tools.store else {
+        return cherenkov_run_store::in_project(asked.root)
+            .map(Some)
+            .map_err(|e| unreadable(&asked.root.join(".cherenkov"), &e));
+    };
+    if let Some(directory) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+        std::fs::create_dir_all(directory).map_err(|e| unreadable(directory, &e))?;
+    }
+    Ok(Some(path.clone()))
 }
 
 /// What the workspace's own source says about its types' defaults: every
@@ -626,6 +668,8 @@ mod tests {
             verdict_file: None,
             viability: true,
             selection: Selection::default(),
+            store: None,
+            ephemeral: true,
         }
     }
 

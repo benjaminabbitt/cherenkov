@@ -595,6 +595,78 @@ async fn test_nothing_is_recorded_after_the_run_finishes() {
     assert_eq!(run_events(&core, &run).await.len(), after);
 }
 
+#[tokio::test]
+async fn test_a_run_told_it_is_abandoned_records_why_and_finishes_abandoned_with_its_tallies() {
+    // A run a newer plan has superseded is over, and its stream says so.
+    let core = core();
+    let run = new_run();
+    core.command(run_cover(&run), &plan(&["a", "b"]))
+        .await
+        .unwrap();
+    core.report(run_cover(&run), &decision("a", Verdict::Killed), "a")
+        .await
+        .unwrap();
+    let abandoned = Abandoned {
+        reason: "the plan changed".to_string(),
+    };
+    core.report(run_cover(&run), &abandoned, "abandoned")
+        .await
+        .unwrap();
+    let events = run_events(&core, &run).await;
+    let [
+        ..,
+        RunEvent::RunAbandoned(why),
+        RunEvent::RunFinished(finished),
+    ] = &events[..]
+    else {
+        panic!("{events:?}");
+    };
+    assert_eq!(why.reason, "the plan changed");
+    assert_eq!(finished.status, RunStatus::Abandoned);
+    let counts: Vec<(Verdict, u32)> = finished
+        .counts
+        .iter()
+        .map(|tally| (tally.verdict, tally.count))
+        .collect();
+    assert_eq!(counts, [(Verdict::Killed, 1)]);
+}
+
+#[tokio::test]
+async fn test_a_run_already_over_is_not_abandoned_and_one_told_twice_is_abandoned_once() {
+    let core = core();
+    let run = new_run();
+    core.command(run_cover(&run), &plan(&["a"])).await.unwrap();
+    core.report(run_cover(&run), &decision("a", Verdict::Killed), "a")
+        .await
+        .unwrap();
+    let over = run_events(&core, &run).await.len();
+    let abandoned = Abandoned {
+        reason: "late".to_string(),
+    };
+    core.report(run_cover(&run), &abandoned, "abandoned")
+        .await
+        .unwrap();
+    assert_eq!(
+        run_events(&core, &run).await.len(),
+        over,
+        "finished runs stay as they ended"
+    );
+
+    let live = new_run();
+    core.command(run_cover(&live), &plan(&["a"])).await.unwrap();
+    for _ in 0..2 {
+        core.report(run_cover(&live), &abandoned, "abandoned")
+            .await
+            .unwrap();
+    }
+    let abandonments = run_events(&core, &live)
+        .await
+        .iter()
+        .filter(|e| matches!(e, RunEvent::RunAbandoned(_)))
+        .count();
+    assert_eq!(abandonments, 1);
+}
+
 fn plan_mutant(run: &Uuid, id: &str) -> PlanMutant {
     PlanMutant {
         run: Some(RunId::from(run.clone())),
@@ -754,6 +826,7 @@ fn replay_run(events: Vec<RunEvent>) -> Run {
             RunEvent::ProgramPrepared(e) => run.program_prepared(e),
             RunEvent::RunReady(e) => run.run_ready(e),
             RunEvent::ProgramFailed(e) => run.program_failed(e),
+            RunEvent::RunAbandoned(e) => run.run_abandoned(e),
             RunEvent::DecisionRecorded(e) => run.decision_recorded(e),
             RunEvent::RunFinished(e) => run.run_finished(e),
         }

@@ -165,7 +165,7 @@ impl Sink for BoxedSink {
 pub fn exit_code(status: RunStatus) -> i32 {
     let exit = match status {
         RunStatus::Unspecified | RunStatus::Complete => Exit::OK,
-        RunStatus::Failed => Exit::FAILED,
+        RunStatus::Failed | RunStatus::Abandoned => Exit::FAILED,
     };
     i32::from(exit.code(false))
 }

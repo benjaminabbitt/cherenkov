@@ -1,0 +1,48 @@
+use super::*;
+
+fn scratch(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("cherenkov-sweep-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+#[test]
+fn test_the_scratch_of_a_process_that_is_gone_is_swept_and_a_living_one_is_not() {
+    let temp = scratch("sweep");
+    for name in [
+        "cherenkov-support-100",
+        "cherenkov-support-200",
+        "cherenkov-run-100",
+        "cherenkov-run-200",
+        "cherenkov-support-notapid",
+        "other-100",
+    ] {
+        std::fs::create_dir_all(temp.join(name).join("deep")).unwrap();
+    }
+    let swept = sweep_stale_in(&temp, |pid| pid == 200);
+    let mut left: Vec<String> = std::fs::read_dir(&temp)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    left.sort();
+    assert_eq!(
+        left,
+        [
+            "cherenkov-run-200",
+            "cherenkov-support-200",
+            "cherenkov-support-notapid",
+            "other-100"
+        ]
+    );
+    assert_eq!(swept, 2);
+    std::fs::remove_dir_all(&temp).unwrap();
+}
+
+#[test]
+fn test_a_directory_in_a_missing_temp_directory_sweeps_nothing() {
+    assert_eq!(
+        sweep_stale_in(Path::new("/nonexistent-cherenkov-dir"), |_| false),
+        0
+    );
+}

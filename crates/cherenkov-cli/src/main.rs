@@ -192,6 +192,15 @@ struct RunArgs {
     /// one line for each changed verdict. A run that fails writes nothing.
     #[arg(long = "verdicts", value_name = "FILE")]
     verdict_file: Option<PathBuf>,
+    /// Keep the run in this SQLite file, so a run killed part way is carried
+    /// on by the next `cherenkov run` of the same plan, and the mutants it
+    /// had decided are not run again. Default:
+    /// `.cherenkov/store/runs.sqlite` under DIR (git-ignored).
+    #[arg(long, value_name = "FILE")]
+    store: Option<PathBuf>,
+    /// Keep nothing: the run lives in memory and is lost with the process.
+    #[arg(long)]
+    ephemeral: bool,
     /// Judge only the lines a unified diff adds (as cargo-mutants'
     /// `--in-diff`): a mutant stays when its span touches one.
     #[arg(long = "in-diff", value_name = "FILE")]
@@ -223,6 +232,7 @@ fn chosen(asked: Option<FormatArg>) -> Format {
 fn catalog() -> Result<Catalog, CatalogError> {
     let mut sources = vec![error::EN_US];
     sources.extend(cherenkov_run_application::error::CATALOG_SOURCES);
+    sources.extend(cherenkov_run_store::CATALOG_SOURCES);
     Catalog::en_us(&sources)
 }
 
@@ -281,50 +291,7 @@ fn main() -> ExitCode {
             });
             (format, result)
         }
-        Command::Run(args) => {
-            let RunArgs {
-                dir,
-                format,
-                dlv,
-                go,
-                gdb,
-                cargo,
-                exclude,
-                operators,
-                select,
-                tests,
-                jobs,
-                cargo_args,
-                in_diff,
-                deficiency_log,
-                verdict_file,
-                no_viability_check,
-            } = *args;
-            let format = chosen(format);
-            let result = Selection::load(&dir, &select, &exclude).and_then(|selection| {
-                let cargo_args = [cargo_args, selection.cargo_args.clone()].concat();
-                run::run(
-                    &dir,
-                    &run::Tools {
-                        dlv,
-                        go,
-                        gdb,
-                        cargo,
-                        jobs,
-                        cargo_args,
-                        in_diff,
-                        deficiency_log,
-                        verdict_file,
-                        viability: !no_viability_check,
-                        selection,
-                    },
-                    operators.as_deref(),
-                    &tests,
-                    format,
-                )
-            });
-            (format, result)
-        }
+        Command::Run(args) => run_command(*args),
         Command::Sets => {
             sets();
             (Format::Text, Ok(()))
@@ -343,6 +310,56 @@ fn main() -> ExitCode {
             statuses.process(failure.exit)
         }
     }
+}
+
+/// `cherenkov run`: its format and what became of it.
+fn run_command(args: RunArgs) -> (Format, Result<(), CliError>) {
+    let RunArgs {
+        dir,
+        format,
+        dlv,
+        go,
+        gdb,
+        cargo,
+        exclude,
+        operators,
+        select,
+        tests,
+        jobs,
+        cargo_args,
+        in_diff,
+        deficiency_log,
+        verdict_file,
+        no_viability_check,
+        store,
+        ephemeral,
+    } = args;
+    let format = chosen(format);
+    let result = Selection::load(&dir, &select, &exclude).and_then(|selection| {
+        let cargo_args = [cargo_args, selection.cargo_args.clone()].concat();
+        run::run(
+            &dir,
+            &run::Tools {
+                dlv,
+                go,
+                gdb,
+                cargo,
+                jobs,
+                cargo_args,
+                in_diff,
+                deficiency_log,
+                verdict_file,
+                viability: !no_viability_check,
+                selection,
+                store,
+                ephemeral,
+            },
+            operators.as_deref(),
+            &tests,
+            format,
+        )
+    });
+    (format, result)
 }
 
 /// The sets `spec` asks for (`a,b,file.toml`), or the error that says why not.
@@ -643,7 +660,7 @@ fn plan(
     };
     let sink = output::sink(format, Listed::Planned, None);
     cherenkov_wiring::run(
-        cherenkov_run_store::open(),
+        cherenkov_run_store::memory(),
         &plans,
         &settings,
         None,

@@ -17,12 +17,19 @@ fn dlv() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap()).join("go/bin/dlv")
 }
 
-/// `cherenkov run dir args`, which must succeed.
+/// `cherenkov run dir args`, which must succeed. The run is kept in memory
+/// unless `args` name a `--store`: the tests that run one fixture at once
+/// must not share its store.
 fn run(dir: &Path, args: &[&str]) -> Output {
+    let kept = match args.contains(&"--store") {
+        true => None,
+        false => Some("--ephemeral"),
+    };
     let out = Command::new(env!("CARGO_BIN_EXE_cherenkov"))
         .arg("run")
         .arg(dir)
         .args(args)
+        .args(kept)
         .output()
         .unwrap();
     assert!(
@@ -572,4 +579,66 @@ fn test_run_of_a_diff_has_rustc_reject_the_mutant_it_cannot_compile_and_writes_a
         written.contains("\"id_of\"") || written.contains("id_of"),
         "{written}"
     );
+}
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_a_run_killed_with_sigkill_is_carried_on_and_ends_as_an_uninterrupted_run_does() {
+    use std::io::{BufRead, BufReader};
+    let dir = fixtures().join("rust");
+    let scratch = std::env::temp_dir().join(format!("cherenkov-kill-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&scratch);
+    let store = scratch.join("runs.sqlite");
+    let store_arg = store.to_str().unwrap();
+
+    // The first process is killed as soon as it has decided a mutant a test
+    // called, with the rest owed.
+    let mut child = Command::new(env!("CARGO_BIN_EXE_cherenkov"))
+        .arg("run")
+        .arg(&dir)
+        .args(["--store", store_arg, "--jobs", "1", "--format", "json"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut seen = Vec::new();
+    for line in BufReader::new(child.stdout.take().unwrap()).lines() {
+        let doc: Value = serde_json::from_str(&line.unwrap()).unwrap();
+        let called = doc["event"] == "mutant.decided" && doc["verdict"] != "not-called";
+        assert_ne!(
+            doc["event"], "run.finished",
+            "the run ended before it was killed"
+        );
+        seen.push(doc);
+        if called {
+            break;
+        }
+    }
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert!(!seen.is_empty());
+
+    let resumed = run(&dir, &["--store", store_arg, "--jobs", "1"]);
+    let docs = documents(&resumed.stdout);
+    assert_eq!(docs.first().unwrap()["event"], "run.started");
+    assert_eq!(docs.first().unwrap()["run"], seen[0]["run"], "the same run");
+    assert_eq!(docs.last().unwrap()["status"], "complete");
+    assert_eq!(
+        decided_lines(&resumed.stdout),
+        sorted_lines(fixtures().join("rust/expected-verdicts.txt"))
+    );
+    let ids: Vec<&str> = docs
+        .iter()
+        .filter(|d| d["event"] == "mutant.decided")
+        .map(|d| d["id"].as_str().unwrap())
+        .collect();
+    let mut once = ids.clone();
+    once.sort();
+    once.dedup();
+    assert_eq!(ids.len(), once.len(), "each mutant is decided once");
+
+    // A run after that one is a new run: the first finished.
+    let after = run(&dir, &["--store", store_arg, "--jobs", "1"]);
+    assert_ne!(documents(&after.stdout)[0]["run"], seen[0]["run"]);
+    let _ = std::fs::remove_dir_all(&scratch);
 }

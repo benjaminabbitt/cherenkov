@@ -136,6 +136,31 @@ pub trait Edge: Send + Sync {
     }
 }
 
+/// A stream the core holds and where its events end.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Listed {
+    pub cover: Cover,
+    /// The next sequence: how many events the stream holds.
+    pub head: u64,
+}
+
+/// What the core can say of the streams it holds beyond one it is asked
+/// for by name: which a domain has, and a stretch of one. A run that
+/// begins asks it which runs an earlier process left, without reading their
+/// whole history.
+pub trait Listing: Edge {
+    /// The streams of `domain`, each with its head.
+    fn streams(&self, domain: &str) -> impl Future<Output = Result<Vec<Listed>, EdgeError>> + Send;
+
+    /// `stream`'s events with `from <= sequence < to`.
+    fn window(
+        &self,
+        stream: &Cover,
+        from: u64,
+        to: u64,
+    ) -> impl Future<Output = Result<Vec<EventPage>, EdgeError>> + Send;
+}
+
 /// The core serving the bus: the root builds the bus over the core's store
 /// with the clock, timer and retry it owns.
 pub trait Serving: Edge {

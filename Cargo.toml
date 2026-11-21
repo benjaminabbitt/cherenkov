@@ -31,6 +31,7 @@ cherenkov-wiring = { path = "crates/cherenkov-wiring" }
 angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
 # The kernel's App: the application over a store, its registry and settings.
 angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
+angzarr-store-sqlite = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
 angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
 angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
 angzarr-presentation = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }

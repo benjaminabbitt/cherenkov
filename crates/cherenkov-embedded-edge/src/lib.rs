@@ -16,7 +16,7 @@ use angzarr_embedded::v1::{CommandBook, Cover, EventPage};
 use angzarr_embedded::{Bus, Host, OnRetryable, Registry, Sampled, StreamRef, Wait};
 use angzarr_embedded_host::{App, OneStore};
 use cherenkov_run_ports::{
-    Delivery, Edge, EdgeError, Recovery, Report, Reported, Serving, Subscriptions,
+    Delivery, Edge, EdgeError, Listed, Listing, Recovery, Report, Reported, Serving, Subscriptions,
 };
 
 /// How often the bus looks at the store when no commit woke it.
@@ -166,6 +166,45 @@ impl<S: RunStore> Edge for EmbeddedEdge<S> {
 
     fn next_commit(&self) -> CommitWait {
         angzarr_embedded::angzarr_ports::CommitNotify::next_commit(self.store())
+    }
+}
+
+impl<S: RunStore> Listing for EmbeddedEdge<S> {
+    async fn streams(&self, domain: &str) -> Result<Vec<Listed>, EdgeError> {
+        let covers = self
+            .store()
+            .covers(domain)
+            .await
+            .map_err(|e| failed(&e, e.recovery()))?;
+        let mut listed = Vec::with_capacity(covers.len());
+        for cover in covers {
+            let at = StreamRef::try_from(&cover).map_err(|e| failed(&e, Recovery::Invalid))?;
+            let head = self
+                .store()
+                .head(at)
+                .await
+                .map_err(|e| failed(&e, e.recovery()))?;
+            listed.push(Listed {
+                cover,
+                head: head.next_sequence,
+            });
+        }
+        Ok(listed)
+    }
+
+    async fn window(
+        &self,
+        stream: &Cover,
+        from: u64,
+        to: u64,
+    ) -> Result<Vec<EventPage>, EdgeError> {
+        let at = StreamRef::try_from(stream).map_err(|e| failed(&e, Recovery::Invalid))?;
+        let slice = self
+            .store()
+            .read(at, from, Some(to))
+            .await
+            .map_err(|e| failed(&e, e.recovery()))?;
+        Ok(slice.pages)
     }
 }
 

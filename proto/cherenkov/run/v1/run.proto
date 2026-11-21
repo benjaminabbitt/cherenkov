@@ -44,6 +44,9 @@ enum RunStatus {
   RUN_STATUS_COMPLETE = 1;
   // A test program did not prepare: the mutants could not run.
   RUN_STATUS_FAILED = 2;
+  // A later run superseded it before it ended (its plan no longer
+  // matched what the project holds): some of its mutants may be undecided.
+  RUN_STATUS_ABANDONED = 3;
 }
 
 // How many mutants got a verdict.
@@ -180,6 +183,19 @@ message PreparationFailed {
   string reason = 2;
 }
 
+// The run is superseded: a later run found it unfinished with a plan that
+// no longer matches the project's, and says so. Recorded while the run is
+// live, once, and the run finishes, abandoned. Nothing is recorded after it
+// finishes, so a run that ended is not abandoned.
+message Abandoned {
+  option (io.angzarr.v1.fact) = {
+    component: "cherenkov.run.v1.RunSnapshot"
+    emits: ["cherenkov.run.v1.RunAbandoned", "cherenkov.run.v1.RunFinished"]
+  };
+
+  string reason = 1;
+}
+
 // A mutant's decision, reported to the run that asked for it: the mutant's
 // id, its verdict, and the decision whole as the mutant recorded it, which
 // the run's readers print and keep. Recorded once for each of the run's
@@ -255,6 +271,13 @@ message ProgramFailed {
 
   optional string program = 1;
   string reason = 2;
+}
+
+// The run was superseded, and why.
+message RunAbandoned {
+  option (io.angzarr.v1.event) = {component: "cherenkov.run.v1.RunSnapshot"};
+
+  string reason = 1;
 }
 
 // One of the run's mutants decided, counted in its tallies, with the

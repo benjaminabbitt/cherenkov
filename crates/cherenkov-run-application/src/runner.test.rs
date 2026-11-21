@@ -406,3 +406,22 @@ async fn test_a_runner_reads_what_a_run_prepared_from_the_live_runs_model_when_i
     assert_eq!(run_a(Known::Nothing).await, 1, "a model that knows nothing");
     assert_eq!(run_a(Known::Run).await, 0, "from the model");
 }
+
+#[tokio::test]
+async fn test_a_mutant_planned_for_a_run_that_has_ended_is_not_run() {
+    // The runner has no live runs model here, so it learns that the run
+    // ended from the run's own stream: the case of a mutant a crashed
+    // process left planned for a run the next one abandoned.
+    let runs = Arc::new(AtomicUsize::new(0));
+    let (core, run, projector) = projector(&runs, 1).await;
+    let abandoned = cherenkov_run_domain::Abandoned {
+        reason: "the plan changed".to_string(),
+    };
+    core.report(run_cover(&run), &abandoned, "abandoned")
+        .await
+        .unwrap();
+    let a = plans()[0].id.0.clone();
+    handed_planned(&projector, &core, &a).await;
+    assert_eq!(runs.load(Ordering::SeqCst), 0, "nothing ran for it");
+    assert!(ran(&pages(&core, &a).await).is_empty());
+}
