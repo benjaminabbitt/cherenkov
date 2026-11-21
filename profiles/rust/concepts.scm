@@ -75,21 +75,26 @@
   .
   (attribute_item)*
   .
-  [(function_item) (mod_item) (impl_item) (trait_item) (struct_item) (enum_item)
-   (const_item) (static_item) (let_declaration) (expression_statement)
-   (field_initializer) (shorthand_field_initializer) (macro_invocation)] @skip.test
+  [(function_item) (mod_item) (impl_item) (trait_item)] @skip.test
   (#match? @_attr "^#\\[\\s*(cfg\\s*\\(\\s*test\\s*\\)|([A-Za-z_][A-Za-z0-9_]*\\s*::\\s*)*test(\\s*\\(.*\\))?)\\s*\\]$"))
 ((source_file (inner_attribute_item) @_attr) @skip.test
   (#match? @_attr "^#!\\[\\s*cfg\\s*\\(\\s*test\\s*\\)\\s*\\]$"))
 
-; annotated: `#[mutants::skip]`, also through `cfg_attr(..., mutants::skip)`.
+; annotated: `#[mutants::skip]`, also through `cfg_attr(name, mutants::skip)`.
+; Only plain names may stand in the cfg_attr, as cargo-mutants reads it (so
+; `cfg_attr(not(test), mutants::skip)` is not honoured), and only on a
+; function, impl, trait or module: attributes on a `let`, an expression
+; statement, a const, static, struct, enum, match arm or field are ignored.
 ((attribute_item) @_attr
   .
   (attribute_item)*
   .
-  [(function_item) (mod_item) (impl_item) (trait_item) (let_declaration)
-   (expression_statement) (field_initializer) (shorthand_field_initializer)] @skip.annotated
-  (#match? @_attr "^#\\[\\s*(mutants\\s*::\\s*skip|cfg_attr\\s*\\(.*\\bmutants\\s*::\\s*skip\\b.*\\))\\s*\\]$"))
+  [(function_item) (mod_item) (impl_item) (trait_item)] @skip.annotated
+  (#match? @_attr "^#\\[\\s*(mutants\\s*::\\s*skip|cfg_attr\\s*\\(\\s*[A-Za-z_:0-9]+\\s*(,\\s*[A-Za-z_:0-9]+\\s*)*\\)\\s*)\\s*\\]$")
+  (#match? @_attr "mutants\\s*::\\s*skip"))
+
+((source_file (inner_attribute_item) @_attr) @skip.annotated
+  (#match? @_attr "^#!\\[\\s*mutants\\s*::\\s*skip\\s*\\]$"))
 
 ; unsafe: `unsafe fn`.
 (function_item (function_modifiers "unsafe")) @skip.unsafe
@@ -105,18 +110,7 @@
 ((impl_item trait: (scoped_type_identifier name: (type_identifier) @_trait)) @skip.default_impl
   (#eq? @_trait "Default"))
 
-; capacity_call: a call to `with_capacity`, by path or as a method.
-((call_expression function: (identifier) @_fn) @skip.capacity_call (#eq? @_fn "with_capacity"))
-((call_expression function: (scoped_identifier name: (identifier) @_fn)) @skip.capacity_call
-  (#eq? @_fn "with_capacity"))
-((call_expression function: (field_expression field: (field_identifier) @_fn)) @skip.capacity_call
-  (#eq? @_fn "with_capacity"))
-
-
-; Attributes on a field initializer or a match arm are its children.
-((field_initializer (attribute_item) @_attr) @skip.test (#match? @_attr "^#\\[\\s*(cfg\\s*\\(\\s*test\\s*\\)|([A-Za-z_][A-Za-z0-9_]*\\s*::\\s*)*test(\\s*\\(.*\\))?)\\s*\\]$"))
-((field_initializer (attribute_item) @_attr) @skip.annotated (#match? @_attr "^#\\[\\s*(mutants\\s*::\\s*skip|cfg_attr\\s*\\(.*\\bmutants\\s*::\\s*skip\\b.*\\))\\s*\\]$"))
-((shorthand_field_initializer (attribute_item) @_attr) @skip.test (#match? @_attr "^#\\[\\s*(cfg\\s*\\(\\s*test\\s*\\)|([A-Za-z_][A-Za-z0-9_]*\\s*::\\s*)*test(\\s*\\(.*\\))?)\\s*\\]$"))
-((shorthand_field_initializer (attribute_item) @_attr) @skip.annotated (#match? @_attr "^#\\[\\s*(mutants\\s*::\\s*skip|cfg_attr\\s*\\(.*\\bmutants\\s*::\\s*skip\\b.*\\))\\s*\\]$"))
-((match_arm (attribute_item) @_attr) @skip.test (#match? @_attr "^#\\[\\s*(cfg\\s*\\(\\s*test\\s*\\)|([A-Za-z_][A-Za-z0-9_]*\\s*::\\s*)*test(\\s*\\(.*\\))?)\\s*\\]$"))
-((match_arm (attribute_item) @_attr) @skip.annotated (#match? @_attr "^#\\[\\s*(mutants\\s*::\\s*skip|cfg_attr\\s*\\(.*\\bmutants\\s*::\\s*skip\\b.*\\))\\s*\\]$"))
+; capacity_call: any call; the planner keeps those whose callee's last path
+; segment is a name in `skip_calls` (`with_capacity` by default), whether a
+; path call or a method call.
+(call_expression) @skip.capacity_call

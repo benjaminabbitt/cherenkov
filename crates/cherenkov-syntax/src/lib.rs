@@ -35,11 +35,26 @@ type FoldedMatch = (Span, Vec<(Capture, Span)>);
 
 pub struct TreeSitterSyntax {
     profiles: Vec<LoadedProfile>,
+    /// Calls to functions and methods with these names (their last path
+    /// segment) are skipped, arguments and all.
+    skip_calls: Vec<String>,
 }
+
+/// The calls cargo-mutants skips unless told otherwise.
+pub const DEFAULT_SKIP_CALLS: [&str; 1] = ["with_capacity"];
 
 impl TreeSitterSyntax {
     pub fn new(profiles: Vec<LoadedProfile>) -> Self {
-        TreeSitterSyntax { profiles }
+        TreeSitterSyntax {
+            profiles,
+            skip_calls: DEFAULT_SKIP_CALLS.map(String::from).to_vec(),
+        }
+    }
+
+    /// Skip calls named in `names` instead of the default list.
+    pub fn with_skip_calls(mut self, names: Vec<String>) -> Self {
+        self.skip_calls = names;
+        self
     }
 
     /// Python, Rust and Go, from the profiles embedded in this crate.
@@ -93,7 +108,11 @@ impl SyntaxPort for TreeSitterSyntax {
                     }
                     Some(CaptureRole::Role(r)) => roles.push((r, span)),
                     Some(CaptureRole::Skip(kind)) => {
-                        skips.insert((span.start.byte, span.end.byte, kind, span));
+                        if kind != SkipKind::CapacityCall
+                            || calls_skipped(&cap.node, &source, &self.skip_calls)
+                        {
+                            skips.insert((span.start.byte, span.end.byte, kind, span));
+                        }
                     }
                     Some(CaptureRole::Helper) => {}
                     // Names were validated when the profile was loaded.
@@ -141,6 +160,22 @@ impl SyntaxPort for TreeSitterSyntax {
                 .collect(),
         })
     }
+}
+
+/// Whether the call expression `node` calls a function or method named in
+/// `names`: by the last segment of its path, as cargo-mutants compares it.
+fn calls_skipped(node: &tree_sitter::Node<'_>, source: &str, names: &[String]) -> bool {
+    let mut callee = node.child_by_field_name("function");
+    while let Some(c) = callee.filter(|c| c.kind() == "generic_function") {
+        callee = c.child_by_field_name("function");
+    }
+    let name = callee.and_then(|c| match c.kind() {
+        "identifier" => Some(c),
+        "scoped_identifier" => c.child_by_field_name("name"),
+        "field_expression" => c.child_by_field_name("field"),
+        _ => None,
+    });
+    name.is_some_and(|n| names.iter().any(|x| x == &source[n.byte_range()]))
 }
 
 fn span_of(node: &tree_sitter::Node<'_>) -> Span {
