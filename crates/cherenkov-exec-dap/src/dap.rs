@@ -2,6 +2,7 @@
 //! correlation, and an event queue for events that arrive in between.
 //! Works over TCP (Delve) or any pair of byte streams (GDB on stdio).
 
+use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -84,16 +85,91 @@ impl Decoder {
     }
 }
 
+/// A message from the adapter, classified once on receipt.
+enum Incoming {
+    Event(String, Value),
+    Response(u64, Value),
+    /// Reverse requests, and events or responses missing what files them.
+    Other,
+}
+
+fn classify(message: Value) -> Incoming {
+    match message["type"].as_str() {
+        Some("event") => match message["event"].as_str().map(str::to_string) {
+            Some(name) => Incoming::Event(name, message),
+            None => Incoming::Other,
+        },
+        Some("response") => match message["request_seq"].as_u64() {
+            Some(seq) => Incoming::Response(seq, message),
+            None => Incoming::Other,
+        },
+        _ => Incoming::Other,
+    }
+}
+
+/// Events received and not yet taken, one queue per event name, each event
+/// stamped with its arrival number so the first of several names is found
+/// by comparing the heads of their queues, never by scanning.
+#[derive(Default)]
+pub struct EventQueue {
+    by_name: HashMap<String, VecDeque<(u64, Value)>>,
+    arrivals: u64,
+    /// Events looked at by waits, takes and [`EventQueue::named`].
+    inspections: Cell<u64>,
+}
+
+impl EventQueue {
+    fn push(&mut self, name: String, event: Value) {
+        self.arrivals += 1;
+        self.by_name
+            .entry(name)
+            .or_default()
+            .push_back((self.arrivals, event));
+    }
+
+    /// Remove and return the earliest-arrived event named one of `names`.
+    fn pop_first_of(&mut self, names: &[&str]) -> Option<Value> {
+        let mut first: Option<(u64, &str)> = None;
+        for name in names {
+            let head = self.by_name.get(*name).and_then(|q| q.front());
+            self.inspections.set(self.inspections.get() + 1);
+            if let Some(&(arrival, _)) = head
+                && first.is_none_or(|(best, _)| arrival < best)
+            {
+                first = Some((arrival, name));
+            }
+        }
+        let (_, name) = first?;
+        self.by_name
+            .get_mut(name)
+            .and_then(VecDeque::pop_front)
+            .map(|(_, event)| event)
+    }
+
+    /// Remove and return every event named `name`, in arrival order.
+    fn take(&mut self, name: &str) -> Vec<Value> {
+        let taken = self.by_name.remove(name).unwrap_or_default();
+        self.inspections
+            .set(self.inspections.get() + taken.len() as u64);
+        taken.into_iter().map(|(_, event)| event).collect()
+    }
+
+    /// The queued events named `name`, in arrival order.
+    pub fn named(&self, name: &str) -> impl Iterator<Item = &Value> {
+        self.by_name.get(name).into_iter().flatten().map(|(_, e)| {
+            self.inspections.set(self.inspections.get() + 1);
+            e
+        })
+    }
+}
+
 pub struct DapClient {
     writer: Box<dyn Write + Send>,
     /// Chunks from the reader thread; `Err` once the adapter's side closes.
     chunks: Receiver<Result<Vec<u8>, DapError>>,
     decoder: Decoder,
     seq: u64,
-    events: VecDeque<Value>,
-    /// Queued events looked at by waits and takes, so a test can show that
-    /// a wait does not scan the queue.
-    inspections: std::cell::Cell<u64>,
+    events: EventQueue,
     /// Responses that arrived while waiting for another request's.
     responses: HashMap<u64, Value>,
     timeout: Duration,
@@ -151,8 +227,7 @@ impl DapClient {
             chunks,
             decoder: Decoder::default(),
             seq: 0,
-            events: VecDeque::new(),
-            inspections: std::cell::Cell::new(0),
+            events: EventQueue::default(),
             responses: HashMap::new(),
             timeout,
         }
@@ -190,14 +265,9 @@ impl DapClient {
                 break m;
             }
             let message = self.next(deadline, || format!("response to request {seq}"))?;
-            match (message["type"].as_str(), message["request_seq"].as_u64()) {
-                (Some("response"), Some(s)) if s == seq => break message,
-                (Some("response"), Some(other)) => {
-                    self.responses.insert(other, message);
-                }
-                (Some("event"), _) => self.events.push_back(message),
-                // Reverse requests and malformed responses are not used by Cherenkov.
-                _ => {}
+            match classify(message) {
+                Incoming::Response(s, message) if s == seq => break message,
+                other => self.file(other),
             }
         };
         if message["success"].as_bool() != Some(true) {
@@ -227,33 +297,36 @@ impl DapClient {
         events: &[&str],
         timeout: Duration,
     ) -> Result<Value, DapError> {
-        let wanted = |m: &Value| m["type"] == "event" && events.iter().any(|e| m["event"] == *e);
-        let looked = |m: &Value| {
-            self.inspections.set(self.inspections.get() + 1);
-            wanted(m)
-        };
-        if let Some(i) = self.events.iter().position(looked) {
-            return Ok(self.events.remove(i).expect("index from position"));
+        if let Some(event) = self.events.pop_first_of(events) {
+            return Ok(event);
         }
         let deadline = Instant::now() + timeout;
         loop {
             let message = self.next(deadline, || format!("event {}", events.join(" or ")))?;
-            if wanted(&message) {
-                return Ok(message);
-            }
-            match (message["type"].as_str(), message["request_seq"].as_u64()) {
-                (Some("event"), _) => self.events.push_back(message),
-                (Some("response"), Some(seq)) => {
-                    self.responses.insert(seq, message);
+            match classify(message) {
+                Incoming::Event(name, event) if events.contains(&name.as_str()) => {
+                    return Ok(event);
                 }
-                _ => {}
+                other => self.file(other),
             }
+        }
+    }
+
+    /// Keep what is not being waited for: events queued, responses by `seq`.
+    fn file(&mut self, message: Incoming) {
+        match message {
+            Incoming::Event(name, event) => self.events.push(name, event),
+            Incoming::Response(seq, response) => {
+                self.responses.insert(seq, response);
+            }
+            // Reverse requests and malformed messages are not used by Cherenkov.
+            Incoming::Other => {}
         }
     }
 
     /// Queue whatever arrives until nothing has for `idle` (zero: only what
     /// has already arrived), or until `done` holds for the queue.
-    pub fn settle_until(&mut self, idle: Duration, done: impl Fn(&VecDeque<Value>) -> bool) {
+    pub fn settle_until(&mut self, idle: Duration, done: impl Fn(&EventQueue) -> bool) {
         loop {
             if done(&self.events) {
                 return;
@@ -262,13 +335,7 @@ impl DapClient {
             let Ok(message) = self.next(deadline, || "settle".to_string()) else {
                 return;
             };
-            match (message["type"].as_str(), message["request_seq"].as_u64()) {
-                (Some("event"), _) => self.events.push_back(message),
-                (Some("response"), Some(seq)) => {
-                    self.responses.insert(seq, message);
-                }
-                _ => {}
-            }
+            self.file(classify(message));
         }
     }
 
@@ -279,35 +346,23 @@ impl DapClient {
             let Ok(message) = self.next(deadline, || "settle".to_string()) else {
                 return;
             };
-            match (message["type"].as_str(), message["request_seq"].as_u64()) {
-                (Some("event"), _) => self.events.push_back(message),
-                (Some("response"), Some(seq)) => {
-                    self.responses.insert(seq, message);
-                }
-                _ => {}
-            }
+            self.file(classify(message));
         }
     }
 
     /// How many queued events waits and takes have looked at so far.
     pub fn event_inspections(&self) -> u64 {
-        self.inspections.get()
+        self.events.inspections.get()
     }
 
     /// The events received and not yet taken.
-    pub fn queued(&self) -> &VecDeque<Value> {
+    pub fn queued(&self) -> &EventQueue {
         &self.events
     }
 
     /// Remove and return every queued event named `event`, in arrival order.
     pub fn take_events(&mut self, event: &str) -> Vec<Value> {
-        self.inspections
-            .set(self.inspections.get() + self.events.len() as u64);
-        let (taken, kept): (VecDeque<Value>, VecDeque<Value>) = std::mem::take(&mut self.events)
-            .into_iter()
-            .partition(|e| e["event"] == event);
-        self.events = kept;
-        taken.into()
+        self.events.take(event)
     }
 
     /// The next message from the adapter, reading until `deadline`.

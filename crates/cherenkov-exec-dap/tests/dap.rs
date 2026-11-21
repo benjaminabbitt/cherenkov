@@ -371,3 +371,24 @@ fn test_taking_an_event_name_looks_at_no_other_queued_events() {
         adapter.join().unwrap();
     }
 }
+
+#[test]
+fn test_wait_any_event_takes_events_of_several_names_in_arrival_order() {
+    let (stream, adapter) = fake_adapter(vec![Box::new(|r| {
+        vec![
+            event("stopped", json!({"n": 1})),
+            event("output", json!({"n": 2})),
+            event("exited", json!({"n": 3})),
+            event("stopped", json!({"n": 4})),
+            response(r, true, Value::Null),
+        ]
+    })]);
+    let mut dap = DapClient::new(stream, T);
+    dap.request("continue", Value::Null).unwrap();
+    let order: Vec<Value> = (0..3)
+        .map(|_| dap.wait_any_event(&["exited", "stopped"], T).unwrap()["body"]["n"].clone())
+        .collect();
+    assert_eq!(order, [json!(1), json!(3), json!(4)]);
+    assert_eq!(dap.queued().named("output").count(), 1);
+    adapter.join().unwrap();
+}

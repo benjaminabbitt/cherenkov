@@ -15,7 +15,7 @@ use cherenkov_dap_types::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::dap::{DapClient, DapError};
+use crate::dap::{DapClient, DapError, EventQueue};
 use crate::native::{
     Effect, Evaluated, FunctionCode, Launcher, NativeSession, Recorded, RunEnd, TierPExecutor,
     kill_debuggee,
@@ -244,12 +244,11 @@ impl GdbSession {
     fn settle_output(&mut self) {
         // libtest's summary is its last line; without one (a crash, another
         // runner), wait until GDB has gone quiet.
-        let summary = |events: &std::collections::VecDeque<Value>| {
-            events.iter().any(|e| {
-                e["event"] == "output"
-                    && e["body"]["output"]
-                        .as_str()
-                        .is_some_and(|o| o.contains("test result:"))
+        let summary = |events: &EventQueue| {
+            events.named("output").any(|e| {
+                e["body"]["output"]
+                    .as_str()
+                    .is_some_and(|o| o.contains("test result:"))
             })
         };
         if !summary(self.dap.queued()) {
