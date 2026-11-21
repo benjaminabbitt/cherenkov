@@ -16,6 +16,7 @@ mod run;
 #[cfg(test)]
 #[path = "run_output.test.rs"]
 mod run_output;
+mod selection;
 
 use std::collections::BTreeMap;
 use std::io::IsTerminal;
@@ -28,8 +29,7 @@ use cherenkov_core::concept::Concept;
 use cherenkov_core::operator_set::{OperatorSet, named, registry};
 use cherenkov_core::plan::{Diagnostics, SkipReason};
 use cherenkov_core::profile::Profile;
-use cherenkov_core::session::{FileProblem, ProjectPlan, plan_project};
-use cherenkov_fs::FsSourceReader;
+use cherenkov_core::session::{FileProblem, ProjectPlan};
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::Settings;
 use cherenkov_syntax::TreeSitterSyntax;
@@ -38,6 +38,7 @@ use cli_support::{Failure, usage_exit};
 
 use crate::error::CliError;
 use crate::output::Listed;
+use crate::selection::{Selection, plan_selected};
 
 /// The program's name, as errors are prefixed with it.
 const PROG: &str = "cherenkov";
@@ -70,6 +71,10 @@ enum Command {
         /// The named operator set to use (see `cherenkov sets`).
         #[arg(long, default_value = "breadth")]
         operators: String,
+        /// Mutate test code too: `#[cfg(test)]` and `#[test]` items and the
+        /// files only they reach. cargo-mutants never does.
+        #[arg(long = "include-tests")]
+        include_tests: bool,
         /// Judge only the lines a unified diff adds (as cargo-mutants'
         /// `--in-diff`): a mutant stays when its span touches one.
         #[arg(long = "in-diff", value_name = "FILE")]
@@ -112,6 +117,10 @@ struct RunArgs {
     /// The named operator set to use (see `cherenkov sets`).
     #[arg(long, default_value = "breadth")]
     operators: String,
+    /// Mutate test code too: `#[cfg(test)]` and `#[test]` items and the
+    /// files only they reach. cargo-mutants never does.
+    #[arg(long = "include-tests")]
+    include_tests: bool,
     /// Run only this test, by the runner's own name for it (repeatable).
     /// Rust: the libtest name (`module::test_name`); Go: `TestName` or
     /// `TestName/subtest`. Default: every test.
@@ -188,11 +197,13 @@ fn main() -> ExitCode {
             format,
             exclude,
             operators,
+            include_tests,
             in_diff,
         } => {
             let format = chosen(format);
+            let selection = Selection { include_tests };
             let result = operator_set(&operators)
-                .and_then(|set| plan(&dir, format, &exclude, &set, in_diff.as_deref()));
+                .and_then(|set| plan(&dir, format, &exclude, &set, &selection, in_diff.as_deref()));
             (format, result)
         }
         Command::Run(args) => {
@@ -205,6 +216,7 @@ fn main() -> ExitCode {
                 cargo,
                 exclude,
                 operators,
+                include_tests,
                 tests,
                 jobs,
                 cargo_args,
@@ -226,6 +238,7 @@ fn main() -> ExitCode {
                         in_diff,
                         deficiency_log,
                         verdict_file,
+                        selection: Selection { include_tests },
                     },
                     &exclude,
                     &set,
@@ -302,6 +315,7 @@ fn plan(
     format: Format,
     exclude: &[String],
     set: &OperatorSet,
+    selection: &Selection,
     in_diff: Option<&Path>,
 ) -> Result<(), CliError> {
     // Under JSON, run.started names the set.
@@ -312,16 +326,7 @@ fn plan(
         reason: e.to_string(),
     })?;
     let profiles = with_excludes(syntax.profiles(), exclude);
-    let unreadable = |e: &dyn std::fmt::Display| CliError::Unreadable {
-        path: dir.display().to_string(),
-        reason: e.to_string(),
-    };
-    let reader = FsSourceReader::new(dir, &profiles).map_err(|e| unreadable(&e))?;
-    let project = plan_project(&reader, &syntax, &profiles, &set.operators()).map_err(|e| {
-        CliError::Planning {
-            reason: format!("{}: {e}", dir.display()),
-        }
-    })?;
+    let project = plan_selected(dir, &syntax, &profiles, set, selection)?;
     let plans = match in_diff {
         Some(file) => run::in_diff(project.plans.clone(), file, dir)?,
         None => project.plans.clone(),

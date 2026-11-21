@@ -6,6 +6,7 @@
 //! and bare role names (`@op`, `@cond`, ...) its role captures.
 
 pub mod profiles;
+pub mod rust_modules;
 pub mod rust_scope;
 pub mod rust_types;
 pub mod rust_values;
