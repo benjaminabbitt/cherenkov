@@ -160,6 +160,12 @@ struct RunArgs {
     /// `--in-diff`): a mutant stays when its span touches one.
     #[arg(long = "in-diff", value_name = "FILE")]
     in_diff: Option<PathBuf>,
+    /// Do not ask rustc which function-body replacements do not compile
+    /// (Rust): those the debugger cannot run stay unsupported instead of
+    /// unviable. The check compiles the project in a scratch copy under its
+    /// target directory, a few times for the whole run.
+    #[arg(long = "no-viability-check")]
+    no_viability_check: bool,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -234,6 +240,7 @@ fn main() -> ExitCode {
                 in_diff,
                 deficiency_log,
                 verdict_file,
+                no_viability_check,
             } = *args;
             let format = chosen(format);
             let result = operator_sets(&operators).and_then(|sets| {
@@ -251,6 +258,7 @@ fn main() -> ExitCode {
                         in_diff,
                         deficiency_log,
                         verdict_file,
+                        viability: !no_viability_check,
                         selection,
                     },
                     &sets,

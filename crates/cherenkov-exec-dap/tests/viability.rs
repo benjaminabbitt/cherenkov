@@ -339,3 +339,55 @@ fn test_a_project_that_does_not_pass_cargo_check_is_not_checked() {
     assert!(err.0.contains("does not pass cargo check"), "{err}");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+// --- Which plans are checked: a function body's replacement whose text is
+// still in the file where the plan found it.
+
+fn fn_value_plan(src: &str) -> cherenkov_core::plan::MutantPlan {
+    use cherenkov_core::ports::SyntaxPort;
+    let syntax = cherenkov_syntax::TreeSitterSyntax::builtin().unwrap();
+    let rust = cherenkov_core::syntax::LanguageId::new("rust");
+    let profile = syntax
+        .profiles()
+        .into_iter()
+        .find(|p| p.lang == rust)
+        .unwrap();
+    let file = syntax
+        .analyze(&rust, Path::new("lib.rs"), std::sync::Arc::from(src))
+        .unwrap();
+    cherenkov_core::plan::plan_file(
+        &file,
+        &profile,
+        &cherenkov_core::operator_set::named("cargo-mutants")
+            .unwrap()
+            .operators(),
+    )
+    .plans
+    .into_iter()
+    .find(|p| p.operator == "fn-value")
+    .unwrap()
+}
+
+#[test]
+fn test_only_a_body_replacement_still_in_its_file_is_a_candidate() {
+    use cherenkov_exec_dap::viability::candidates;
+    let src = "pub fn f() -> u32 { 1 + 2 }\n";
+    let plan = fn_value_plan(src);
+    let dir = std::env::temp_dir().join(format!("cherenkov-via-cand-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("lib.rs"), src).unwrap();
+    let mut other = plan.clone();
+    other.operator = "aor";
+    let mut unspelled = plan.clone();
+    unspelled.mutated = None;
+    let got = candidates(&dir, &[plan.clone(), other, unspelled]);
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert_eq!(got[0].id, plan.id);
+    assert_eq!(got[0].file, PathBuf::from("lib.rs"));
+    assert_eq!(Some(got[0].with.as_str()), plan.mutated.as_deref());
+    assert_eq!(&src[got[0].start..got[0].end], plan.original);
+    // The file has changed since the plan: its offsets mean nothing.
+    std::fs::write(dir.join("lib.rs"), "pub fn f() -> u32 { 2 + 2 }\n").unwrap();
+    assert!(candidates(&dir, &[plan]).is_empty());
+    std::fs::remove_dir_all(&dir).unwrap();
+}

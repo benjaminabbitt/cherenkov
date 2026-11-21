@@ -32,6 +32,30 @@ pub struct Candidate {
     pub with: String,
 }
 
+/// The plans to check: those that replace a function's body and whose
+/// original text is still where the plan found it in the file under `root`.
+pub fn candidates(root: &Path, plans: &[MutantPlan]) -> Vec<Candidate> {
+    let mut sources: HashMap<&Path, Option<String>> = HashMap::new();
+    let mut found = Vec::new();
+    for plan in plans.iter().filter(|p| p.operator == "fn-value") {
+        let Some(with) = &plan.mutated else { continue };
+        let source = sources
+            .entry(plan.file.as_path())
+            .or_insert_with(|| std::fs::read_to_string(root.join(&plan.file)).ok());
+        let (start, end) = (plan.site.start.byte, plan.site.end.byte);
+        if source.as_deref().and_then(|s| s.get(start..end)) == Some(plan.original.as_str()) {
+            found.push(Candidate {
+                id: plan.id.clone(),
+                file: plan.file.clone(),
+                start,
+                end,
+                with: with.clone(),
+            });
+        }
+    }
+    found
+}
+
 /// `source` with each edit `(start, end, text)` applied, the edits sorted
 /// and not overlapping; and where each edit's text lies in the result.
 pub fn apply_edits(source: &str, edits: &[(usize, usize, &str)]) -> (String, Vec<Range<usize>>) {

@@ -2,6 +2,7 @@
 //! package or workspace (GDB) on the run layer, printing each event as it
 //! is recorded (`output.rs`).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -9,6 +10,7 @@ use angzarr_presentation::Format;
 
 use cherenkov_core::diff::AddedLines;
 use cherenkov_core::execution::MutantExecutor;
+use cherenkov_core::id::MutantId;
 use cherenkov_core::operator_set::OperatorSet;
 use cherenkov_core::plan::MutantPlan;
 use cherenkov_core::types::DefaultFacts;
@@ -19,6 +21,7 @@ use cherenkov_exec_dap::toolchain::{
     build_go_test_binary, build_rust_test_programs_with, cargo_test_env, cargo_workspace,
     cargo_workspace_prefix, go_test_args, rust_code_files_with, rust_test_args, rustup_toolchain,
 };
+use cherenkov_exec_dap::viability::{self, RustcRejects};
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::{Settings, Workers};
 use cherenkov_run_application::verdicts::VerdictFile;
@@ -45,6 +48,8 @@ pub struct Tools {
     /// A file the finished run's verdicts are written to, one JSON line for
     /// each mutant, sorted by id.
     pub verdict_file: Option<PathBuf>,
+    /// Whether rustc is asked which function-body replacements compile.
+    pub viability: bool,
     /// Which mutants are planned (test code, files, names).
     pub selection: Selection,
 }
@@ -191,6 +196,7 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     let prefix = cargo_workspace_prefix(&cargo, root).map_err(toolchain)?;
     let facts = default_facts(&cargo, root, &tools.cargo_args)?;
     let (workspace_root, _) = cargo_workspace(&cargo, root).map_err(toolchain)?;
+    let rejected = rustc_rejects(asked, &cargo, &workspace_root, &plans);
     // One executor per test program for each worker; every worker has its
     // own GDB sessions.
     let set = || -> Vec<Box<dyn MutantExecutor + Send>> {
@@ -211,16 +217,16 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
                     env,
                     source_root: Some(workspace_root.clone()),
                 };
-                Box::new(
-                    GdbExecutor::new(config, Isa::amd64())
-                        .with_source_prefix(prefix.clone())
-                        .with_scope_check(
-                            workspace_root.join(&prefix),
-                            cherenkov_syntax::rust_scope::unresolved_names,
-                        )
-                        .with_default_facts(facts.clone())
-                        .with_toolchain(support_toolchain),
-                ) as Box<dyn MutantExecutor + Send>
+                let executor = GdbExecutor::new(config, Isa::amd64())
+                    .with_source_prefix(prefix.clone())
+                    .with_scope_check(
+                        workspace_root.join(&prefix),
+                        cherenkov_syntax::rust_scope::unresolved_names,
+                    )
+                    .with_default_facts(facts.clone())
+                    .with_toolchain(support_toolchain);
+                Box::new(RustcRejects::new(executor, rejected.clone()))
+                    as Box<dyn MutantExecutor + Send>
             })
             .collect()
     };
@@ -229,6 +235,52 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     let result = on_run_layer(asked, "rust", &plans, workers_of(sets, jobs));
     cherenkov_exec_dap::support_lib::remove_scratch();
     result
+}
+
+/// The mutants rustc rejects, by id, with its error: asked once at the start
+/// of the run for every function-body replacement, in a few compiles of a
+/// scratch copy of the workspace. None when the check is off or the project
+/// cannot be checked; the diagnostic says which.
+fn rustc_rejects(
+    asked: &Asked,
+    cargo: &Path,
+    workspace: &Path,
+    plans: &[MutantPlan],
+) -> Arc<HashMap<MutantId, String>> {
+    let tools = asked.tools;
+    if !tools.viability {
+        eprintln!(
+            "cherenkov: viability check off (--no-viability-check): mutants rustc would reject stay unsupported"
+        );
+        return Arc::default();
+    }
+    let candidates = viability::candidates(asked.root, plans);
+    if candidates.is_empty() {
+        return Arc::default();
+    }
+    match viability::check(cargo, workspace, asked.root, &tools.cargo_args, &candidates) {
+        Ok(found) => {
+            eprintln!("{}", viability_summary(candidates.len(), &found));
+            Arc::new(found.rejected)
+        }
+        Err(e) => {
+            eprintln!(
+                "cherenkov: viability check skipped ({e}): mutants rustc would reject stay unsupported; --no-viability-check turns it off"
+            );
+            Arc::default()
+        }
+    }
+}
+
+/// The diagnostic line of a finished viability check.
+fn viability_summary(checked: usize, found: &viability::Checked) -> String {
+    format!(
+        "cherenkov: viability check: {} of {checked} function-body replacements rejected by rustc \
+         (unviable when the debugger cannot run them), {} cargo check runs, {:.1} s",
+        found.rejected.len(),
+        found.compiles,
+        found.took.as_secs_f64()
+    )
 }
 
 /// The run layer's workers over `sets`, `jobs` programs prepared at once.
@@ -393,6 +445,19 @@ fn find_tool(explicit: Option<&Path>, name: &str) -> Result<PathBuf, CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_the_viability_diagnostic_says_what_was_rejected_and_what_it_cost() {
+        let found = viability::Checked {
+            rejected: HashMap::from([(MutantId("a".into()), "e".into())]),
+            compiles: 3,
+            took: std::time::Duration::from_millis(12_340),
+        };
+        let line = viability_summary(40, &found);
+        assert!(line.contains("1 of 40"), "{line}");
+        assert!(line.contains("3 cargo check runs"), "{line}");
+        assert!(line.contains("12.3 s"), "{line}");
+    }
 
     #[test]
     fn test_auto_jobs_is_bound_by_memory_and_by_cores_and_is_at_least_one() {
