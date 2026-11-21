@@ -392,3 +392,74 @@ fn test_plan_in_diff_keeps_only_the_mutants_touching_an_added_line() {
     assert!(!kept.is_empty());
     assert!(kept.iter().all(|(_, d)| d.contains(" g ")), "{kept:?}");
 }
+
+// --- Several operator sets at once: `--operators a,b,file.toml`.
+
+fn mutant_count(dir: &Path, operators: &str) -> usize {
+    listing(&plan(dir, &["--operators", operators])).len()
+}
+
+fn stderr_of(out: &Output) -> String {
+    String::from_utf8(out.stderr.clone()).unwrap()
+}
+
+#[test]
+fn test_plan_with_two_sets_lists_their_union_once_and_records_provenance() {
+    let dir = fixtures().join("rust");
+    let (a, b) = (
+        mutant_count(&dir, "breadth"),
+        mutant_count(&dir, "cargo-mutants"),
+    );
+    let out = plan(&dir, &["--operators", "breadth,cargo-mutants"]);
+    let both = listing(&out).len();
+    assert!(
+        both > b.max(a) && both < a + b,
+        "{a} + {b} overlap into {both}"
+    );
+    let err = stderr_of(&out);
+    assert!(err.contains("operators: breadth,cargo-mutants\n"), "{err}");
+    let shared = a + b - both;
+    assert!(
+        err.contains(&format!(
+            "provenance: breadth {a}, cargo-mutants {b}; in more than one set: {shared}\n"
+        )),
+        "{err}"
+    );
+    let ids: std::collections::HashSet<_> = listing(&out).into_iter().map(|(id, _)| id).collect();
+    assert_eq!(ids.len(), both, "ids stay unique");
+}
+
+#[test]
+fn test_plan_with_a_custom_set_file_adds_its_mutations() {
+    let dir = fixtures().join("rust");
+    let file = std::env::temp_dir().join(format!("cherenkov-set-{}.toml", std::process::id()));
+    std::fs::write(&file, "name = \"mine\"\nmutations = [\"ror/lt->le\"]\n").unwrap();
+    let out = plan(
+        &dir,
+        &["--operators", &format!("breadth,{}", file.display())],
+    );
+    std::fs::remove_file(&file).unwrap();
+    let err = stderr_of(&out);
+    assert!(err.contains("provenance: breadth"), "{err}");
+    assert!(err.contains("mine "), "{err}");
+}
+
+#[test]
+fn test_plan_with_a_bad_custom_set_is_declined_naming_the_problem() {
+    let dir = fixtures().join("rust");
+    let file = std::env::temp_dir().join(format!("cherenkov-bad-{}.toml", std::process::id()));
+    std::fs::write(&file, "name = \"mine\"\nmutations = [\"ror/zzz\"]\n").unwrap();
+    let out = cherenkov(&[
+        "plan",
+        dir.to_str().unwrap(),
+        "--operators",
+        file.to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+    std::fs::remove_file(&file).unwrap();
+    assert_eq!(out.status.code(), Some(20));
+    let error = error_document(&out);
+    assert_eq!(error["code"], "cherenkov-cli-bad-operator-set");
+    assert_eq!(error["args"]["reason"], "no mutation named ror/zzz");
+}

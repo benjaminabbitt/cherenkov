@@ -11,6 +11,7 @@ use crate::operator::{
     BodyDefault, DeleteArm, DeleteField, DeleteStatement, DeleteUnary, FnValue, MatchGuard,
     NegateCondition, Operator, ReturnBoolFlip, TokenSwap,
 };
+pub use crate::set_spec::{CustomSet, SetError, custom_set, resolve_sets};
 use crate::syntax::SkipKind;
 use crate::token::Token::{self, *};
 

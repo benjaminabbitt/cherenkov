@@ -229,3 +229,84 @@ fn test_token_names_cover_the_new_operators() {
         assert_eq!(Token::from_name(t.name()), Some(t));
     }
 }
+
+// --- Asking for several sets: `a,b,custom.toml`.
+
+use cherenkov_core::operator_set::{CustomSet, SetError, custom_set, resolve_sets};
+
+fn custom(mutations: &[&str], skips: &[&str]) -> CustomSet {
+    CustomSet {
+        name: "mine".to_string(),
+        summary: None,
+        source: None,
+        mutations: mutations.iter().map(|m| m.to_string()).collect(),
+        skips: skips.iter().map(|m| m.to_string()).collect(),
+    }
+}
+
+#[test]
+fn test_resolve_sets_takes_a_comma_list_in_order_without_repeats() {
+    let sets = resolve_sets("sufficient, breadth,sufficient", |_| unreachable!()).unwrap();
+    let names: Vec<&str> = sets.iter().map(|s| s.name).collect();
+    assert_eq!(names, ["sufficient", "breadth"]);
+}
+
+#[test]
+fn test_resolve_sets_names_the_unknown_one() {
+    let err = resolve_sets("breadth,nope", |_| unreachable!())
+        .err()
+        .unwrap();
+    assert_eq!(err, SetError::Unknown("nope".to_string()));
+}
+
+#[test]
+fn test_a_toml_item_is_a_custom_set_read_through_the_loader() {
+    let sets = resolve_sets("breadth,mine.toml", |path| {
+        assert_eq!(path, "mine.toml");
+        Ok(custom(&["ror/lt->le"], &["test"]))
+    })
+    .unwrap();
+    assert_eq!(sets[1].name, "mine");
+    assert_eq!(sets[1].mutations, ["ror/lt->le"]);
+    assert_eq!(sets[1].skips, [cherenkov_core::syntax::SkipKind::Test]);
+    assert!(!sets[1].operators().is_empty());
+}
+
+#[test]
+fn test_a_custom_set_must_name_known_mutations_and_skips() {
+    let bad_mutation = custom_set(custom(&["ror/zzz"], &[])).err().unwrap();
+    assert_eq!(
+        bad_mutation,
+        SetError::UnknownMutation("ror/zzz".to_string())
+    );
+    let bad_skip = custom_set(custom(&[], &["moon"])).err().unwrap();
+    assert_eq!(bad_skip, SetError::UnknownSkip("moon".to_string()));
+}
+
+#[test]
+fn test_an_unreadable_toml_is_reported_with_its_path() {
+    let err = resolve_sets("a.toml", |_| Err("denied".to_string()))
+        .err()
+        .unwrap();
+    assert_eq!(
+        err,
+        SetError::Unreadable {
+            path: "a.toml".into(),
+            reason: "denied".into()
+        }
+    );
+}
+
+#[test]
+fn test_an_invalid_custom_set_is_reported_with_its_path_and_reason() {
+    let err = resolve_sets("m.toml", |_| Ok(custom(&["ror/zzz"], &[])))
+        .err()
+        .unwrap();
+    assert_eq!(
+        err,
+        SetError::Invalid {
+            path: "m.toml".into(),
+            reason: "no mutation named ror/zzz".into()
+        }
+    );
+}

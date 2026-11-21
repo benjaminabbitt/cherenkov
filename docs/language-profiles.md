@@ -395,8 +395,21 @@ found by `mutation_for`, `operator_set.rs:1196`: operator family plus the
 
 A set is a list of mutation names, plus a name, a source, the regions it
 skips and a `pending` list of rules in its specification not implemented yet
-(`operator_set.rs:1224`). A run uses exactly one. The first in the registry
-is the default.
+(`operator_set.rs:1224`). The first in the registry is the default.
+
+`--operators` takes several, comma-separated: `--operators
+cargo-mutants,breadth,mine.toml`. An item ending in `.toml` defines a set of
+one's own (`name`, optional `summary` and `source`, `mutations` from
+`cherenkov mutations`, optional `skips`); it is read by the CLI and checked
+against the mutation table (`set_spec.rs`). Each set plans with its own
+operators and skips (`plan_file_sets`, `plan_sets.rs`); the lists are merged
+in the order asked for. Two mutants with the same span and replacement are one
+mutant (counted in `Diagnostics.deduplicated`), and `ProjectPlan.provenance`
+records, for each mutant id, the sets that produced it. Text output ends
+with `provenance: breadth 12, cargo-mutants 53; in more than one set: 9`, and
+`run.started` names the sets joined with commas. Provenance is not yet in
+`cherenkov.mutant.v1.MutantPlan` (a repeated `sets` field would be the
+change): the listing of mutants does not show it.
 
 ```
 $ cherenkov sets

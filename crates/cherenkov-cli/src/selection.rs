@@ -11,7 +11,7 @@ use cherenkov_core::operator_set::OperatorSet;
 use cherenkov_core::plan::MutantPlan;
 use cherenkov_core::ports::SourceReader;
 use cherenkov_core::profile::Profile;
-use cherenkov_core::session::{ProjectPlan, plan_project};
+use cherenkov_core::session::{ProjectPlan, plan_project_sets};
 use cherenkov_core::syntax::LanguageId;
 use cherenkov_fs::FsSourceReader;
 use cherenkov_syntax::rust_modules::module_files;
@@ -204,13 +204,13 @@ impl Selection {
     }
 }
 
-/// `root`'s mutants for the `profiles`, planned with `set` and kept as
+/// `root`'s mutants for the `profiles`, planned with `sets` and kept as
 /// `selection` says.
 pub fn plan_selected(
     root: &Path,
     syntax: &TreeSitterSyntax,
     profiles: &[Profile],
-    set: &OperatorSet,
+    sets: &[OperatorSet],
     selection: &Selection,
 ) -> Result<ProjectPlan, CliError> {
     let unreadable = |e: &dyn std::fmt::Display| CliError::Unreadable {
@@ -218,11 +218,10 @@ pub fn plan_selected(
         reason: e.to_string(),
     };
     let reader = FsSourceReader::new(root, profiles).map_err(|e| unreadable(&e))?;
-    let operators = set.operators_for(selection.include_tests);
-    let mut project =
-        plan_project(&reader, syntax, profiles, &operators).map_err(|e| CliError::Planning {
-            reason: format!("{}: {e}", root.display()),
-        })?;
+    let mut project = plan_project_sets(&reader, syntax, profiles, sets, selection.include_tests)
+        .map_err(|e| CliError::Planning {
+        reason: format!("{}: {e}", root.display()),
+    })?;
     if !selection.include_tests {
         let skipped = test_files(&reader).map_err(|e| unreadable(&e))?;
         project.plans.retain(|p| !skipped.contains(&p.file));

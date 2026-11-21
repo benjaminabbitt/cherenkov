@@ -6,10 +6,12 @@ use std::path::PathBuf;
 use serde::Serialize;
 
 use crate::operator::Operator;
-use crate::plan::{Diagnostics, MutantPlan, plan_file};
+use crate::operator_set::OperatorSet;
+use crate::plan::{Diagnostics, MutantPlan, PlanOutput, Provenance, plan_file};
+use crate::plan_sets::plan_file_sets;
 use crate::ports::{SourceReader, SyntaxPort};
 use crate::profile::Profile;
-use crate::syntax::LanguageId;
+use crate::syntax::{FileSyntax, LanguageId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case", tag = "kind", content = "message")]
@@ -26,6 +28,8 @@ pub struct ProjectPlan {
     pub plans: Vec<MutantPlan>,
     pub diagnostics: BTreeMap<LanguageId, Diagnostics>,
     pub problems: Vec<(PathBuf, FileProblem)>,
+    /// Per mutant, the operator sets that produced it (planning with sets).
+    pub provenance: Provenance,
 }
 
 /// Plan every file of every profiled language. A file that cannot be read
@@ -36,6 +40,32 @@ pub fn plan_project(
     syntax: &dyn SyntaxPort,
     profiles: &[Profile],
     catalog: &[Box<dyn Operator>],
+) -> std::io::Result<ProjectPlan> {
+    plan_project_with(reader, syntax, profiles, &|file, profile| {
+        plan_file(file, profile, catalog)
+    })
+}
+
+/// [`plan_project`] with several operator sets at once: one list of mutants,
+/// a mutant with the same span and replacement planned once, each tagged with
+/// the sets that produced it (`MutantPlan::sets`).
+pub fn plan_project_sets(
+    reader: &dyn SourceReader,
+    syntax: &dyn SyntaxPort,
+    profiles: &[Profile],
+    sets: &[OperatorSet],
+    include_tests: bool,
+) -> std::io::Result<ProjectPlan> {
+    plan_project_with(reader, syntax, profiles, &|file, profile| {
+        plan_file_sets(file, profile, sets, include_tests)
+    })
+}
+
+fn plan_project_with(
+    reader: &dyn SourceReader,
+    syntax: &dyn SyntaxPort,
+    profiles: &[Profile],
+    plan: &dyn Fn(&FileSyntax, &Profile) -> PlanOutput,
 ) -> std::io::Result<ProjectPlan> {
     let mut out = ProjectPlan::default();
     for profile in profiles {
@@ -65,9 +95,10 @@ pub fn plan_project(
                 out.problems.push((rel, FileProblem::SyntaxErrors));
                 continue;
             }
-            let planned = plan_file(&file, profile, catalog);
+            let planned = plan(&file, profile);
             diagnostics.merge(&planned.diagnostics);
             out.plans.extend(planned.plans);
+            out.provenance.extend(planned.provenance);
         }
     }
     // Stable: each file keeps its own plan order.

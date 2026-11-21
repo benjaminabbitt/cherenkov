@@ -1033,9 +1033,12 @@ pub fn at_site(candidates: &[&Vec<Insn>], site: &Span) -> usize {
     at_site_all(candidates, site).first().copied().unwrap_or(0)
 }
 
-/// Every candidate tied for the most instructions inside `site`: each copy
-/// of a generic function (`pick<u8>`, `pick<u32>`) has the same code there,
-/// and a mutant changes them all. Only the first when none has any.
+/// The candidates that are copies of the function with the most
+/// instructions inside `site`: each copy of a generic function (`pick<u8>`,
+/// `pick<u32>`) starts at the same source position as the others, and a
+/// mutant changes them all, however much code each has inside `site` (a
+/// comparison is inline for one type and a call for another). A closure on
+/// the line starts elsewhere. Only the first when none has any code there.
 pub fn at_site_all(candidates: &[&Vec<Insn>], site: &Span) -> Vec<usize> {
     let (from, to) = (
         (site.start.line, site.start.col),
@@ -1048,11 +1051,26 @@ pub fn at_site_all(candidates: &[&Vec<Insn>], site: &Span) -> Vec<usize> {
             .count()
     };
     let scores: Vec<usize> = candidates.iter().map(|c| inside(c)).collect();
-    match scores.iter().max() {
-        None => Vec::new(),
-        Some(0) => vec![0],
-        Some(&top) => (0..scores.len()).filter(|&k| scores[k] == top).collect(),
+    let Some((best, &top)) = scores
+        .iter()
+        .enumerate()
+        .max_by_key(|&(k, &n)| (n, usize::MAX - k))
+    else {
+        return Vec::new();
+    };
+    if top == 0 {
+        return vec![0];
     }
+    let entry = |insns: &Vec<Insn>| {
+        insns
+            .iter()
+            .min_by_key(|i| i.pc)
+            .map(|i| (i.line, i.column))
+    };
+    let start = entry(candidates[best]);
+    (0..scores.len())
+        .filter(|&k| scores[k] > 0 && entry(candidates[k]) == start)
+        .collect()
 }
 
 /// Whether the plan swaps `&&` and `||`.

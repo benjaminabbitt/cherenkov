@@ -84,7 +84,7 @@ fn repository_prefix(root: &Path) -> PathBuf {
 struct Asked<'a> {
     root: &'a Path,
     tools: &'a Tools,
-    set: &'a OperatorSet,
+    sets: &'a [OperatorSet],
     tests: &'a [String],
     format: Format,
 }
@@ -92,19 +92,19 @@ struct Asked<'a> {
 pub fn run(
     dir: &Path,
     tools: &Tools,
-    set: &OperatorSet,
+    sets: &[OperatorSet],
     tests: &[String],
     format: Format,
 ) -> Result<(), CliError> {
     // Under JSON, run.started names the set.
     if format == Format::Text {
-        eprintln!("operators: {}", set.name);
+        eprintln!("operators: {}", crate::set_names(sets));
     }
     let root = dir.canonicalize().map_err(|e| unreadable(dir, &e))?;
     let asked = Asked {
         root: &root,
         tools,
-        set,
+        sets,
         tests,
         format,
     };
@@ -143,7 +143,7 @@ fn toolchain(e: impl std::fmt::Display) -> CliError {
 fn run_go(asked: &Asked) -> Result<(), CliError> {
     let (root, tools) = (asked.root, asked.tools);
     let plans = narrowed(
-        plan_language(root, "go", asked.set, &tools.selection)?,
+        plan_language(root, "go", asked.sets, &tools.selection)?,
         asked,
     )?;
     let jobs = tools.jobs.unwrap_or(1);
@@ -179,7 +179,7 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     // inline or in their own files, are never mutated.
     let code = rust_code_files_with(&cargo, root, &tools.cargo_args).map_err(toolchain)?;
     let canonical = root.canonicalize().map_err(|e| unreadable(root, &e))?;
-    let plans: Vec<MutantPlan> = plan_language(root, "rust", asked.set, &tools.selection)?
+    let plans: Vec<MutantPlan> = plan_language(root, "rust", asked.sets, &tools.selection)?
         .into_iter()
         .filter(|p| code.binary_search(&canonical.join(&p.file)).is_ok())
         .collect();
@@ -251,7 +251,7 @@ fn on_run_layer(
     let settings = Settings {
         root: asked.root.display().to_string(),
         language: lang.to_string(),
-        operators: asked.set.name.to_string(),
+        operators: crate::set_names(asked.sets),
         jobs: workers.jobs,
     };
     let log = match &asked.tools.deficiency_log {
@@ -303,7 +303,7 @@ fn default_facts(
 fn plan_language(
     root: &Path,
     lang: &str,
-    set: &OperatorSet,
+    sets: &[OperatorSet],
     selection: &Selection,
 ) -> Result<Vec<MutantPlan>, CliError> {
     let syntax = TreeSitterSyntax::builtin()
@@ -315,7 +315,7 @@ fn plan_language(
         .into_iter()
         .filter(|p| p.lang.as_str() == lang)
         .collect();
-    Ok(plan_selected(root, &syntax, &profiles, set, selection)?.plans)
+    Ok(plan_selected(root, &syntax, &profiles, sets, selection)?.plans)
 }
 
 /// Workers for a machine with `cpus` and `available` bytes of memory, each

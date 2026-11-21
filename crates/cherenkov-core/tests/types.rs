@@ -30,3 +30,21 @@ fn test_a_type_not_defined_once_in_the_project_is_unknown() {
     assert_eq!(facts.of("Kind"), SourceDefault::Unknown, "two Kinds");
     assert_eq!(facts.of("VersionReq"), SourceDefault::Unknown, "semver's");
 }
+
+#[test]
+fn test_a_name_defined_twice_with_no_default_in_either_is_absent() {
+    // `Delivery` is a struct in one module and an enum in another, and
+    // neither has a Default: whichever the mutant means, it does not compile.
+    let mut facts = DefaultFacts::default();
+    facts.defined("Delivery", false);
+    facts.defined("Delivery", false);
+    assert_eq!(facts.of("Delivery"), SourceDefault::Absent);
+    // One of them with a Default (derived or written) is still no claim.
+    facts.defined("Delivery", true);
+    assert_eq!(facts.of("Delivery"), SourceDefault::Unknown);
+    let mut written = DefaultFacts::default();
+    written.defined("Kind", false);
+    written.defined("Kind", false);
+    written.implemented("Kind");
+    assert_eq!(written.of("Kind"), SourceDefault::Unknown);
+}
