@@ -1486,7 +1486,6 @@ fn cargo_mutants() -> OperatorSet {
         ],
         pending: &[
             "files: only those in a package's module tree (files behind #[cfg(test)] mod are skipped by default; orphan files are still planned)",
-            "`&&` inside let chains (cargo-mutants swaps it; the mutant never compiles)",
         ],
         skips: &SkipKind::ALL,
     }

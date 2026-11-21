@@ -6,6 +6,7 @@
 //! and bare role names (`@op`, `@cond`, ...) its role captures.
 
 pub mod profiles;
+pub mod rust_chains;
 pub mod rust_modules;
 pub mod rust_names;
 pub mod rust_scope;
@@ -131,7 +132,11 @@ impl SyntaxPort for TreeSitterSyntax {
             }
         }
 
-        let matches = concepts
+        let mut extra = match loaded.extra_matches {
+            Some(find) => find(tree.root_node()),
+            None => Vec::new(),
+        };
+        let mut matches: Vec<ConceptMatch> = concepts
             .into_iter()
             .map(|((_, concept, _), (span, mut caps))| {
                 caps.sort_by_key(|(c, s)| (s.start.byte, *c));
@@ -141,7 +146,9 @@ impl SyntaxPort for TreeSitterSyntax {
                     captures: caps,
                 }
             })
+            .chain(extra.drain(..))
             .collect();
+        matches.sort_by_key(|m| (m.span.start.byte, m.concept, m.span.end.byte));
         let statements = statements
             .into_iter()
             .map(|(_, _, kind, span)| Statement { kind, span })
@@ -176,6 +183,14 @@ fn calls_skipped(node: &tree_sitter::Node<'_>, source: &str, names: &[String]) -
         _ => None,
     });
     name.is_some_and(|n| names.iter().any(|x| x == &source[n.byte_range()]))
+}
+
+/// The span from the start of `first` to the end of `last`.
+fn span_between(first: &tree_sitter::Node<'_>, last: &tree_sitter::Node<'_>) -> Span {
+    Span {
+        start: span_of(first).start,
+        end: span_of(last).end,
+    }
 }
 
 fn span_of(node: &tree_sitter::Node<'_>) -> Span {

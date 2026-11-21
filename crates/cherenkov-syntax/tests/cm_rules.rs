@@ -80,3 +80,36 @@ fn only_the_attributes_cargo_mutants_reads_count() {
         BTreeSet::from([4, 9, 13, 15])
     );
 }
+
+#[test]
+fn every_and_of_a_let_chain_is_a_binary_operation() {
+    let src = "fn f(a: Option<u8>, b: bool, c: bool) -> u8 {\n    if let Some(x) = a && b && c { x } else { 0 }\n}\n\
+               fn g(a: Option<u8>, b: bool) -> u8 {\n    if b && let Some(x) = a { x } else { 0 }\n}\n";
+    let syntax = TreeSitterSyntax::builtin().unwrap();
+    let id = LanguageId::new("rust");
+    let profile = syntax
+        .profiles()
+        .into_iter()
+        .find(|p| p.lang == id)
+        .unwrap();
+    let file = syntax.analyze(&id, Path::new("t"), Arc::from(src)).unwrap();
+    let plans = plan_file(
+        &file,
+        &profile,
+        &named("cargo-mutants").unwrap().operators(),
+    )
+    .plans;
+    let ands: Vec<(u32, u32, Option<&str>)> = plans
+        .iter()
+        .filter(|p| p.original == "&&")
+        .map(|p| (p.site.start.line, p.site.start.col, p.mutated.as_deref()))
+        .collect();
+    assert_eq!(
+        ands,
+        [
+            (2, 24, Some("||")),
+            (2, 29, Some("||")),
+            (5, 10, Some("||"))
+        ]
+    );
+}

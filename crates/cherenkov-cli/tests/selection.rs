@@ -271,3 +271,44 @@ fn test_skip_calls_default_to_with_capacity_and_the_config_extends_or_replaces_t
             .any(|n| n.contains(":3:") && n.contains("replace +"))
     );
 }
+
+const CHAINS: &str = r#"pub fn chain(a: Option<u8>, b: bool, c: bool) -> u8 {
+    if let Some(x) = a && b && c {
+        x
+    } else {
+        0
+    }
+}
+pub fn chain2(a: Option<u8>, b: bool) -> u8 {
+    if b && let Some(x) = a {
+        x
+    } else {
+        0
+    }
+}
+pub struct R { pub handled: u32 }
+pub fn arm(n: u8, run: &mut R) {
+    match n {
+        1 => run.handled += 1,
+        2 => run.handled *= 2,
+        _ => {}
+    }
+}
+"#;
+
+#[test]
+fn test_let_chain_ands_and_compound_assignments_as_match_arm_values_are_mutated() {
+    let p = Project::new("chains", &[("src/lib.rs", CHAINS)]);
+    let names = p.names(&[]);
+    for want in [
+        "src/lib.rs:2:29: replace && with || in chain",
+        "src/lib.rs:2:24: replace && with || in chain",
+        "src/lib.rs:9:10: replace && with || in chain2",
+        "src/lib.rs:18:26: replace += with -= in arm",
+        "src/lib.rs:18:26: replace += with *= in arm",
+        "src/lib.rs:19:26: replace *= with += in arm",
+        "src/lib.rs:19:26: replace *= with /= in arm",
+    ] {
+        assert!(names.iter().any(|n| n == want), "{want}\n{names:#?}");
+    }
+}
