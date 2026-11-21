@@ -466,7 +466,9 @@ fn test_everything_else_is_the_inner_executors() {
     );
     assert_eq!(executor.baseline_with_output(budget).unwrap().1, "");
     assert_eq!(
-        executor.driven(&[plan.clone()], budget).unwrap(),
+        executor
+            .driven(std::slice::from_ref(&plan), budget)
+            .unwrap(),
         Some(vec![cherenkov_core::execution::Driven::Every])
     );
     assert_eq!(
