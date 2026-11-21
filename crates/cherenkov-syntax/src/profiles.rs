@@ -104,6 +104,8 @@ struct ProfileToml {
     line_comment: Option<String>,
     #[serde(default)]
     block_comment: Option<(String, String)>,
+    #[serde(default)]
+    doc_comments: Vec<String>,
 }
 
 /// What a query capture name means to the adapter.
@@ -196,6 +198,7 @@ pub fn load(src: &ProfileSource<'_>) -> Result<LoadedProfile, ProfileError> {
             comments: cherenkov_core::profile::Comments {
                 line: profile_toml.line_comment,
                 block: profile_toml.block_comment,
+                doc: profile_toml.doc_comments,
             },
             return_values: src.return_values,
             files: FileRules {

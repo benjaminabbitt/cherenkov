@@ -259,3 +259,12 @@ fn test_boxed_fn_trait_object_is_a_boxed_default() {
         &["Box::new(Default::default())"],
     );
 }
+
+#[test]
+fn test_a_parenthesised_type_is_the_type_itself_not_a_one_element_tuple() {
+    check(
+        Some("Option<&(dyn Error + 'static)>"),
+        &[],
+        &["None", "Some(Box::leak(Box::new(Default::default())))"],
+    );
+}

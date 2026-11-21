@@ -1,0 +1,11 @@
+# name  dir  workspace_root   (relative to $CM_CORPUS_ROOT, default ~/workspace)
+bus        worktrees/core--bus-interface/crates/angzarr-bus    worktrees/core--bus-interface
+ports      worktrees/core--bus-interface/crates/angzarr-ports  worktrees/core--bus-interface
+hatev      randomish/crates/hatpick-events                     randomish
+drawcore   randomish/crates/draw-core                          randomish
+namer      namer                                               namer
+os         angzarr-platform/crates/os                          angzarr-platform
+jsonl      angzarr-platform/crates/store-jsonl                 angzarr-platform
+fs         angzarr-platform/crates/file-system                 angzarr-platform
+runwithin  ctxloom/ctxloom-lib/crates/adapters/driven/run-within  ctxloom/ctxloom-lib
+archlint   ctxloom/ctxloom-lib/crates/root/bin/arch-lint      ctxloom/ctxloom-lib

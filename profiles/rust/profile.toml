@@ -9,6 +9,8 @@ body_braces = true
 # Comment syntax: a body's contents start after leading comments.
 line_comment = "//"
 block_comment = ["/*", "*/"]
+# Outer doc comments are attributes of the item after them.
+doc_comments = ["///", "/**"]
 
 [defaults]
 bool = "false"
