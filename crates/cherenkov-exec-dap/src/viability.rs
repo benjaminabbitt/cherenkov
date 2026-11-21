@@ -457,8 +457,8 @@ pub fn check(
     })
 }
 
-/// An executor that calls a mutant unviable when rustc rejects its source
-/// and the inner executor could not run it.
+/// An executor that calls a mutant unviable, without running it, when rustc
+/// rejects its source.
 pub struct RustcRejects<E> {
     inner: E,
     rejected: Arc<HashMap<MutantId, String>>,
@@ -469,26 +469,21 @@ impl<E> RustcRejects<E> {
         RustcRejects { inner, rejected }
     }
 
-    /// `raw`, unless it is a non-result for a mutant rustc rejects. A run
-    /// that measured something stays what it measured.
-    fn judged(&self, plan: &MutantPlan, raw: RawOutcome) -> RawOutcome {
-        let unrun = matches!(
-            raw,
-            RawOutcome::Unsupported { .. } | RawOutcome::NotReached { .. }
-        );
-        match self.rejected.get(&plan.id) {
-            Some(why) if unrun => RawOutcome::Unviable {
-                reason: format!("rustc rejects the mutant: {why}"),
-            },
-            _ => raw,
-        }
+    /// The outcome of a mutant rustc rejects: no program can be built from
+    /// its source, so no debugger runs it.
+    fn unviable(&self, plan: &MutantPlan) -> Option<RawOutcome> {
+        self.rejected.get(&plan.id).map(|why| RawOutcome::Unviable {
+            reason: format!("rustc rejects the mutant: {why}"),
+        })
     }
 }
 
 impl<E: MutantExecutor> MutantExecutor for RustcRejects<E> {
     fn run(&mut self, plan: &MutantPlan, budget: Budget) -> Result<RawOutcome, ExecError> {
-        let raw = self.inner.run(plan, budget)?;
-        Ok(self.judged(plan, raw))
+        match self.unviable(plan) {
+            Some(raw) => Ok(raw),
+            None => self.inner.run(plan, budget),
+        }
     }
     fn baseline(&mut self, budget: Budget) -> Result<RawOutcome, ExecError> {
         self.inner.baseline(budget)
@@ -498,8 +493,10 @@ impl<E: MutantExecutor> MutantExecutor for RustcRejects<E> {
         plan: &MutantPlan,
         budget: Budget,
     ) -> Result<(RawOutcome, String), ExecError> {
-        let (raw, output) = self.inner.run_with_output(plan, budget)?;
-        Ok((self.judged(plan, raw), output))
+        match self.unviable(plan) {
+            Some(raw) => Ok((raw, String::new())),
+            None => self.inner.run_with_output(plan, budget),
+        }
     }
     fn baseline_with_output(&mut self, budget: Budget) -> Result<(RawOutcome, String), ExecError> {
         self.inner.baseline_with_output(budget)

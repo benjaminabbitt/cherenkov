@@ -177,7 +177,7 @@ fn test_a_failed_check_ends_the_settling() {
 
 use cherenkov_core::execution::Budget;
 
-struct Fixed(RawOutcome);
+struct Fixed(RawOutcome, std::sync::Arc<std::sync::atomic::AtomicUsize>);
 
 impl MutantExecutor for Fixed {
     fn run(
@@ -185,6 +185,7 @@ impl MutantExecutor for Fixed {
         _: &cherenkov_core::plan::MutantPlan,
         _: Budget,
     ) -> Result<RawOutcome, ExecError> {
+        self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         Ok(self.0.clone())
     }
     fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
@@ -218,30 +219,32 @@ fn plan_of(id: &str) -> cherenkov_core::plan::MutantPlan {
 }
 
 #[test]
-fn test_what_rustc_rejects_is_unviable_where_the_executor_would_not_run_it() {
+fn test_what_rustc_rejects_is_unviable_and_never_run_and_the_rest_is_left_alone() {
     use cherenkov_exec_dap::viability::RustcRejects;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     let rejected = std::sync::Arc::new(HashMap::from([(
         cherenkov_core::id::MutantId("bad".into()),
         "error[E0599]: no function".to_string(),
     )]));
-    let run = |inner: RawOutcome, id: &str| {
-        RustcRejects::new(Fixed(inner), rejected.clone())
-            .run(&plan_of(id), Budget::for_mutant(std::time::Duration::ZERO))
-            .unwrap()
-    };
-    let unsupported = RawOutcome::Unsupported { reason: "x".into() };
-    let not_reached = RawOutcome::NotReached { reason: "y".into() };
     let killed = RawOutcome::Exited {
         code: 1,
         tier: cherenkov_core::execution::Tier::P,
         wall: std::time::Duration::ZERO,
     };
-    let unviable = |t: RawOutcome| matches!(t, RawOutcome::Unviable { reason } if reason.contains("rustc rejects") && reason.contains("E0599"));
-    assert!(unviable(run(unsupported.clone(), "bad")));
-    assert!(unviable(run(not_reached.clone(), "bad")));
-    // A run that measured something, or a mutant rustc accepts, is left alone.
-    assert_eq!(run(killed.clone(), "bad"), killed);
-    assert_eq!(run(unsupported.clone(), "fine"), unsupported);
+    let runs = std::sync::Arc::new(AtomicUsize::new(0));
+    let mut executor = RustcRejects::new(Fixed(killed.clone(), runs.clone()), rejected);
+    let budget = Budget::for_mutant(std::time::Duration::ZERO);
+    let got = executor.run(&plan_of("bad"), budget).unwrap();
+    assert!(
+        matches!(&got, RawOutcome::Unviable { reason } if reason.contains("rustc rejects") && reason.contains("E0599")),
+        "{got:?}"
+    );
+    let (got, output) = executor.run_with_output(&plan_of("bad"), budget).unwrap();
+    assert!(matches!(got, RawOutcome::Unviable { .. }) && output.is_empty());
+    assert_eq!(runs.load(Ordering::SeqCst), 0, "no debugger for it");
+    // A mutant rustc accepts is the inner executor's.
+    assert_eq!(executor.run(&plan_of("fine"), budget).unwrap(), killed);
+    assert_eq!(runs.load(Ordering::SeqCst), 1);
 }
 
 // --- The whole check, on a scratch workspace and the real `cargo check`.
