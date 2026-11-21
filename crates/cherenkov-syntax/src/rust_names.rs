@@ -181,6 +181,34 @@ pub fn squash_lines(s: &str) -> String {
     out
 }
 
+/// `text` without the attributes and comments before its first token.
+pub fn strip_attributes(text: &str) -> &str {
+    let mut rest = text.trim_start();
+    loop {
+        let next = if rest.starts_with("#[") {
+            attribute_end(rest)
+        } else if rest.starts_with("//") {
+            rest.find('\n').unwrap_or(rest.len())
+        } else if rest.starts_with("/*") {
+            rest.find("*/").map_or(rest.len(), |i| i + 2)
+        } else {
+            return rest;
+        };
+        rest = rest[next..].trim_start();
+    }
+}
+
+/// The length of the attribute `#[..]` at the start of `text`.
+fn attribute_end(text: &str) -> usize {
+    let chars: Vec<char> = text.chars().collect();
+    let mut at = 2;
+    lex(&chars, &mut at, Some(']'));
+    chars[..at.min(chars.len())]
+        .iter()
+        .map(|c| c.len_utf8())
+        .sum()
+}
+
 /// The pattern of a match arm's source text (`pat => body`), printed.
 pub fn arm_pattern(arm: &str) -> String {
     let chars: Vec<char> = arm.chars().collect();

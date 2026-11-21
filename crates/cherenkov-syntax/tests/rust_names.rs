@@ -92,3 +92,15 @@ fn a_field_initialiser_knows_its_struct() {
     assert_eq!(names.struct_at(at, at + 4), Some("P"));
     assert_eq!(names.struct_at(0, 3), None);
 }
+
+#[test]
+fn leading_attributes_and_comments_are_not_part_of_an_arm_or_field() {
+    use cherenkov_syntax::rust_names::strip_attributes;
+    assert_eq!(strip_attributes("#[mutants::skip]\n 0 => 1,"), "0 => 1,");
+    assert_eq!(
+        strip_attributes("#[cfg(test)] #[a = \"]\"] // c\n b: 2,"),
+        "b: 2,"
+    );
+    assert_eq!(strip_attributes("/// doc\nx: 1"), "x: 1");
+    assert_eq!(arm_pattern(strip_attributes("#[x] 1 | 2 => t,")), "1 | 2");
+}

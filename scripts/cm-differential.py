@@ -12,7 +12,8 @@ usage: cm-differential.py [--cherenkov BIN] [--corpus FILE] [--explained FILE]
                           [--root DIR] [--only NAME ...] [--json OUT]
 
 The corpus file has one crate a line: `name dir workspace_root`, the paths
-relative to --root (default $CM_CORPUS_ROOT or ~/workspace). A crate whose
+relative to --root (default $CM_CORPUS_ROOT or ~/workspace), or `@repo/...` for
+the path inside this repository. A crate whose
 directory is missing is reported and skipped. The explained file has one rule
 a line, tab separated: `side  crate  regex  reason` where side is cm-only,
 ch-only or spelling, crate a name or `*`, and regex is searched in the name
@@ -48,7 +49,7 @@ def cm_names(d, prefix):
 
 
 def cherenkov_names(binary, d):
-    out = run([str(binary), "plan", str(d), "--operators", "cargo-mutants", "--names"])
+    out = run([str(binary), "plan", str(d), "--operators", "cargo-mutants", "--no-config", "--names"])
     return [line for line in out.splitlines() if line]
 
 
@@ -110,7 +111,7 @@ def main():
         name, d, ws = line.split()
         if args.only and name not in args.only:
             continue
-        d, ws = root / d, root / ws
+        d, ws = (HERE.parent / x[6:] if x.startswith("@repo/") else root / x for x in (d, ws))
         if not d.is_dir():
             print(f"skip {name}: {d} is missing")
             continue

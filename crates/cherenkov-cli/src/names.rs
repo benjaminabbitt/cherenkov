@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use cherenkov_core::plan::MutantPlan;
-use cherenkov_syntax::rust_names::{Names, arm_pattern, squash_lines};
+use cherenkov_syntax::rust_names::{Names, arm_pattern, squash_lines, strip_attributes};
 
 /// The name of each of `plans`, in order. `root` is where their files are
 /// read from; a file that cannot be read leaves its mutants unnamed in
@@ -66,14 +66,17 @@ fn describe(plan: &MutantPlan, file: Option<(&str, &Names)>) -> String {
         }
         "match-arm" => format!(
             "delete match arm {}{in_function}",
-            squash_lines(&arm_pattern(&plan.original))
+            squash_lines(&arm_pattern(strip_attributes(&plan.original)))
         ),
         "match-guard" => format!(
             "replace match guard {} with {with}{in_function}",
             squash_lines(&plan.original)
         ),
         "struct-field" => {
-            let field = plan.original.split(':').next().unwrap_or_default();
+            let field = strip_attributes(&plan.original)
+                .split(':')
+                .next()
+                .unwrap_or_default();
             let field = field.trim().trim_end_matches(',');
             let owner = file
                 .and_then(|(_, names)| names.struct_at(plan.site.start.byte, plan.site.end.byte))

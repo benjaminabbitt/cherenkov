@@ -9,3 +9,8 @@ jsonl      angzarr-platform/crates/store-jsonl                 angzarr-platform
 fs         angzarr-platform/crates/file-system                 angzarr-platform
 runwithin  ctxloom/ctxloom-lib/crates/adapters/driven/run-within  ctxloom/ctxloom-lib
 archlint   ctxloom/ctxloom-lib/crates/root/bin/arch-lint      ctxloom/ctxloom-lib
+# edge crates in this repository: paths are relative to the repository, see --root
+edge   @repo/scripts/cm-edge/edge   @repo/scripts/cm-edge/edge
+edge2  @repo/scripts/cm-edge/edge2  @repo/scripts/cm-edge/edge2
+edge3  @repo/scripts/cm-edge/edge3  @repo/scripts/cm-edge/edge3
+edge5  @repo/scripts/cm-edge/edge5  @repo/scripts/cm-edge/edge5

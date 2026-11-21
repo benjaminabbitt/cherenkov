@@ -135,3 +135,9 @@ push-check:
 import 'devcontainer.just'
 
 mod? dev '.dev'
+
+# Compare `cherenkov plan --operators cargo-mutants` with `cargo mutants --list` on the
+# corpus (scripts/cm-corpus.txt); fails on a difference scripts/cm-differences.txt does not explain.
+cm-differential *args:
+    cargo build -q -p cherenkov-cli
+    python3 -I scripts/cm-differential.py {{args}}
