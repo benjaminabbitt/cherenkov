@@ -441,3 +441,37 @@ impl VerdictFile for Written {
         Ok(())
     }
 }
+
+#[tokio::test]
+async fn test_a_run_planned_for_one_program_is_not_the_run_of_workers_driving_two() {
+    // How many test programs a run prepares is part of its plan: a project
+    // whose tests are now built as two programs is not the one that was run.
+    let core = Arc::new(new_core().await);
+    let plans = many(2);
+    let planned = earlier(&core, &plans, &settings()).await;
+    let ledger = Arc::new(Ledger::default());
+    let (_, gate) = channel();
+    let gate = Arc::new(Mutex::new(gate));
+    let two = |ledger: &Arc<Ledger>| {
+        let program = || -> Box<dyn MutantExecutor + Send> {
+            Box::new(Executor {
+                ledger: ledger.clone(),
+                hold: usize::MAX,
+                gate: gate.clone(),
+            })
+        };
+        Workers {
+            sets: vec![vec![program(), program()]],
+            jobs: 1,
+            explain,
+        }
+    };
+    let ran = started(&core, &new_run(), &plans, &settings(), Some(two(&ledger))).await;
+    assert!(!ran.resumed);
+    assert_ne!(ran.run, planned);
+    assert_eq!(
+        ended(&events(&core, &planned).await),
+        Some(RunStatus::Abandoned)
+    );
+    assert_eq!(ran.status, Some(RunStatus::Complete));
+}
