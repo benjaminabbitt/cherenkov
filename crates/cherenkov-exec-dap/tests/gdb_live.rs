@@ -427,6 +427,8 @@ fn test_live_gdb_a_looping_mutant_is_timed_out_on_a_loaded_machine_too() {
         took >= Duration::from_secs(1) && took < Duration::from_secs(10),
         "{took:?}"
     );
+    // The run says what the load took from it, for its verdict to net out.
+    assert!(s.lost_to_load() > Duration::ZERO && s.lost_to_load() <= Duration::from_secs(5));
 }
 
 #[test]
