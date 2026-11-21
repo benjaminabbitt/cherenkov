@@ -46,3 +46,12 @@ fn test_a_directory_in_a_missing_temp_directory_sweeps_nothing() {
         0
     );
 }
+
+#[test]
+fn test_the_sweep_of_the_temp_directory_removes_what_no_process_owns() {
+    // No process has a pid this large.
+    let stale = std::env::temp_dir().join("cherenkov-support-4294967290");
+    std::fs::create_dir_all(stale.join("deep")).unwrap();
+    assert!(sweep_stale_scratch() >= 1);
+    assert!(!stale.exists());
+}
