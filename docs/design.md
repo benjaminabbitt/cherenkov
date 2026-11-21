@@ -542,7 +542,7 @@ Other declared capabilities of note: setExpression is absent in Delve and java-d
 |---|---|---|
 | killed | any covering test fails or the process crashes | yes, detected |
 | survived | all covering tests pass | yes, undetected |
-| timeout | exceeds a limit relative to the unmutated run under the *same* backend (the debugger itself slows the baseline) | yes, detected; jump-based branch mutants can create infinite loops |
+| timeout | exceeds a limit relative to the unmutated run under the *same* backend (the debugger itself slows the baseline), judged on wall time less the time the run was runnable but waiting for a CPU (kernel `schedstat` of the waiting thread, the debugger and the debuggee), so machine load does not change a verdict; a run is timed out at the latest at six times the limit | yes, detected; jump-based branch mutants can create infinite loops |
 | not reached | no selected test reaches the site | no; left out of the result (coverage is the project's concern) |
 | unevaluable | evaluator rejected the mutated statement (unsupported construct, optimized-out variable, failed resolution); or the mutant would not compile as source (for example, deleting a declaration that later code uses) | no; report per operator and language |
 | evaluator-raised | the mutated statement threw inside the evaluator | no; report separately, optionally re-verify with a real source mutant |
