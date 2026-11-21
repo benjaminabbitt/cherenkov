@@ -152,7 +152,7 @@ fn test_skipped_mutants_are_counted_by_kind() {
 }
 
 #[test]
-fn test_cfg_test_on_a_field_initializer_skips_only_that_field() {
+fn test_cfg_test_on_a_field_initializer_is_ignored_as_cargo_mutants_ignores_it() {
     let src = "fn f(a: i32) -> S {\n    S {\n        #[cfg(test)]\n        a: a + 1,\n        b: a - 1,\n        ..Default::default()\n    }\n}\n";
     let out = plan(src, "cargo-mutants");
     let aor: Vec<u32> = out
@@ -161,8 +161,7 @@ fn test_cfg_test_on_a_field_initializer_skips_only_that_field() {
         .filter(|p| p.operator == "aor")
         .map(|p| p.site.start.line)
         .collect();
-    assert!(aor.iter().all(|&l| l == 5), "{aor:?}");
-    assert!(!aor.is_empty());
+    assert!(aor.contains(&4) && aor.contains(&5), "{aor:?}");
 }
 
 #[test]
