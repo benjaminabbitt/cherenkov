@@ -11,6 +11,7 @@ pub mod isa;
 pub mod layouts;
 pub mod libtest;
 pub mod lines;
+pub mod load;
 pub mod native;
 pub mod rpc;
 pub mod support_lib;
