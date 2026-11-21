@@ -17,4 +17,5 @@ pub mod rpc;
 pub mod support_lib;
 pub mod tierp;
 pub mod toolchain;
+pub mod viability;
 pub mod x86;
