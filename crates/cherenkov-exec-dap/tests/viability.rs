@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use cherenkov_core::execution::{ExecError, MutantExecutor, RawOutcome};
 use cherenkov_exec_dap::viability::{
-    Blamed, Candidate, apply_edits, batches, blame, diagnostics, settle,
+    Blamed, Candidate, Diag, apply_edits, batches, blame, diagnostics, settle,
 };
 
 fn candidate(file: &str, start: usize, end: usize) -> Candidate {
@@ -340,6 +340,7 @@ fn test_a_project_that_does_not_pass_cargo_check_is_not_checked() {
     let cs = [candidate_at(&broken, "{ 4 }", "{ 5 }")];
     let err = check(Path::new("cargo"), &dir, &dir.join("member"), &[], &cs).unwrap_err();
     assert!(err.0.contains("does not pass cargo check"), "{err}");
+    assert!(err.0.contains("could not compile"), "{err}");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
@@ -381,6 +382,7 @@ fn test_only_a_body_replacement_still_in_its_file_is_a_candidate() {
     std::fs::write(dir.join("lib.rs"), src).unwrap();
     let mut other = plan.clone();
     other.operator = "aor";
+    other.id = id("other");
     let mut unspelled = plan.clone();
     unspelled.mutated = None;
     let got = candidates(&dir, &[plan.clone(), other, unspelled]);
@@ -393,4 +395,91 @@ fn test_only_a_body_replacement_still_in_its_file_is_a_candidate() {
     std::fs::write(dir.join("lib.rs"), "pub fn f() -> u32 { 2 + 2 }\n").unwrap();
     assert!(candidates(&dir, &[plan]).is_empty());
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn test_two_errors_in_one_mutants_text_blame_it_once() {
+    let at = |m: &str| Diag {
+        message: m.into(),
+        spans: vec![(PathBuf::from("a.rs"), 5..6)],
+    };
+    let got = blame(
+        &[at("first"), at("second")],
+        &[(PathBuf::from("a.rs"), 0..9)],
+    );
+    assert_eq!(got.by_mutant, [(0, "first".to_string())]);
+    assert_eq!(got.elsewhere, None);
+}
+
+/// An executor that remembers what it was asked.
+#[derive(Default)]
+struct Asked {
+    selected: Option<Vec<String>>,
+    closed: bool,
+}
+
+struct Spy(std::sync::Arc<std::sync::Mutex<Asked>>);
+
+impl MutantExecutor for Spy {
+    fn run(
+        &mut self,
+        _: &cherenkov_core::plan::MutantPlan,
+        _: Budget,
+    ) -> Result<RawOutcome, ExecError> {
+        Ok(RawOutcome::NotReached { reason: "r".into() })
+    }
+    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+        Ok(RawOutcome::NotReached { reason: "b".into() })
+    }
+    fn driven(
+        &mut self,
+        plans: &[cherenkov_core::plan::MutantPlan],
+        _: Budget,
+    ) -> Result<Option<Vec<cherenkov_core::execution::Driven>>, ExecError> {
+        Ok(Some(vec![
+            cherenkov_core::execution::Driven::Every;
+            plans.len()
+        ]))
+    }
+    fn select_tests(&mut self, tests: Option<&[String]>) {
+        self.0.lock().unwrap().selected = tests.map(<[String]>::to_vec);
+    }
+    fn describe(&self) -> Option<String> {
+        Some("spy".into())
+    }
+    fn close_session(&mut self) {
+        self.0.lock().unwrap().closed = true;
+    }
+}
+
+#[test]
+fn test_everything_else_is_the_inner_executors() {
+    use cherenkov_exec_dap::viability::RustcRejects;
+    let asked = std::sync::Arc::new(std::sync::Mutex::new(Asked::default()));
+    let mut executor = RustcRejects::new(Spy(asked.clone()), Default::default());
+    let budget = Budget::for_mutant(std::time::Duration::ZERO);
+    let plan = plan_of("p");
+    assert_eq!(executor.describe().as_deref(), Some("spy"));
+    assert_eq!(
+        executor.baseline(budget).unwrap(),
+        RawOutcome::NotReached { reason: "b".into() }
+    );
+    assert_eq!(executor.baseline_with_output(budget).unwrap().1, "");
+    assert_eq!(
+        executor.driven(&[plan.clone()], budget).unwrap(),
+        Some(vec![cherenkov_core::execution::Driven::Every])
+    );
+    assert_eq!(
+        executor
+            .recording(&[plan], budget)
+            .unwrap()
+            .driven
+            .map(|d| d.len()),
+        Some(1)
+    );
+    executor.select_tests(Some(&["t".to_string()]));
+    executor.close_session();
+    let asked = asked.lock().unwrap();
+    assert_eq!(asked.selected, Some(vec!["t".to_string()]));
+    assert!(asked.closed);
 }
