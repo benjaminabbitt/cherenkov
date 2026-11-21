@@ -721,6 +721,28 @@ no test builds its own kernel, clock or ids.
    written to ctxloom's shape in 5.5 and 5.6 so extraction is a move, go to
    `rust-support` or angzarr-embedded's host, with Cherenkov's cargo and
    libtest tooling; then all three applications use the shared versions.
+9. **In-flight trace facts.** An executor's observation already comes back
+   as a fact on the mutant's stream, matched by the mutant id; what a session
+   did on the way is thrown away once the outcome is known. Record it: at
+   each natural boundary (a breakpoint hit, a test starting or finishing, a
+   timeout, the program's exit) the runner appends one batched trace fact to
+   the mutant's stream, tagged with the mutant id and the debugger's sequence
+   numbers, so a decision can be read beside what led to it. The control loop
+   (apply, continue, read a value) stays synchronous inside the executor: each
+   step depends on the last answer from the debugger, and a bus hop per step
+   would lengthen the part of a run that is already latency-bound on ptrace
+   and DAP round trips (the bus costs about 65 µs a fact; a round trip costs
+   milliseconds, so the hop is cheap but the control decision does not belong
+   on it). `output` and `stopped` events are summarized per boundary, never
+   one fact each. Messages first: the trace facts are defined in
+   `plan.proto`/`observation.proto` (proto, never hand-written prost) and
+   reviewed before any code. Projectors then build views from them: a
+   per-mutant trace in the output and a timing breakdown. The DAP client's
+   event queue is indexed by event name regardless (perf finding: the scan was
+   most of Cherenkov's own CPU in a real run); this item does not replace
+   that. Exit: a run's stream holds, for each mutant, its trace facts in
+   order; the verdict file and `expected-verdicts.txt` are unchanged; a trace
+   adds under 1% to a real run's wall time (measured, not assumed).
 
 ## Upstream work, by repository
 - **angzarr core**: the JSON annotations' definitions (5.1); the
