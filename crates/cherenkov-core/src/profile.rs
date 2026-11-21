@@ -66,9 +66,20 @@ pub struct Comments {
     pub line: Option<String>,
     /// Opens and closes a block comment (`/*`, `*/`).
     pub block: Option<(String, String)>,
+    /// Comment openers that document the item after them (`///`, `/**`):
+    /// the language reads them as part of that item, so they are code. One
+    /// repeating its last character (`////`) is a plain comment.
+    pub doc: Vec<String>,
 }
 
 impl Comments {
+    /// Whether `text` starts with a documentation comment.
+    fn documents(&self, text: &str) -> bool {
+        self.doc.iter().any(|d| {
+            text.starts_with(d.as_str()) && text[d.len()..].chars().next() != d.chars().last()
+        })
+    }
+
     /// Bytes of whitespace and comments at the start of `text`.
     pub fn leading(&self, text: &str) -> usize {
         let mut i = 0;
@@ -76,6 +87,9 @@ impl Comments {
             let rest = &text[i..];
             let trimmed = rest.trim_start();
             i += rest.len() - trimmed.len();
+            if self.documents(trimmed) {
+                return i;
+            }
             if self.line.as_deref().is_some_and(|l| trimmed.starts_with(l)) {
                 i += trimmed.find('\n').unwrap_or(trimmed.len());
             } else if let Some((open, close)) = self

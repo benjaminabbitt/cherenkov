@@ -129,3 +129,16 @@ fn test_rust_a_comment_marker_inside_a_string_is_part_of_the_body() {
     // `"http://x".to_string()` is 22 bytes from column 5.
     assert!(sites.iter().all(|(_, end, _)| *end == (2, 27)), "{sites:?}");
 }
+
+#[test]
+fn test_rust_outer_doc_comments_start_the_body_as_cargo_mutants_spans_them_with_the_item() {
+    // syn reads `///` as an attribute of the first statement, so the span
+    // starts there; a plain comment above it does not count.
+    let src =
+        "fn f() -> bool {\n    // plain\n    /// documented\n    const A: u8 = 1;\n    g()\n}\n";
+    let (at, _) = first_fn_value("rust", src);
+    assert_eq!(at, (3, 5));
+    let src = "fn f() -> bool {\n    //// four slashes are plain\n    g()\n}\n";
+    let (at, _) = first_fn_value("rust", src);
+    assert_eq!(at, (3, 5));
+}

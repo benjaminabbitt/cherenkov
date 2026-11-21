@@ -19,10 +19,14 @@ pub struct ProfileSource<'a> {
     pub return_values: Option<ReturnValues>,
 }
 
+/// Matches the language's queries cannot express, found in the parse tree.
+pub type ExtraMatches = fn(tree_sitter::Node<'_>) -> Vec<cherenkov_core::syntax::ConceptMatch>;
+
 pub struct LoadedProfile {
     pub profile: Profile,
     pub grammar: tree_sitter::Language,
     pub query: tree_sitter::Query,
+    pub extra_matches: Option<ExtraMatches>,
 }
 
 #[derive(Debug)]
@@ -100,6 +104,8 @@ struct ProfileToml {
     line_comment: Option<String>,
     #[serde(default)]
     block_comment: Option<(String, String)>,
+    #[serde(default)]
+    doc_comments: Vec<String>,
 }
 
 /// What a query capture name means to the adapter.
@@ -192,6 +198,7 @@ pub fn load(src: &ProfileSource<'_>) -> Result<LoadedProfile, ProfileError> {
             comments: cherenkov_core::profile::Comments {
                 line: profile_toml.line_comment,
                 block: profile_toml.block_comment,
+                doc: profile_toml.doc_comments,
             },
             return_values: src.return_values,
             files: FileRules {
@@ -201,6 +208,7 @@ pub fn load(src: &ProfileSource<'_>) -> Result<LoadedProfile, ProfileError> {
         },
         grammar: src.grammar.clone(),
         query,
+        extra_matches: None,
     })
 }
 
@@ -232,6 +240,12 @@ pub fn builtin() -> Result<Vec<LoadedProfile>, ProfileError> {
         },
     ]
     .iter()
-    .map(load)
+    .map(|src| {
+        let mut loaded = load(src)?;
+        if src.lang == "rust" {
+            loaded.extra_matches = Some(crate::rust_chains::let_chain_ands);
+        }
+        Ok(loaded)
+    })
     .collect()
 }

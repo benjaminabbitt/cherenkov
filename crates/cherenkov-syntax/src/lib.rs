@@ -6,6 +6,9 @@
 //! and bare role names (`@op`, `@cond`, ...) its role captures.
 
 pub mod profiles;
+pub mod rust_chains;
+pub mod rust_modules;
+pub mod rust_names;
 pub mod rust_scope;
 pub mod rust_types;
 pub mod rust_values;
@@ -33,11 +36,26 @@ type FoldedMatch = (Span, Vec<(Capture, Span)>);
 
 pub struct TreeSitterSyntax {
     profiles: Vec<LoadedProfile>,
+    /// Calls to functions and methods with these names (their last path
+    /// segment) are skipped, arguments and all.
+    skip_calls: Vec<String>,
 }
+
+/// The calls cargo-mutants skips unless told otherwise.
+pub const DEFAULT_SKIP_CALLS: [&str; 1] = ["with_capacity"];
 
 impl TreeSitterSyntax {
     pub fn new(profiles: Vec<LoadedProfile>) -> Self {
-        TreeSitterSyntax { profiles }
+        TreeSitterSyntax {
+            profiles,
+            skip_calls: DEFAULT_SKIP_CALLS.map(String::from).to_vec(),
+        }
+    }
+
+    /// Skip calls named in `names` instead of the default list.
+    pub fn with_skip_calls(mut self, names: Vec<String>) -> Self {
+        self.skip_calls = names;
+        self
     }
 
     /// Python, Rust and Go, from the profiles embedded in this crate.
@@ -91,7 +109,11 @@ impl SyntaxPort for TreeSitterSyntax {
                     }
                     Some(CaptureRole::Role(r)) => roles.push((r, span)),
                     Some(CaptureRole::Skip(kind)) => {
-                        skips.insert((span.start.byte, span.end.byte, kind, span));
+                        if kind != SkipKind::CapacityCall
+                            || calls_skipped(&cap.node, &source, &self.skip_calls)
+                        {
+                            skips.insert((span.start.byte, span.end.byte, kind, span));
+                        }
                     }
                     Some(CaptureRole::Helper) => {}
                     // Names were validated when the profile was loaded.
@@ -110,7 +132,11 @@ impl SyntaxPort for TreeSitterSyntax {
             }
         }
 
-        let matches = concepts
+        let mut extra = match loaded.extra_matches {
+            Some(find) => find(tree.root_node()),
+            None => Vec::new(),
+        };
+        let mut matches: Vec<ConceptMatch> = concepts
             .into_iter()
             .map(|((_, concept, _), (span, mut caps))| {
                 caps.sort_by_key(|(c, s)| (s.start.byte, *c));
@@ -120,7 +146,9 @@ impl SyntaxPort for TreeSitterSyntax {
                     captures: caps,
                 }
             })
+            .chain(extra.drain(..))
             .collect();
+        matches.sort_by_key(|m| (m.span.start.byte, m.concept, m.span.end.byte));
         let statements = statements
             .into_iter()
             .map(|(_, _, kind, span)| Statement { kind, span })
@@ -138,6 +166,30 @@ impl SyntaxPort for TreeSitterSyntax {
                 .map(|(_, _, kind, span)| SkipRegion { kind, span })
                 .collect(),
         })
+    }
+}
+
+/// Whether the call expression `node` calls a function or method named in
+/// `names`: by the last segment of its path, as cargo-mutants compares it.
+fn calls_skipped(node: &tree_sitter::Node<'_>, source: &str, names: &[String]) -> bool {
+    let mut callee = node.child_by_field_name("function");
+    while let Some(c) = callee.filter(|c| c.kind() == "generic_function") {
+        callee = c.child_by_field_name("function");
+    }
+    let name = callee.and_then(|c| match c.kind() {
+        "identifier" => Some(c),
+        "scoped_identifier" => c.child_by_field_name("name"),
+        "field_expression" => c.child_by_field_name("field"),
+        _ => None,
+    });
+    name.is_some_and(|n| names.iter().any(|x| x == &source[n.byte_range()]))
+}
+
+/// The span from the start of `first` to the end of `last`.
+fn span_between(first: &tree_sitter::Node<'_>, last: &tree_sitter::Node<'_>) -> Span {
+    Span {
+        start: span_of(first).start,
+        end: span_of(last).end,
     }
 }
 

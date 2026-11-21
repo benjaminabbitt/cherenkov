@@ -428,13 +428,19 @@ impl<'a> Parser<'a> {
             b'(' => {
                 self.i += 1;
                 let mut elems = Vec::new();
+                let mut comma = false;
                 while !self.eat(")") {
                     elems.push(self.ty()?);
-                    if !self.eat(",") && self.peek() != Some(b')') {
+                    comma = self.eat(",");
+                    if !comma && self.peek() != Some(b')') {
                         return None;
                     }
                 }
-                Some(Ty::Tuple(elems))
+                // `(T)` is T in parentheses; `(T,)` is a tuple.
+                match (elems.len(), comma) {
+                    (1, false) => elems.pop(),
+                    _ => Some(Ty::Tuple(elems)),
+                }
             }
             b'*' => {
                 // Raw pointers: not in cargo-mutants' table.

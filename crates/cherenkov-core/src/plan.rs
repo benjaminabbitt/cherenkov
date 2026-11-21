@@ -663,6 +663,18 @@ fn delete_statement(cx: &MatchCx<'_>) -> Option<Realization> {
     )
 }
 
+/// No statement-level action: the expression mutated in place.
+fn in_place(cx: &MatchCx<'_>, site: Span, spelled: &str) -> Option<Realization> {
+    let (file, m) = (cx.file, cx.m);
+    let src: &str = &file.source;
+    let stmt = innermost_statement(file, &m.span);
+    let anchor = stmt.map_or(m.span, |s| s.span).text(src);
+    let action = Action::InPlace {
+        expr_text: splice(src, m.span, site, spelled),
+    };
+    Realization::of(m.span.start, action, site, Requires::empty(), anchor)
+}
+
 /// A token swapped (`with`) or deleted (none) at `capture`, realized by the
 /// evaluable context around it.
 fn token_edit(cx: &MatchCx<'_>, capture: Capture, with: Option<Token>) -> Option<Realization> {
@@ -674,13 +686,7 @@ fn token_edit(cx: &MatchCx<'_>, capture: Capture, with: Option<Token>) -> Option
         None => "",
     };
     let Some(context) = token_context(file, &site) else {
-        // No statement-level action: mutate the expression in place.
-        let stmt = innermost_statement(file, &m.span);
-        let anchor = stmt.map_or(m.span, |s| s.span).text(src);
-        let action = Action::InPlace {
-            expr_text: splice(src, m.span, site, spelled),
-        };
-        return Realization::of(m.span.start, action, site, Requires::empty(), anchor);
+        return in_place(cx, site, spelled);
     };
     match context {
         TokenContext::Condition(cond_match, cond) => {
@@ -742,7 +748,10 @@ fn compound_assign_token(
     with: Option<Token>,
 ) -> Option<Realization> {
     let (file, src) = (cx.file, &*cx.file.source);
-    let stmt = innermost_statement(file, &assign.span)?;
+    let Some(stmt) = innermost_statement(file, &assign.span) else {
+        // A match arm's value, say: no statement to stop at.
+        return in_place(cx, site, spelled);
+    };
     let tokens = &cx.profile.tokens;
     let target = assign.one(Capture::Target)?.text(src);
     let op_span = assign.one(Capture::Op)?;

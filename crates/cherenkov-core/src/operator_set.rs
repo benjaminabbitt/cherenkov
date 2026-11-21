@@ -1238,7 +1238,7 @@ pub struct OperatorSet {
 /// An operator that declines the regions its set skips.
 struct Honouring {
     inner: Box<dyn Operator>,
-    skips: &'static [SkipKind],
+    skips: Vec<SkipKind>,
 }
 
 impl Operator for Honouring {
@@ -1252,15 +1252,29 @@ impl Operator for Honouring {
         self.inner.mutate(cx)
     }
     fn skips(&self) -> &[SkipKind] {
-        self.skips
+        &self.skips
     }
 }
 
 impl OperatorSet {
+    /// The set's operators, declining test code too unless `include_tests`:
+    /// cargo-mutants leaves test code alone, and so does every set by default.
+    pub fn operators_for(&self, include_tests: bool) -> Vec<Box<dyn Operator>> {
+        let mut skips = self.skips.to_vec();
+        if !include_tests && !skips.contains(&SkipKind::Test) {
+            skips.push(SkipKind::Test);
+        }
+        self.operators_skipping(&skips)
+    }
+
     /// The operators that carry out this set's mutations: one per family,
     /// in order of first appearance. Panics on a name not in the superset,
     /// which is a mistake in a hard-coded set.
     pub fn operators(&self) -> Vec<Box<dyn Operator>> {
+        self.operators_skipping(self.skips)
+    }
+
+    fn operators_skipping(&self, skips: &[SkipKind]) -> Vec<Box<dyn Operator>> {
         enum Slot {
             Tokens(&'static str, Vec<(Token, Vec<Token>)>),
             /// Rules of one family carried out by one parameterized operator.
@@ -1335,12 +1349,12 @@ impl OperatorSet {
                 }
             })
             .map(|op| -> Box<dyn Operator> {
-                if self.skips.is_empty() {
+                if skips.is_empty() {
                     op
                 } else {
                     Box::new(Honouring {
                         inner: op,
-                        skips: self.skips,
+                        skips: skips.to_vec(),
                     })
                 }
             })
@@ -1471,8 +1485,7 @@ fn cargo_mutants() -> OperatorSet {
             "fn-value",
         ],
         pending: &[
-            "files: only those in a package's module tree, not behind #[cfg(test)] mod",
-            "`&&` inside let chains (cargo-mutants swaps it; the mutant never compiles)",
+            "files: only those in a package's module tree (files behind #[cfg(test)] mod are skipped by default; orphan files are still planned)",
         ],
         skips: &SkipKind::ALL,
     }

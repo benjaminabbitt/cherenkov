@@ -1,0 +1,4 @@
+# side	crate	regex	reason
+# Differences between cargo-mutants 26.2.0 and cherenkov plan --operators cargo-mutants, each explained.
+# Anything not matched here fails scripts/cm-differential.py.
+ch-only	edge2	src/orphan\.rs:	A file no `mod` reaches: cargo-mutants never reads it; Cherenkov plans every .rs file under the tree that no exclude glob removes.

@@ -11,7 +11,6 @@ use cherenkov_core::diff::AddedLines;
 use cherenkov_core::execution::MutantExecutor;
 use cherenkov_core::operator_set::OperatorSet;
 use cherenkov_core::plan::MutantPlan;
-use cherenkov_core::session::plan_project;
 use cherenkov_core::types::DefaultFacts;
 use cherenkov_exec_dap::delve::{DelveConfig, DelveExecutor};
 use cherenkov_exec_dap::gdb::{GdbConfig, GdbExecutor};
@@ -20,7 +19,6 @@ use cherenkov_exec_dap::toolchain::{
     build_go_test_binary, build_rust_test_programs_with, cargo_test_env, cargo_workspace,
     cargo_workspace_prefix, go_test_args, rust_code_files_with, rust_test_args, rustup_toolchain,
 };
-use cherenkov_fs::FsSourceReader;
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::{Settings, Workers};
 use cherenkov_run_application::verdicts::VerdictFile;
@@ -29,6 +27,7 @@ use cherenkov_syntax::TreeSitterSyntax;
 
 use crate::error::CliError;
 use crate::output::{self, Listed};
+use crate::selection::{Selection, plan_selected};
 
 pub struct Tools {
     pub dlv: Option<PathBuf>,
@@ -46,6 +45,8 @@ pub struct Tools {
     /// A file the finished run's verdicts are written to, one JSON line for
     /// each mutant, sorted by id.
     pub verdict_file: Option<PathBuf>,
+    /// Which mutants are planned (test code, files, names).
+    pub selection: Selection,
 }
 
 /// The plans whose spans touch a line the unified diff in `file` adds. The
@@ -83,7 +84,6 @@ fn repository_prefix(root: &Path) -> PathBuf {
 struct Asked<'a> {
     root: &'a Path,
     tools: &'a Tools,
-    exclude: &'a [String],
     set: &'a OperatorSet,
     tests: &'a [String],
     format: Format,
@@ -92,7 +92,6 @@ struct Asked<'a> {
 pub fn run(
     dir: &Path,
     tools: &Tools,
-    exclude: &[String],
     set: &OperatorSet,
     tests: &[String],
     format: Format,
@@ -105,7 +104,6 @@ pub fn run(
     let asked = Asked {
         root: &root,
         tools,
-        exclude,
         set,
         tests,
         format,
@@ -144,7 +142,10 @@ fn toolchain(e: impl std::fmt::Display) -> CliError {
 
 fn run_go(asked: &Asked) -> Result<(), CliError> {
     let (root, tools) = (asked.root, asked.tools);
-    let plans = narrowed(plan_language(root, "go", asked.exclude, asked.set)?, asked)?;
+    let plans = narrowed(
+        plan_language(root, "go", asked.set, &tools.selection)?,
+        asked,
+    )?;
     let jobs = tools.jobs.unwrap_or(1);
     let dlv = find_tool(tools.dlv.as_deref(), "dlv")?;
     let go = find_tool(tools.go.as_deref(), "go")?;
@@ -178,7 +179,7 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     // inline or in their own files, are never mutated.
     let code = rust_code_files_with(&cargo, root, &tools.cargo_args).map_err(toolchain)?;
     let canonical = root.canonicalize().map_err(|e| unreadable(root, &e))?;
-    let plans: Vec<MutantPlan> = plan_language(root, "rust", asked.exclude, asked.set)?
+    let plans: Vec<MutantPlan> = plan_language(root, "rust", asked.set, &tools.selection)?
         .into_iter()
         .filter(|p| code.binary_search(&canonical.join(&p.file)).is_ok())
         .collect();
@@ -302,23 +303,19 @@ fn default_facts(
 fn plan_language(
     root: &Path,
     lang: &str,
-    exclude: &[String],
     set: &OperatorSet,
+    selection: &Selection,
 ) -> Result<Vec<MutantPlan>, CliError> {
-    let syntax = TreeSitterSyntax::builtin().map_err(|e| CliError::Syntax {
-        reason: e.to_string(),
-    })?;
-    let profiles: Vec<_> = crate::with_excludes(syntax.profiles(), exclude)
+    let syntax = TreeSitterSyntax::builtin()
+        .map_err(|e| CliError::Syntax {
+            reason: e.to_string(),
+        })?
+        .with_skip_calls(selection.skip_calls.clone());
+    let profiles: Vec<_> = crate::with_excludes(syntax.profiles(), &selection.exclude_globs)
         .into_iter()
         .filter(|p| p.lang.as_str() == lang)
         .collect();
-    let reader = FsSourceReader::new(root, &profiles).map_err(|e| unreadable(root, &e))?;
-    let project = plan_project(&reader, &syntax, &profiles, &set.operators()).map_err(|e| {
-        CliError::Planning {
-            reason: format!("{}: {e}", root.display()),
-        }
-    })?;
-    Ok(project.plans)
+    Ok(plan_selected(root, &syntax, &profiles, set, selection)?.plans)
 }
 
 /// Workers for a machine with `cpus` and `available` bytes of memory, each
