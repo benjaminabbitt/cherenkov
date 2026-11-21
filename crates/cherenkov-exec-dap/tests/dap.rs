@@ -324,3 +324,50 @@ fn test_take_events_drains_only_the_named_events_in_order() {
     );
     adapter.join().unwrap();
 }
+
+/// A client holding `n` queued `output` events and then a `stopped` one.
+fn client_with_queued_outputs(n: usize) -> (DapClient, JoinHandle<Vec<Value>>) {
+    let (stream, adapter) = fake_adapter(vec![Box::new(move |r| {
+        let mut replies: Vec<Value> = (0..n)
+            .map(|i| event("output", json!({"output": i.to_string()})))
+            .collect();
+        replies.push(event("stopped", json!({"reason": "breakpoint"})));
+        replies.push(response(r, true, Value::Null));
+        replies
+    })]);
+    let mut dap = DapClient::new(stream, T);
+    dap.request("continue", Value::Null).unwrap();
+    (dap, adapter)
+}
+
+/// Queue lengths 10, 1,000 and 10,000.
+const QUEUE_LENGTHS: [usize; 3] = [10, 1_000, 10_000];
+
+/// What one wait or take may look at, however long the queue.
+const LOOKS: u64 = 4;
+
+#[test]
+fn test_a_wait_for_an_event_looks_at_a_bounded_number_of_queued_events() {
+    for n in QUEUE_LENGTHS {
+        let (mut dap, adapter) = client_with_queued_outputs(n);
+        let before = dap.event_inspections();
+        let stopped = dap.wait_event("stopped", T).unwrap();
+        assert_eq!(stopped["body"]["reason"], "breakpoint");
+        let looked = dap.event_inspections() - before;
+        assert!(looked <= LOOKS, "{looked} looks with {n} events queued");
+        adapter.join().unwrap();
+    }
+}
+
+#[test]
+fn test_taking_an_event_name_looks_at_no_other_queued_events() {
+    for n in QUEUE_LENGTHS {
+        let (mut dap, adapter) = client_with_queued_outputs(n);
+        let before = dap.event_inspections();
+        assert_eq!(dap.take_events("stopped").len(), 1);
+        let looked = dap.event_inspections() - before;
+        assert!(looked <= LOOKS, "{looked} looks with {n} events queued");
+        assert_eq!(dap.take_events("output").len(), n);
+        adapter.join().unwrap();
+    }
+}

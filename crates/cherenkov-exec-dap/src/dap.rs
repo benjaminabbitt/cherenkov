@@ -91,6 +91,9 @@ pub struct DapClient {
     decoder: Decoder,
     seq: u64,
     events: VecDeque<Value>,
+    /// Queued events looked at by waits and takes, so a test can show that
+    /// a wait does not scan the queue.
+    inspections: std::cell::Cell<u64>,
     /// Responses that arrived while waiting for another request's.
     responses: HashMap<u64, Value>,
     timeout: Duration,
@@ -149,6 +152,7 @@ impl DapClient {
             decoder: Decoder::default(),
             seq: 0,
             events: VecDeque::new(),
+            inspections: std::cell::Cell::new(0),
             responses: HashMap::new(),
             timeout,
         }
@@ -224,7 +228,11 @@ impl DapClient {
         timeout: Duration,
     ) -> Result<Value, DapError> {
         let wanted = |m: &Value| m["type"] == "event" && events.iter().any(|e| m["event"] == *e);
-        if let Some(i) = self.events.iter().position(wanted) {
+        let looked = |m: &Value| {
+            self.inspections.set(self.inspections.get() + 1);
+            wanted(m)
+        };
+        if let Some(i) = self.events.iter().position(looked) {
             return Ok(self.events.remove(i).expect("index from position"));
         }
         let deadline = Instant::now() + timeout;
@@ -281,6 +289,11 @@ impl DapClient {
         }
     }
 
+    /// How many queued events waits and takes have looked at so far.
+    pub fn event_inspections(&self) -> u64 {
+        self.inspections.get()
+    }
+
     /// The events received and not yet taken.
     pub fn queued(&self) -> &VecDeque<Value> {
         &self.events
@@ -288,6 +301,8 @@ impl DapClient {
 
     /// Remove and return every queued event named `event`, in arrival order.
     pub fn take_events(&mut self, event: &str) -> Vec<Value> {
+        self.inspections
+            .set(self.inspections.get() + self.events.len() as u64);
         let (taken, kept): (VecDeque<Value>, VecDeque<Value>) = std::mem::take(&mut self.events)
             .into_iter()
             .partition(|e| e["event"] == event);
