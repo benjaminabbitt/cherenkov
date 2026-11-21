@@ -185,3 +185,40 @@ fn test_plan_project_language_without_files_has_no_diagnostics_entry() {
         ["toy"]
     );
 }
+
+#[test]
+fn test_plan_project_sets_merges_the_sets_per_file_and_tags_each_plan() {
+    use cherenkov_core::operator_set::named;
+    use cherenkov_core::session::plan_project_sets;
+    let r = reader(&[
+        ("toy", "a.src", Some(TOY_SRC)),
+        ("toy", "b.src", Some(TOY_SRC)),
+    ]);
+    let sets = [named("breadth").unwrap(), named("sufficient").unwrap()];
+    let out = plan_project_sets(&r, &FakeSyntax, &profiles(), &sets).unwrap();
+    let alone = |name: &str| {
+        let set = [named(name).unwrap()];
+        plan_project_sets(&r, &FakeSyntax, &profiles(), &set)
+            .unwrap()
+            .plans
+            .len()
+    };
+    assert!(
+        out.plans.len() > alone("sufficient"),
+        "the sets add to each other"
+    );
+    assert!(
+        out.plans.len() < alone("sufficient") + alone("breadth"),
+        "and overlap"
+    );
+    assert_eq!(
+        out.diagnostics[&LanguageId::new("toy")].planned,
+        out.plans.len()
+    );
+    assert!(
+        out.plans
+            .iter()
+            .any(|p| p.sets == ["breadth", "sufficient"])
+    );
+    assert!(out.plans.iter().all(|p| !p.sets.is_empty()));
+}

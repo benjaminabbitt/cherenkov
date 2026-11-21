@@ -151,6 +151,10 @@ pub struct MutantPlan {
     /// mutant has no source form (a body replacement whose value the
     /// profile does not know).
     pub mutated: Option<String>,
+    /// The operator sets that produced it, in the order they were asked for
+    /// (several sets may; a mutant with the same span and replacement is
+    /// planned once).
+    pub sets: Vec<&'static str>,
 }
 
 impl MutantPlan {
@@ -416,6 +420,7 @@ fn finished_plans(drafts: Vec<Draft>, file: &FileSyntax, profile: &Profile) -> V
                 operands: d.operands,
                 original: d.site.text(&file.source).to_string(),
                 mutated: None,
+                sets: Vec::new(),
             }
         })
         .map(|mut plan| {
