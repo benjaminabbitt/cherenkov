@@ -186,6 +186,13 @@ pub trait NativeSession {
         Ok(false)
     }
 
+    /// How much of the last run's wall time went to waiting for a CPU
+    /// (machine load), when the debugger can tell. A run is judged on its
+    /// wall time less this.
+    fn lost_to_load(&self) -> Duration {
+        Duration::ZERO
+    }
+
     /// The program's standard output so far, when the debugger forwards it.
     fn take_output(&mut self) -> String {
         String::new()
@@ -261,33 +268,26 @@ pub trait Launcher {
 
 /// The facts of a tier P run. A run past the budget is a timeout even if
 /// its end was already queued when the budget was checked (design section 7).
-/// How much longer than its budget a mutant may take on a machine busy with
-/// other work: the one-minute load average per core, once, as the run
-/// starts (before its own workers load the machine), at least 1 and at most
-/// 4. A starved mutant is then not mistaken for a hung one.
-pub fn load_factor() -> f64 {
-    static FACTOR: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
-    *FACTOR.get_or_init(|| {
-        let load = std::fs::read_to_string("/proc/loadavg")
-            .ok()
-            .and_then(|s| s.split_whitespace().next()?.parse::<f64>().ok());
-        let cpus = std::thread::available_parallelism().map_or(1, usize::from);
-        load.map_or(1.0, |l| load_factor_of(l, cpus))
-    })
-}
-
-/// [`load_factor`] for a load average and a core count.
-pub fn load_factor_of(load: f64, cpus: usize) -> f64 {
-    (load / cpus.max(1) as f64).clamp(1.0, 4.0)
-}
-
 pub fn outcome_of(end: RunEnd, wall: Duration, budget: Budget) -> RawOutcome {
     outcome_in(Tier::P, end, wall, budget)
 }
 
 /// [`outcome_of`] for a run under `tier`.
 pub fn outcome_in(tier: Tier, end: RunEnd, wall: Duration, budget: Budget) -> RawOutcome {
-    if wall > budget.timeout {
+    outcome_judged(tier, end, wall, wall, budget)
+}
+
+/// [`outcome_in`] for a run that took `wall` and is judged on `judged`: the
+/// wall time less what machine load took from it, so that a busy machine
+/// makes no mutant a timeout.
+pub fn outcome_judged(
+    tier: Tier,
+    end: RunEnd,
+    wall: Duration,
+    judged: Duration,
+    budget: Budget,
+) -> RawOutcome {
+    if judged > budget.timeout {
         return RawOutcome::TimedOut { tier, wall };
     }
     match end {
@@ -300,6 +300,19 @@ pub fn outcome_in(tier: Tier, end: RunEnd, wall: Duration, budget: Budget) -> Ra
         },
         RunEnd::TimedOut => RawOutcome::TimedOut { tier, wall },
     }
+}
+
+/// A run's outcome, judged on its wall time less what the session says
+/// machine load took from it.
+fn judge<S: NativeSession>(
+    tier: Tier,
+    end: RunEnd,
+    wall: Duration,
+    session: &S,
+    budget: Budget,
+) -> RawOutcome {
+    let judged = wall.saturating_sub(session.lost_to_load());
+    outcome_judged(tier, end, wall, judged, budget)
 }
 
 /// Mutants applied as tier P patches, one fresh debuggee per run.
@@ -360,7 +373,10 @@ impl<L: Launcher> TierPExecutor<L> {
     fn timed_run(session: &mut L::Session, budget: Budget) -> Result<RawOutcome, ExecError> {
         let start = Instant::now();
         let end = session.run_to_exit(budget.timeout)?;
-        Ok(outcome_of(end, start.elapsed(), budget))
+        // The baseline sets every mutant's budget: its time is the time it
+        // ran, not the time a busy machine kept it waiting.
+        let ran = start.elapsed().saturating_sub(session.lost_to_load());
+        Ok(outcome_of(end, ran, budget))
     }
 
     /// The plan's path as the compiler recorded it: relative to the build's
@@ -928,7 +944,7 @@ impl<L: Launcher> TierPExecutor<L> {
             return Ok((RawOutcome::NotReached { reason }, output));
         }
         Ok((
-            outcome_in(Tier::B, run.end, start.elapsed(), budget),
+            judge(Tier::B, run.end, start.elapsed(), session, budget),
             output,
         ))
     }
@@ -943,9 +959,6 @@ impl<L: Launcher> TierPExecutor<L> {
         if let Some(reason) = self.unresolved_value(plan) {
             return Ok((RawOutcome::Unviable { reason }, String::new()));
         }
-        let budget = Budget {
-            timeout: budget.timeout.mul_f64(load_factor()),
-        };
         // Mutants neither tier can run are rejected before a debugger starts.
         if let Err(e @ Unpatchable::UnsupportedEdit(_)) = derive(plan, "", &[], &self.isa)
             && effect_of(plan).is_none()
@@ -1198,7 +1211,10 @@ impl<L: Launcher> TierPExecutor<L> {
             let reason = "the selected tests never execute the mutated code".to_string();
             return Ok((RawOutcome::NotReached { reason }, output));
         }
-        Ok((outcome_of(end, start.elapsed(), budget), output))
+        Ok((
+            judge(Tier::P, end, start.elapsed(), session, budget),
+            output,
+        ))
     }
 
     /// As [`MutantExecutor::baseline`], also returning the program's output.
@@ -1510,11 +1526,54 @@ mod tests {
         assert_eq!(checked_operator(&Edit::DeleteStatement), None);
     }
 
+    fn budget_of(secs: u64) -> Budget {
+        Budget {
+            timeout: Duration::from_secs(secs),
+        }
+    }
+
     #[test]
-    fn test_the_budget_grows_with_the_load_per_core_only_above_one() {
-        assert_eq!(load_factor_of(3.0, 20), 1.0);
-        assert_eq!(load_factor_of(40.0, 20), 2.0);
-        assert_eq!(load_factor_of(400.0, 20), 4.0);
+    fn test_a_run_slow_only_for_want_of_a_cpu_is_judged_on_the_time_it_ran() {
+        let wall = Duration::from_secs(9);
+        let judged = Duration::from_secs(4);
+        assert_eq!(
+            outcome_judged(Tier::P, RunEnd::Exited(0), wall, judged, budget_of(5)),
+            RawOutcome::Exited {
+                code: 0,
+                tier: Tier::P,
+                wall
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_run_past_its_budget_without_the_wait_is_timed_out() {
+        let wall = Duration::from_secs(9);
+        assert_eq!(
+            outcome_judged(Tier::B, RunEnd::Exited(0), wall, wall, budget_of(5)),
+            RawOutcome::TimedOut {
+                tier: Tier::B,
+                wall
+            }
+        );
+    }
+
+    #[test]
+    fn test_a_run_the_executor_timed_out_stays_timed_out_whatever_it_waited() {
+        let wall = Duration::from_secs(1);
+        assert_eq!(
+            outcome_judged(
+                Tier::P,
+                RunEnd::TimedOut,
+                wall,
+                Duration::ZERO,
+                budget_of(5)
+            ),
+            RawOutcome::TimedOut {
+                tier: Tier::P,
+                wall
+            }
+        );
     }
 
     #[test]

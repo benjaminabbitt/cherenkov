@@ -379,6 +379,58 @@ fn gone(pid: u32) -> bool {
     std::fs::read_to_string(format!("/proc/{pid}/stat")).map_or(true, |s| s.contains(") Z "))
 }
 
+/// Busy threads, several for each core, until the guard is dropped: a
+/// machine too loaded for anything to get a core to itself.
+struct Hogs(Arc<std::sync::atomic::AtomicBool>);
+
+impl Hogs {
+    fn start() -> Hogs {
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let cores = std::thread::available_parallelism().map_or(1, usize::from);
+        for _ in 0..cores * 4 {
+            let stop = Arc::clone(&stop);
+            std::thread::spawn(move || {
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    std::hint::spin_loop();
+                }
+            });
+        }
+        Hogs(stop)
+    }
+}
+
+impl Drop for Hogs {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_live_gdb_a_looping_mutant_is_timed_out_on_a_loaded_machine_too() {
+    let _hogs = Hogs::start();
+    let mut s = GdbSession::start(&config(integration())).unwrap();
+    let code = s
+        .function_code(&fixture().join("src/lib.rs"), 19)
+        .unwrap()
+        .unwrap();
+    let patch = derive(&plan("aor", 19), &code.file, &code.insns, &Isa::amd64()).unwrap();
+    s.arm(&patch).unwrap();
+    let started = std::time::Instant::now();
+    assert_eq!(
+        s.run_to_exit(Duration::from_secs(1)).unwrap(),
+        RunEnd::TimedOut
+    );
+    // Stretched by the wait, never past the backstop (6 s) and its slack.
+    let took = started.elapsed();
+    assert!(
+        took >= Duration::from_secs(1) && took < Duration::from_secs(10),
+        "{took:?}"
+    );
+    // The run says what the load took from it, for its verdict to net out.
+    assert!(s.lost_to_load() > Duration::ZERO && s.lost_to_load() <= Duration::from_secs(5));
+}
+
 #[test]
 #[ignore = "slow: needs gdb and cargo"]
 fn test_live_gdb_dropping_a_timed_out_session_kills_its_looping_inferior() {
