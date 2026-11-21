@@ -1507,10 +1507,10 @@ fn test_every_copy_of_a_generic_with_code_at_the_site_is_kept() {
         column,
     };
     // `pick<u8>` and `pick<u32>`: the same code at the same columns; a
-    // closure on the line has less there.
+    // closure on the line has less there, and its own entry.
     let u8_copy = vec![insn(0x10, 8), insn(0x11, 12)];
     let u32_copy = vec![insn(0x20, 8), insn(0x21, 12)];
-    let other = vec![insn(0x30, 8)];
+    let other = vec![insn(0x30, 14)];
     let at = |col| Pos {
         byte: 0,
         line: 9,
@@ -1521,6 +1521,40 @@ fn test_every_copy_of_a_generic_with_code_at_the_site_is_kept() {
         end: at(20),
     };
     assert_eq!(at_site_all(&[&u8_copy, &other, &u32_copy], &site), [0, 2]);
+}
+
+#[test]
+fn test_copies_of_a_generic_with_different_code_at_the_site_are_all_kept() {
+    use cherenkov_core::syntax::{Pos, Span};
+    use cherenkov_exec_dap::tierp::at_site_all;
+    let insn = |pc, column| Insn {
+        pc,
+        bytes: hex_bytes("90"),
+        file: "src/lib.rs".into(),
+        line: 9,
+        column,
+    };
+    // `check<u8>` compares inline; `check<&str>` calls the comparison and
+    // has more code in the same expression. Both start at the function's
+    // entry; the closure inside starts elsewhere.
+    let inline = vec![insn(0x10, 8), insn(0x11, 12)];
+    let calls = vec![
+        insn(0x20, 8),
+        insn(0x21, 12),
+        insn(0x22, 13),
+        insn(0x23, 15),
+    ];
+    let closure = vec![insn(0x30, 14), insn(0x31, 15)];
+    let at = |col| Pos {
+        byte: 0,
+        line: 9,
+        col,
+    };
+    let site = Span {
+        start: at(8),
+        end: at(20),
+    };
+    assert_eq!(at_site_all(&[&inline, &calls, &closure], &site), [0, 1]);
 }
 
 // --- Deleting a statement that branches: `note(s.parse()?);` decides at run
