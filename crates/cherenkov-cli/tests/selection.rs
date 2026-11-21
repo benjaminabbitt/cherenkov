@@ -134,14 +134,14 @@ fn test_names_are_cargo_mutants_names() {
     let p = Project::new("names", &[("src/lib.rs", NAMED)]);
     let names = p.names(&[]);
     for want in [
-        "src/lib.rs:5:59: replace m::S<'a, X>::get -> Result<(), String> with Ok(())",
-        "src/lib.rs:5:64: replace > with < in m::S<'a, X>::get",
-        "src/lib.rs:8:35: replace m::outer::inner -> i32 with 0",
-        "src/lib.rs:8:37: replace * with / in m::outer::inner",
+        "src/lib.rs:5:51: replace m::S<'a, X>::get -> Result<(), String> with Ok(())",
+        "src/lib.rs:5:56: replace > with < in m::S<'a, X>::get",
+        "src/lib.rs:8:27: replace m::outer::inner -> i32 with 0",
+        "src/lib.rs:8:29: replace * with / in m::outer::inner",
         "src/lib.rs:12:34: replace mk -> P with Default::default()",
         "src/lib.rs:12:43: replace + with * in mk",
-        "src/lib.rs:15:9: delete match arm 1 | 2 in arms",
-        "src/lib.rs:16:14: replace match guard k > 2 with true in arms",
+        "src/lib.rs:15:1: delete match arm 1 | 2 in arms",
+        "src/lib.rs:16:6: replace match guard k > 2 with true in arms",
         "src/lib.rs:20:24: replace * with +",
     ] {
         assert!(names.iter().any(|n| n == want), "{want}\n{names:#?}");

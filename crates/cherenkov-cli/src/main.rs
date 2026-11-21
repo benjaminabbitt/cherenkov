@@ -9,7 +9,9 @@
 //! JSON, `cherenkov: message` under text, with the exit-code convention's
 //! code (10 failed, 20 declined).
 
+mod config;
 mod error;
+mod names;
 mod output;
 mod render;
 mod run;
@@ -38,7 +40,7 @@ use cli_support::{Failure, usage_exit};
 
 use crate::error::CliError;
 use crate::output::Listed;
-use crate::selection::{Selection, plan_selected};
+use crate::selection::{SelectArgs, Selection, plan_selected};
 
 /// The program's name, as errors are prefixed with it.
 const PROG: &str = "cherenkov";
@@ -58,28 +60,7 @@ struct Cli {
 enum Command {
     /// List the mutants Cherenkov would run for a project directory: the
     /// run planned, never run.
-    Plan {
-        dir: PathBuf,
-        /// json: one event per line; text: one line per mutant. Default:
-        /// text on a terminal, json otherwise.
-        #[arg(long, value_enum)]
-        format: Option<FormatArg>,
-        /// Also skip files matching this glob, relative to DIR (repeatable),
-        /// e.g. `**/*.test.rs` for tests kept beside the code.
-        #[arg(long)]
-        exclude: Vec<String>,
-        /// The named operator set to use (see `cherenkov sets`).
-        #[arg(long, default_value = "breadth")]
-        operators: String,
-        /// Mutate test code too: `#[cfg(test)]` and `#[test]` items and the
-        /// files only they reach. cargo-mutants never does.
-        #[arg(long = "include-tests")]
-        include_tests: bool,
-        /// Judge only the lines a unified diff adds (as cargo-mutants'
-        /// `--in-diff`): a mutant stays when its span touches one.
-        #[arg(long = "in-diff", value_name = "FILE")]
-        in_diff: Option<PathBuf>,
-    },
+    Plan(Box<PlanArgs>),
     /// Run every mutant of a Go package (Delve) or Cargo project (GDB) and
     /// print each verdict as it is decided.
     Run(Box<RunArgs>),
@@ -88,6 +69,34 @@ enum Command {
     /// List every named mutation, where its definition came from, and peers
     /// that have the same or a similar mutation.
     Mutations,
+}
+
+/// What `cherenkov plan` is asked.
+#[derive(Args)]
+struct PlanArgs {
+    dir: PathBuf,
+    /// json: one event per line; text: one line per mutant. Default:
+    /// text on a terminal, json otherwise.
+    #[arg(long, value_enum)]
+    format: Option<FormatArg>,
+    /// Also skip files matching this glob (repeatable), e.g.
+    /// `**/*.test.rs` for tests kept beside the code. A glob without a
+    /// `/` matches at any depth, as in cargo-mutants.
+    #[arg(short = 'e', long)]
+    exclude: Vec<String>,
+    /// The named operator set to use (see `cherenkov sets`).
+    #[arg(long, default_value = "breadth")]
+    operators: String,
+    #[command(flatten)]
+    select: SelectArgs,
+    /// Print each mutant's cargo-mutants name (`path:line:col: replace
+    /// X with Y in fn`), one a line, instead of the run's events.
+    #[arg(long)]
+    names: bool,
+    /// Judge only the lines a unified diff adds (as cargo-mutants'
+    /// `--in-diff`): a mutant stays when its span touches one.
+    #[arg(long = "in-diff", value_name = "FILE")]
+    in_diff: Option<PathBuf>,
 }
 
 /// What `cherenkov run` is asked: boxed in the command, which would
@@ -111,16 +120,15 @@ struct RunArgs {
     /// Path to cargo (default: PATH).
     #[arg(long)]
     cargo: Option<PathBuf>,
-    /// Also skip files matching this glob, relative to DIR (repeatable).
-    #[arg(long)]
+    /// Also skip files matching this glob (repeatable); without a `/` it
+    /// matches at any depth, as in cargo-mutants.
+    #[arg(short = 'e', long)]
     exclude: Vec<String>,
     /// The named operator set to use (see `cherenkov sets`).
     #[arg(long, default_value = "breadth")]
     operators: String,
-    /// Mutate test code too: `#[cfg(test)]` and `#[test]` items and the
-    /// files only they reach. cargo-mutants never does.
-    #[arg(long = "include-tests")]
-    include_tests: bool,
+    #[command(flatten)]
+    select: SelectArgs,
     /// Run only this test, by the runner's own name for it (repeatable).
     /// Rust: the libtest name (`module::test_name`); Go: `TestName` or
     /// `TestName/subtest`. Default: every test.
@@ -192,18 +200,21 @@ fn main() -> ExitCode {
         }
     };
     let (format, result) = match cli.command {
-        Command::Plan {
-            dir,
-            format,
-            exclude,
-            operators,
-            include_tests,
-            in_diff,
-        } => {
+        Command::Plan(args) => {
+            let PlanArgs {
+                dir,
+                format,
+                exclude,
+                operators,
+                select,
+                names,
+                in_diff,
+            } = *args;
             let format = chosen(format);
-            let selection = Selection { include_tests };
-            let result = operator_set(&operators)
-                .and_then(|set| plan(&dir, format, &exclude, &set, &selection, in_diff.as_deref()));
+            let result = operator_set(&operators).and_then(|set| {
+                let selection = Selection::load(&dir, &select, &exclude)?;
+                plan(&dir, format, &set, &selection, in_diff.as_deref(), names)
+            });
             (format, result)
         }
         Command::Run(args) => {
@@ -216,7 +227,7 @@ fn main() -> ExitCode {
                 cargo,
                 exclude,
                 operators,
-                include_tests,
+                select,
                 tests,
                 jobs,
                 cargo_args,
@@ -226,6 +237,8 @@ fn main() -> ExitCode {
             } = *args;
             let format = chosen(format);
             let result = operator_set(&operators).and_then(|set| {
+                let selection = Selection::load(&dir, &select, &exclude)?;
+                let cargo_args = [cargo_args, selection.cargo_args.clone()].concat();
                 run::run(
                     &dir,
                     &run::Tools {
@@ -238,9 +251,8 @@ fn main() -> ExitCode {
                         in_diff,
                         deficiency_log,
                         verdict_file,
-                        selection: Selection { include_tests },
+                        selection,
                     },
-                    &exclude,
                     &set,
                     &tests,
                     format,
@@ -313,24 +325,33 @@ fn mutations() {
 fn plan(
     dir: &Path,
     format: Format,
-    exclude: &[String],
     set: &OperatorSet,
     selection: &Selection,
     in_diff: Option<&Path>,
+    names: bool,
 ) -> Result<(), CliError> {
     // Under JSON, run.started names the set.
-    if format == Format::Text {
+    if format == Format::Text && !names {
         eprintln!("operators: {}", set.name);
     }
-    let syntax = TreeSitterSyntax::builtin().map_err(|e| CliError::Syntax {
-        reason: e.to_string(),
-    })?;
-    let profiles = with_excludes(syntax.profiles(), exclude);
+    let syntax = TreeSitterSyntax::builtin()
+        .map_err(|e| CliError::Syntax {
+            reason: e.to_string(),
+        })?
+        .with_skip_calls(selection.skip_calls.clone());
+    let profiles = with_excludes(syntax.profiles(), &selection.exclude_globs);
     let project = plan_selected(dir, &syntax, &profiles, set, selection)?;
     let plans = match in_diff {
         Some(file) => run::in_diff(project.plans.clone(), file, dir)?,
         None => project.plans.clone(),
     };
+    if names {
+        for name in crate::names::name_all(dir, &plans) {
+            println!("{name}");
+        }
+        summarize(&project);
+        return Ok(());
+    }
     let languages: Vec<&str> = project.diagnostics.keys().map(|l| l.as_str()).collect();
     let settings = Settings {
         root: dir.display().to_string(),

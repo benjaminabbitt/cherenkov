@@ -58,7 +58,7 @@ pub mod m {
 fn free() { let _ = P { a: 1 }; }
 "#;
 
-fn function<'a>(names: &'a Names, needle: &str) -> (String, String) {
+fn function(names: &Names, needle: &str) -> (String, String) {
     let at = SRC.find(needle).unwrap();
     let f = names.function_at(at, at + needle.len()).unwrap();
     (f.qualified.clone(), f.return_type.clone())

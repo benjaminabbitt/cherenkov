@@ -53,6 +53,7 @@ sysinfo = { version = "0.40.4", default-features = false, features = ["system"] 
 bitflags = { version = "2.13.2", features = ["serde"] }
 clap = { version = "4.6.8", features = ["derive"] }
 globset = "0.4.21"
+regex = "1.13.1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["preserve_order"] }
 sha2 = "0.11.1"

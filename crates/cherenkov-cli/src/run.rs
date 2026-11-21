@@ -84,7 +84,6 @@ fn repository_prefix(root: &Path) -> PathBuf {
 struct Asked<'a> {
     root: &'a Path,
     tools: &'a Tools,
-    exclude: &'a [String],
     set: &'a OperatorSet,
     tests: &'a [String],
     format: Format,
@@ -93,7 +92,6 @@ struct Asked<'a> {
 pub fn run(
     dir: &Path,
     tools: &Tools,
-    exclude: &[String],
     set: &OperatorSet,
     tests: &[String],
     format: Format,
@@ -106,7 +104,6 @@ pub fn run(
     let asked = Asked {
         root: &root,
         tools,
-        exclude,
         set,
         tests,
         format,
@@ -146,7 +143,7 @@ fn toolchain(e: impl std::fmt::Display) -> CliError {
 fn run_go(asked: &Asked) -> Result<(), CliError> {
     let (root, tools) = (asked.root, asked.tools);
     let plans = narrowed(
-        plan_language(root, "go", asked.exclude, asked.set, &tools.selection)?,
+        plan_language(root, "go", asked.set, &tools.selection)?,
         asked,
     )?;
     let jobs = tools.jobs.unwrap_or(1);
@@ -182,11 +179,10 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     // inline or in their own files, are never mutated.
     let code = rust_code_files_with(&cargo, root, &tools.cargo_args).map_err(toolchain)?;
     let canonical = root.canonicalize().map_err(|e| unreadable(root, &e))?;
-    let plans: Vec<MutantPlan> =
-        plan_language(root, "rust", asked.exclude, asked.set, &tools.selection)?
-            .into_iter()
-            .filter(|p| code.binary_search(&canonical.join(&p.file)).is_ok())
-            .collect();
+    let plans: Vec<MutantPlan> = plan_language(root, "rust", asked.set, &tools.selection)?
+        .into_iter()
+        .filter(|p| code.binary_search(&canonical.join(&p.file)).is_ok())
+        .collect();
     let plans = narrowed(plans, asked)?;
     // cargo builds into the project's own target directory, as for any test run.
     let mut programs =
@@ -307,14 +303,15 @@ fn default_facts(
 fn plan_language(
     root: &Path,
     lang: &str,
-    exclude: &[String],
     set: &OperatorSet,
     selection: &Selection,
 ) -> Result<Vec<MutantPlan>, CliError> {
-    let syntax = TreeSitterSyntax::builtin().map_err(|e| CliError::Syntax {
-        reason: e.to_string(),
-    })?;
-    let profiles: Vec<_> = crate::with_excludes(syntax.profiles(), exclude)
+    let syntax = TreeSitterSyntax::builtin()
+        .map_err(|e| CliError::Syntax {
+            reason: e.to_string(),
+        })?
+        .with_skip_calls(selection.skip_calls.clone());
+    let profiles: Vec<_> = crate::with_excludes(syntax.profiles(), &selection.exclude_globs)
         .into_iter()
         .filter(|p| p.lang.as_str() == lang)
         .collect();
