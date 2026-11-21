@@ -16,6 +16,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::dap::{DapClient, DapError, EventQueue};
+use crate::load::{Allowance, Scheduling};
 use crate::native::{
     Effect, Evaluated, FunctionCode, Launcher, NativeSession, Recorded, RunEnd, TierPExecutor,
     kill_debuggee,
@@ -54,6 +55,8 @@ pub struct GdbSession {
     inferior: Option<u32>,
     /// The last run timed out: the program is still running.
     running: bool,
+    /// What the last run lost to waiting for a CPU, in its wall time.
+    lost: Duration,
     /// GDB is inside a call into the program that did not return (an
     /// evaluation waiting on a thread it stopped): it cannot be reused.
     stuck: bool,
@@ -98,6 +101,7 @@ impl GdbSession {
             dap: DapClient::over(stdout, stdin, REQUEST),
             thread: 1,
             inferior: None,
+            lost: Duration::ZERO,
             running: false,
             stuck: false,
             test_args: config.test_args.clone(),
@@ -196,16 +200,105 @@ impl GdbSession {
         }
     }
 
-    /// The next `exited` or `stopped` event within `limit`. A program killed
+    /// The continue-and-evaluate loop of [`GdbSession::run_evaluating`].
+    fn evaluate_loop(
+        &mut self,
+        allowance: &mut Allowance,
+        call: &str,
+    ) -> Result<Evaluated, ExecError> {
+        let mut reached = false;
+        let mut resume = true;
+        loop {
+            if resume {
+                self.dap
+                    .request("continue", json!({"threadId": self.thread}))
+                    .map_err(err("continue"))?;
+            }
+            resume = true;
+            match self.next_step(allowance, call, &mut reached)? {
+                Step::Resume => {}
+                Step::Wait => resume = false,
+                Step::Done(evaluated) => return Ok(evaluated),
+                Step::Ended(end) => {
+                    return Ok(Evaluated {
+                        end,
+                        reached,
+                        refused: None,
+                    });
+                }
+            }
+        }
+    }
+
+    /// The continue-and-wait loop of [`GdbSession::run_reaching`].
+    fn reach_loop(
+        &mut self,
+        allowance: &mut Allowance,
+        watching: &mut bool,
+        reached: &mut bool,
+    ) -> Result<RunEnd, ExecError> {
+        loop {
+            self.dap
+                .request("continue", json!({"threadId": self.thread}))
+                .map_err(err("continue"))?;
+            match self.wait_end(allowance) {
+                Ok(event) if event[VANISHED] == true => return Ok(self.vanished_end()),
+                Ok(event) if event["event"] == "exited" => {
+                    let body: ExitedEventBody = serde_json::from_value(event["body"].clone())
+                        .map_err(err("exited event"))?;
+                    self.await_last_output();
+                    return Ok(self.exit_end(body.exit_code));
+                }
+                Ok(event) => {
+                    let body: StoppedEventBody = serde_json::from_value(event["body"].clone())
+                        .map_err(err("stopped event"))?;
+                    // The only breakpoints after `main` are the reach ones;
+                    // any other stop is a crash (a fatal signal), caught
+                    // before it kills the process.
+                    if body.reason.contains("syscall") {
+                        let code = self.exit_status()?;
+                        self.settle_output();
+                        return Ok(RunEnd::Exited(code));
+                    }
+                    if *watching && body.reason.contains("breakpoint") {
+                        *reached = true;
+                        *watching = false;
+                        self.instruction_breakpoints(&[])?;
+                        continue;
+                    }
+                    let kind = self.stop_kind(&body);
+                    return Ok(RunEnd::Crashed {
+                        kind,
+                        message: body.text.unwrap_or_default(),
+                    });
+                }
+                Err(DapError::Timeout(_)) => {
+                    self.running = true;
+                    return Ok(RunEnd::TimedOut);
+                }
+                Err(e) => return Err(ExecError(format!("waiting for exit: {e}"))),
+            }
+        }
+    }
+
+    /// The time allowed one run of `timeout`, stretched by the time machine
+    /// load takes from it.
+    fn allowance(&self, timeout: Duration) -> Allowance {
+        Allowance::new(
+            timeout,
+            Box::new(Scheduling::new(self.pid(), self.debuggee_pid())),
+        )
+    }
+
+    /// The next `exited` or `stopped` event within the `allowance`. A program killed
     /// outright (SIGKILL) sometimes ends with no event from GDB at all; the
     /// wait checks, once a second, that the program still exists, and when
     /// it does not, gives GDB a moment more and then reports it gone (an
     /// event marked [`VANISHED`]) rather than waiting out the budget.
-    fn wait_end(&mut self, limit: Duration) -> Result<Value, DapError> {
-        let deadline = Instant::now() + limit;
+    fn wait_end(&mut self, allowance: &mut Allowance) -> Result<Value, DapError> {
         let mut gone_since: Option<Instant> = None;
         loop {
-            let left = deadline.saturating_duration_since(Instant::now());
+            let left = allowance.left();
             match self
                 .dap
                 .wait_any_event(&["exited", "stopped"], left.min(Duration::from_secs(1)))
@@ -576,30 +669,14 @@ impl NativeSession for GdbSession {
         if let Some(refused) = self.load_libraries(effect)? {
             return Ok(Some(refused));
         }
-        let mut reached = false;
-        let mut resume = true;
-        let deadline = Instant::now() + timeout;
-        loop {
-            if resume {
-                self.dap
-                    .request("continue", json!({"threadId": self.thread}))
-                    .map_err(err("continue"))?;
-            }
-            resume = true;
-            let left = deadline.saturating_duration_since(Instant::now());
-            match self.next_step(left, deadline, &call, &mut reached)? {
-                Step::Resume => {}
-                Step::Wait => resume = false,
-                Step::Done(evaluated) => return Ok(Some(evaluated)),
-                Step::Ended(end) => {
-                    return Ok(Some(Evaluated {
-                        end,
-                        reached,
-                        refused: None,
-                    }));
-                }
-            }
-        }
+        let mut allowance = self.allowance(timeout);
+        let evaluated = self.evaluate_loop(&mut allowance, &call);
+        self.lost = allowance.finish();
+        evaluated.map(Some)
+    }
+
+    fn lost_to_load(&self) -> Duration {
+        self.lost
     }
 
     fn take_output(&mut self) -> String {
@@ -664,53 +741,10 @@ impl NativeSession for GdbSession {
             self.instruction_breakpoints(reach)?;
         }
         let mut reached = false;
-        let deadline = Instant::now() + timeout;
-        loop {
-            self.dap
-                .request("continue", json!({"threadId": self.thread}))
-                .map_err(err("continue"))?;
-            let left = deadline.saturating_duration_since(Instant::now());
-            match self.wait_end(left) {
-                Ok(event) if event[VANISHED] == true => {
-                    return Ok((self.vanished_end(), reached));
-                }
-                Ok(event) if event["event"] == "exited" => {
-                    let body: ExitedEventBody = serde_json::from_value(event["body"].clone())
-                        .map_err(err("exited event"))?;
-                    self.await_last_output();
-                    return Ok((self.exit_end(body.exit_code), reached));
-                }
-                Ok(event) => {
-                    let body: StoppedEventBody = serde_json::from_value(event["body"].clone())
-                        .map_err(err("stopped event"))?;
-                    // The only breakpoints after `main` are the reach ones;
-                    // any other stop is a crash (a fatal signal), caught
-                    // before it kills the process.
-                    if body.reason.contains("syscall") {
-                        let code = self.exit_status()?;
-                        self.settle_output();
-                        return Ok((RunEnd::Exited(code), reached));
-                    }
-                    if watching && body.reason.contains("breakpoint") {
-                        reached = true;
-                        watching = false;
-                        self.instruction_breakpoints(&[])?;
-                        continue;
-                    }
-                    let kind = self.stop_kind(&body);
-                    let end = RunEnd::Crashed {
-                        kind,
-                        message: body.text.unwrap_or_default(),
-                    };
-                    return Ok((end, reached));
-                }
-                Err(DapError::Timeout(_)) => {
-                    self.running = true;
-                    return Ok((RunEnd::TimedOut, reached));
-                }
-                Err(e) => return Err(ExecError(format!("waiting for exit: {e}"))),
-            }
-        }
+        let mut allowance = self.allowance(timeout);
+        let ended = self.reach_loop(&mut allowance, &mut watching, &mut reached);
+        self.lost = allowance.finish();
+        ended.map(|end| (end, reached))
     }
 
     fn run_recording(
@@ -1227,12 +1261,11 @@ impl GdbSession {
     /// does about it.
     fn next_step(
         &mut self,
-        left: Duration,
-        deadline: Instant,
+        allowance: &mut Allowance,
         call: &str,
         reached: &mut bool,
     ) -> Result<Step, ExecError> {
-        match self.wait_end(left) {
+        match self.wait_end(allowance) {
             Ok(event) if event[VANISHED] == true => Ok(Step::Ended(self.vanished_end())),
             Ok(event) if event["event"] == "exited" => {
                 let body: ExitedEventBody =
@@ -1243,7 +1276,7 @@ impl GdbSession {
             Ok(event) => {
                 let body: StoppedEventBody =
                     serde_json::from_value(event["body"].clone()).map_err(err("stopped event"))?;
-                self.on_stop(body, deadline, call, reached)
+                self.on_stop(body, allowance, call, reached)
             }
             Err(DapError::Timeout(_)) => {
                 self.running = true;
@@ -1259,7 +1292,7 @@ impl GdbSession {
     fn on_stop(
         &mut self,
         body: StoppedEventBody,
-        deadline: Instant,
+        allowance: &mut Allowance,
         call: &str,
         reached: &mut bool,
     ) -> Result<Step, ExecError> {
@@ -1280,7 +1313,7 @@ impl GdbSession {
         }
         if body.reason.contains("breakpoint") {
             *reached = true;
-            return self.evaluate_at_breakpoint(deadline, call);
+            return self.evaluate_at_breakpoint(allowance, call);
         }
         let kind = self.stop_kind(&body);
         Ok(Step::Ended(RunEnd::Crashed {
@@ -1292,7 +1325,11 @@ impl GdbSession {
     /// Apply the effect at a breakpoint, within what is left of the run's
     /// budget; the run goes on unless the evaluation is refused or the
     /// budget is spent.
-    fn evaluate_at_breakpoint(&mut self, deadline: Instant, call: &str) -> Result<Step, ExecError> {
+    fn evaluate_at_breakpoint(
+        &mut self,
+        allowance: &mut Allowance,
+        call: &str,
+    ) -> Result<Step, ExecError> {
         let done = |end, refused| {
             Ok(Step::Done(Evaluated {
                 end,
@@ -1301,7 +1338,7 @@ impl GdbSession {
             }))
         };
         // The run's budget covers its evaluations too.
-        let left = deadline.saturating_duration_since(Instant::now());
+        let left = allowance.left();
         if left.is_zero() {
             return done(RunEnd::TimedOut, None);
         }
