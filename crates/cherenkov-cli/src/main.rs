@@ -25,10 +25,10 @@ use std::process::ExitCode;
 use angzarr_presentation::{Catalog, CatalogError, Format};
 
 use cherenkov_core::concept::Concept;
-use cherenkov_core::operator_set::{OperatorSet, named, registry};
-use cherenkov_core::plan::{Diagnostics, SkipReason};
+use cherenkov_core::operator_set::{CustomSet, OperatorSet, SetError, registry, resolve_sets};
+use cherenkov_core::plan::{Diagnostics, MutantPlan, Provenance, SkipReason};
 use cherenkov_core::profile::Profile;
-use cherenkov_core::session::{FileProblem, ProjectPlan, plan_project};
+use cherenkov_core::session::{FileProblem, ProjectPlan, plan_project_sets};
 use cherenkov_fs::FsSourceReader;
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::Settings;
@@ -191,8 +191,8 @@ fn main() -> ExitCode {
             in_diff,
         } => {
             let format = chosen(format);
-            let result = operator_set(&operators)
-                .and_then(|set| plan(&dir, format, &exclude, &set, in_diff.as_deref()));
+            let result = operator_sets(&operators)
+                .and_then(|sets| plan(&dir, format, &exclude, &sets, in_diff.as_deref()));
             (format, result)
         }
         Command::Run(args) => {
@@ -213,7 +213,7 @@ fn main() -> ExitCode {
                 verdict_file,
             } = *args;
             let format = chosen(format);
-            let result = operator_set(&operators).and_then(|set| {
+            let result = operator_sets(&operators).and_then(|sets| {
                 run::run(
                     &dir,
                     &run::Tools {
@@ -228,7 +228,7 @@ fn main() -> ExitCode {
                         verdict_file,
                     },
                     &exclude,
-                    &set,
+                    &sets,
                     &tests,
                     format,
                 )
@@ -254,15 +254,63 @@ fn main() -> ExitCode {
     }
 }
 
-/// The set called `name`, or an error naming the known sets.
-pub(crate) fn operator_set(name: &str) -> Result<OperatorSet, CliError> {
-    named(name).ok_or_else(|| {
-        let known: Vec<&str> = registry().iter().map(|s| s.name).collect();
-        CliError::UnknownOperatorSet {
-            name: name.to_string(),
-            known: known.join(", "),
+/// The sets `spec` asks for (`a,b,file.toml`), or the error that says why not.
+pub(crate) fn operator_sets(spec: &str) -> Result<Vec<OperatorSet>, CliError> {
+    resolve_sets(spec, load_set).map_err(|e| match e {
+        SetError::Unknown(name) => {
+            let known: Vec<&str> = registry().iter().map(|s| s.name).collect();
+            CliError::UnknownOperatorSet {
+                name,
+                known: known.join(", "),
+            }
         }
+        SetError::Unreadable { path, reason } => CliError::Unreadable { path, reason },
+        SetError::Invalid { path, reason } => CliError::BadOperatorSet { path, reason },
+        other => CliError::BadOperatorSet {
+            path: spec.to_string(),
+            reason: other.reason(),
+        },
     })
+}
+
+/// A custom set's file, read and parsed.
+fn load_set(path: &str) -> Result<CustomSet, String> {
+    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    toml::from_str(&text).map_err(|e| e.to_string())
+}
+
+/// The sets' names, as `run.started` and the operators line show them.
+pub(crate) fn set_names(sets: &[OperatorSet]) -> String {
+    let names: Vec<&str> = sets.iter().map(|s| s.name).collect();
+    names.join(",")
+}
+
+/// With several sets, how many mutants each produced and how many more than
+/// one did: the provenance of the plan, summarized. Nothing for one set.
+pub(crate) fn provenance_line(
+    sets: &[OperatorSet],
+    plans: &[MutantPlan],
+    provenance: &Provenance,
+) -> Option<String> {
+    if sets.len() < 2 {
+        return None;
+    }
+    let of: Vec<&Vec<&str>> = plans.iter().filter_map(|p| provenance.get(&p.id)).collect();
+    let each: Vec<String> = sets
+        .iter()
+        .map(|s| {
+            format!(
+                "{} {}",
+                s.name,
+                of.iter().filter(|v| v.contains(&s.name)).count()
+            )
+        })
+        .collect();
+    let shared = of.iter().filter(|v| v.len() > 1).count();
+    Some(format!(
+        "provenance: {}; in more than one set: {shared}",
+        each.join(", ")
+    ))
 }
 
 fn sets() {
@@ -301,12 +349,12 @@ fn plan(
     dir: &Path,
     format: Format,
     exclude: &[String],
-    set: &OperatorSet,
+    sets: &[OperatorSet],
     in_diff: Option<&Path>,
 ) -> Result<(), CliError> {
     // Under JSON, run.started names the set.
     if format == Format::Text {
-        eprintln!("operators: {}", set.name);
+        eprintln!("operators: {}", set_names(sets));
     }
     let syntax = TreeSitterSyntax::builtin().map_err(|e| CliError::Syntax {
         reason: e.to_string(),
@@ -317,11 +365,10 @@ fn plan(
         reason: e.to_string(),
     };
     let reader = FsSourceReader::new(dir, &profiles).map_err(|e| unreadable(&e))?;
-    let project = plan_project(&reader, &syntax, &profiles, &set.operators()).map_err(|e| {
-        CliError::Planning {
+    let project =
+        plan_project_sets(&reader, &syntax, &profiles, sets).map_err(|e| CliError::Planning {
             reason: format!("{}: {e}", dir.display()),
-        }
-    })?;
+        })?;
     let plans = match in_diff {
         Some(file) => run::in_diff(project.plans.clone(), file, dir)?,
         None => project.plans.clone(),
@@ -330,7 +377,7 @@ fn plan(
     let settings = Settings {
         root: dir.display().to_string(),
         language: languages.join(","),
-        operators: set.name.to_string(),
+        operators: set_names(sets),
         jobs: 0,
     };
     let sink = output::sink(format, Listed::Planned, None);
@@ -343,6 +390,9 @@ fn plan(
     )
     .map_err(|e| CliError::run(&e))?;
     summarize(&project);
+    if let Some(line) = provenance_line(sets, &plans, &project.provenance) {
+        eprintln!("{line}");
+    }
     Ok(())
 }
 

@@ -29,11 +29,11 @@ pub fn plan_file_sets(file: &FileSyntax, profile: &Profile, sets: &[OperatorSet]
     for set in sets {
         let planned = plan_file(file, profile, &set.operators());
         merged.diagnostics.merge(&planned.diagnostics);
-        for mut plan in planned.plans {
+        for plan in planned.plans {
             match index.get(&change(&plan)) {
                 Some(&at) => tag(&mut merged, at, set.name),
                 None => {
-                    plan.sets = vec![set.name];
+                    merged.provenance.insert(plan.id.clone(), vec![set.name]);
                     index.insert(change(&plan), merged.plans.len());
                     merged.plans.push(plan);
                 }
@@ -57,7 +57,10 @@ pub fn plan_file_sets(file: &FileSyntax, profile: &Profile, sets: &[OperatorSet]
 
 /// Plan `at` of `merged` also came from `set`: counted as deduplicated.
 fn tag(merged: &mut PlanOutput, at: usize, set: &'static str) {
-    let sets = &mut merged.plans[at].sets;
+    let sets = merged
+        .provenance
+        .entry(merged.plans[at].id.clone())
+        .or_default();
     if !sets.contains(&set) {
         sets.push(set);
         merged.diagnostics.deduplicated += 1;

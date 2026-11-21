@@ -296,3 +296,17 @@ fn test_an_unreadable_toml_is_reported_with_its_path() {
         }
     );
 }
+
+#[test]
+fn test_an_invalid_custom_set_is_reported_with_its_path_and_reason() {
+    let err = resolve_sets("m.toml", |_| Ok(custom(&["ror/zzz"], &[])))
+        .err()
+        .unwrap();
+    assert_eq!(
+        err,
+        SetError::Invalid {
+            path: "m.toml".into(),
+            reason: "no mutation named ror/zzz".into()
+        }
+    );
+}

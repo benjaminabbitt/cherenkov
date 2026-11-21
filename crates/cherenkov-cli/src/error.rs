@@ -11,6 +11,9 @@ use cli_support::{Exit, ExitClass};
 pub enum CliError {
     /// No operator set has this name.
     UnknownOperatorSet { name: String, known: String },
+    /// A custom operator set's file is not a set (not TOML of the right
+    /// shape, or it names a mutation or skip kind that does not exist).
+    BadOperatorSet { path: String, reason: String },
     /// The directory holds no project a run can execute.
     NoProject { dir: String },
     /// A tool the run needs is not where it was looked for.
@@ -49,6 +52,7 @@ impl Diagnostic for CliError {
     fn code(&self) -> &str {
         match self {
             CliError::UnknownOperatorSet { .. } => code!("unknown-operator-set"),
+            CliError::BadOperatorSet { .. } => code!("bad-operator-set"),
             CliError::NoProject { .. } => code!("no-project"),
             CliError::ToolMissing { .. } => code!("tool-missing"),
             CliError::Unreadable { .. } => code!("unreadable"),
@@ -69,7 +73,7 @@ impl Diagnostic for CliError {
             }
             CliError::NoProject { dir } => vec![("dir", dir.as_str().into())],
             CliError::ToolMissing { tool } => vec![("tool", tool.as_str().into())],
-            CliError::Unreadable { path, reason } => {
+            CliError::BadOperatorSet { path, reason } | CliError::Unreadable { path, reason } => {
                 vec![
                     ("path", path.as_str().into()),
                     ("reason", reason.as_str().into()),
@@ -89,6 +93,7 @@ impl ExitClass for CliError {
     fn exit(&self) -> Exit {
         match self {
             CliError::UnknownOperatorSet { .. }
+            | CliError::BadOperatorSet { .. }
             | CliError::NoProject { .. }
             | CliError::ToolMissing { .. } => Exit::REFUSED,
             _ => Exit::FAILED,
@@ -110,6 +115,10 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(CliError::UnknownOperatorSet {
             name: "nope".into(),
             known: "breadth".into(),
+        }),
+        Box::new(CliError::BadOperatorSet {
+            path: "p".into(),
+            reason: reason(),
         }),
         Box::new(CliError::NoProject { dir: "d".into() }),
         Box::new(CliError::ToolMissing { tool: "gdb".into() }),

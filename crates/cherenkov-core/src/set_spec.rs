@@ -21,10 +21,26 @@ pub enum SetError {
     Unknown(String),
     /// The custom set's file could not be read.
     Unreadable { path: String, reason: String },
+    /// The custom set in this file is not a set.
+    Invalid { path: String, reason: String },
     /// The custom set names a mutation `cherenkov mutations` does not list.
     UnknownMutation(String),
     /// The custom set names a skip kind that does not exist.
     UnknownSkip(String),
+}
+
+impl SetError {
+    /// What is wrong with a custom set.
+    pub fn reason(&self) -> String {
+        match self {
+            SetError::UnknownMutation(m) => format!("no mutation named {m}"),
+            SetError::UnknownSkip(k) => format!("no skip kind named {k}"),
+            SetError::Invalid { reason, .. } | SetError::Unreadable { reason, .. } => {
+                reason.clone()
+            }
+            SetError::Unknown(name) => format!("no operator set named {name}"),
+        }
+    }
 }
 
 /// A set as a file defines it.
@@ -65,7 +81,10 @@ fn one_set(
             path: item.to_string(),
             reason,
         })?;
-        return custom_set(custom);
+        return custom_set(custom).map_err(|e| SetError::Invalid {
+            path: item.to_string(),
+            reason: e.reason(),
+        });
     }
     named(item).ok_or_else(|| SetError::Unknown(item.to_string()))
 }

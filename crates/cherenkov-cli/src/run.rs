@@ -11,7 +11,7 @@ use cherenkov_core::diff::AddedLines;
 use cherenkov_core::execution::MutantExecutor;
 use cherenkov_core::operator_set::OperatorSet;
 use cherenkov_core::plan::MutantPlan;
-use cherenkov_core::session::plan_project;
+use cherenkov_core::session::plan_project_sets;
 use cherenkov_core::types::DefaultFacts;
 use cherenkov_exec_dap::delve::{DelveConfig, DelveExecutor};
 use cherenkov_exec_dap::gdb::{GdbConfig, GdbExecutor};
@@ -84,7 +84,7 @@ struct Asked<'a> {
     root: &'a Path,
     tools: &'a Tools,
     exclude: &'a [String],
-    set: &'a OperatorSet,
+    sets: &'a [OperatorSet],
     tests: &'a [String],
     format: Format,
 }
@@ -93,20 +93,20 @@ pub fn run(
     dir: &Path,
     tools: &Tools,
     exclude: &[String],
-    set: &OperatorSet,
+    sets: &[OperatorSet],
     tests: &[String],
     format: Format,
 ) -> Result<(), CliError> {
     // Under JSON, run.started names the set.
     if format == Format::Text {
-        eprintln!("operators: {}", set.name);
+        eprintln!("operators: {}", crate::set_names(sets));
     }
     let root = dir.canonicalize().map_err(|e| unreadable(dir, &e))?;
     let asked = Asked {
         root: &root,
         tools,
         exclude,
-        set,
+        sets,
         tests,
         format,
     };
@@ -144,7 +144,7 @@ fn toolchain(e: impl std::fmt::Display) -> CliError {
 
 fn run_go(asked: &Asked) -> Result<(), CliError> {
     let (root, tools) = (asked.root, asked.tools);
-    let plans = narrowed(plan_language(root, "go", asked.exclude, asked.set)?, asked)?;
+    let plans = narrowed(plan_language(root, "go", asked.exclude, asked.sets)?, asked)?;
     let jobs = tools.jobs.unwrap_or(1);
     let dlv = find_tool(tools.dlv.as_deref(), "dlv")?;
     let go = find_tool(tools.go.as_deref(), "go")?;
@@ -178,7 +178,7 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     // inline or in their own files, are never mutated.
     let code = rust_code_files_with(&cargo, root, &tools.cargo_args).map_err(toolchain)?;
     let canonical = root.canonicalize().map_err(|e| unreadable(root, &e))?;
-    let plans: Vec<MutantPlan> = plan_language(root, "rust", asked.exclude, asked.set)?
+    let plans: Vec<MutantPlan> = plan_language(root, "rust", asked.exclude, asked.sets)?
         .into_iter()
         .filter(|p| code.binary_search(&canonical.join(&p.file)).is_ok())
         .collect();
@@ -250,7 +250,7 @@ fn on_run_layer(
     let settings = Settings {
         root: asked.root.display().to_string(),
         language: lang.to_string(),
-        operators: asked.set.name.to_string(),
+        operators: crate::set_names(asked.sets),
         jobs: workers.jobs,
     };
     let log = match &asked.tools.deficiency_log {
@@ -303,7 +303,7 @@ fn plan_language(
     root: &Path,
     lang: &str,
     exclude: &[String],
-    set: &OperatorSet,
+    sets: &[OperatorSet],
 ) -> Result<Vec<MutantPlan>, CliError> {
     let syntax = TreeSitterSyntax::builtin().map_err(|e| CliError::Syntax {
         reason: e.to_string(),
@@ -313,11 +313,10 @@ fn plan_language(
         .filter(|p| p.lang.as_str() == lang)
         .collect();
     let reader = FsSourceReader::new(root, &profiles).map_err(|e| unreadable(root, &e))?;
-    let project = plan_project(&reader, &syntax, &profiles, &set.operators()).map_err(|e| {
-        CliError::Planning {
+    let project =
+        plan_project_sets(&reader, &syntax, &profiles, sets).map_err(|e| CliError::Planning {
             reason: format!("{}: {e}", root.display()),
-        }
-    })?;
+        })?;
     Ok(project.plans)
 }
 

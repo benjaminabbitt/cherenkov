@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::operator::Operator;
 use crate::operator_set::OperatorSet;
-use crate::plan::{Diagnostics, MutantPlan, PlanOutput, plan_file};
+use crate::plan::{Diagnostics, MutantPlan, PlanOutput, Provenance, plan_file};
 use crate::plan_sets::plan_file_sets;
 use crate::ports::{SourceReader, SyntaxPort};
 use crate::profile::Profile;
@@ -28,6 +28,8 @@ pub struct ProjectPlan {
     pub plans: Vec<MutantPlan>,
     pub diagnostics: BTreeMap<LanguageId, Diagnostics>,
     pub problems: Vec<(PathBuf, FileProblem)>,
+    /// Per mutant, the operator sets that produced it (planning with sets).
+    pub provenance: Provenance,
 }
 
 /// Plan every file of every profiled language. A file that cannot be read
@@ -95,6 +97,7 @@ fn plan_project_with(
             let planned = plan(&file, profile);
             diagnostics.merge(&planned.diagnostics);
             out.plans.extend(planned.plans);
+            out.provenance.extend(planned.provenance);
         }
     }
     // Stable: each file keeps its own plan order.

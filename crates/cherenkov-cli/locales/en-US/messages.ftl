@@ -2,6 +2,7 @@
 # with the crate's name; the variables are its args.
 
 cherenkov-cli-unknown-operator-set = no operator set "{ $name }"; known sets: { $known }
+cherenkov-cli-bad-operator-set = { $path }: not an operator set: { $reason }
 cherenkov-cli-no-project = { $dir }: no go.mod or Cargo.toml; only Go and Rust are executable so far
 cherenkov-cli-tool-missing = { $tool } not found on PATH or in $HOME/go/bin; pass --{ $tool }
 cherenkov-cli-unreadable = { $path }: { $reason }

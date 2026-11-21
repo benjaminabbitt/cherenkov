@@ -39,7 +39,7 @@ fn test_one_set_plans_what_the_set_alone_plans_each_tagged_with_it() {
     assert_eq!(out.diagnostics, alone.diagnostics);
     for (a, b) in out.plans.iter().zip(&alone.plans) {
         assert_eq!(a.id, b.id);
-        assert_eq!(a.sets, ["breadth"]);
+        assert_eq!(out.provenance[&a.id], ["breadth"]);
     }
 }
 
@@ -70,14 +70,14 @@ fn test_two_sets_plan_each_replacement_once_with_every_set_that_has_it() {
         if in_b.contains(&key) {
             want.push("sufficient");
         }
-        assert_eq!(p.sets, want, "{}", p.describe());
+        assert_eq!(both.provenance[&p.id], want, "{}", p.describe());
     }
     assert!(
-        both.plans.iter().any(|p| p.sets.len() == 2),
+        both.provenance.values().any(|s| s.len() == 2),
         "some mutant is in both"
     );
     assert!(
-        both.plans.iter().any(|p| p.sets == ["sufficient"]),
+        both.provenance.values().any(|s| s == &["sufficient"]),
         "some only in the second"
     );
 }

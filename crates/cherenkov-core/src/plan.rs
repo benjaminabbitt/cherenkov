@@ -151,10 +151,6 @@ pub struct MutantPlan {
     /// mutant has no source form (a body replacement whose value the
     /// profile does not know).
     pub mutated: Option<String>,
-    /// The operator sets that produced it, in the order they were asked for
-    /// (several sets may; a mutant with the same span and replacement is
-    /// planned once).
-    pub sets: Vec<&'static str>,
 }
 
 impl MutantPlan {
@@ -275,7 +271,15 @@ impl Diagnostics {
 pub struct PlanOutput {
     pub plans: Vec<MutantPlan>,
     pub diagnostics: Diagnostics,
+    /// Per mutant, the operator sets that produced it, in the order they
+    /// were asked for. Filled when planning with sets
+    /// ([`crate::plan_sets::plan_file_sets`]); a mutant that several sets
+    /// produce is planned once.
+    pub provenance: Provenance,
 }
+
+/// The sets that produced each mutant.
+pub type Provenance = std::collections::BTreeMap<crate::id::MutantId, Vec<&'static str>>;
 
 /// Plan every mutant of one file. Pure and deterministic: plans come back
 /// sorted by stop position, then operator id, then edit.
@@ -293,8 +297,8 @@ pub fn plan_file(
     };
     if file.has_errors {
         return PlanOutput {
-            plans: Vec::new(),
             diagnostics,
+            ..PlanOutput::default()
         };
     }
 
@@ -316,7 +320,11 @@ pub fn plan_file(
     let drafts = ordered(drafts, &mut diagnostics);
     let plans = finished_plans(drafts, file, profile);
     diagnostics.planned = plans.len();
-    PlanOutput { plans, diagnostics }
+    PlanOutput {
+        plans,
+        diagnostics,
+        provenance: Provenance::new(),
+    }
 }
 
 /// The drafts of the edits `op` makes at the match of `cx`, counting in
@@ -420,7 +428,6 @@ fn finished_plans(drafts: Vec<Draft>, file: &FileSyntax, profile: &Profile) -> V
                 operands: d.operands,
                 original: d.site.text(&file.source).to_string(),
                 mutated: None,
-                sets: Vec::new(),
             }
         })
         .map(|mut plan| {

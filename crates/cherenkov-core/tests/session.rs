@@ -216,9 +216,9 @@ fn test_plan_project_sets_merges_the_sets_per_file_and_tags_each_plan() {
         out.plans.len()
     );
     assert!(
-        out.plans
-            .iter()
-            .any(|p| p.sets == ["breadth", "sufficient"])
+        out.provenance
+            .values()
+            .any(|s| s == &["breadth", "sufficient"])
     );
-    assert!(out.plans.iter().all(|p| !p.sets.is_empty()));
+    assert!(out.plans.iter().all(|p| !out.provenance[&p.id].is_empty()));
 }
