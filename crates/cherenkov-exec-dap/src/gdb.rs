@@ -1351,14 +1351,7 @@ impl GdbSession {
             // done.
             Err(DapError::Timeout(_)) => {
                 self.stuck = true;
-                return done(
-                    RunEnd::TimedOut,
-                    Some(format!(
-                        "the evaluation did not finish within {} s with the \
-                         program's other threads stopped",
-                        limit.as_secs()
-                    )),
-                );
+                return done(RunEnd::TimedOut, refusal_after(limit));
             }
             Err(e) => return Err(ExecError(format!("evaluate: {e}"))),
         };
@@ -1369,6 +1362,20 @@ impl GdbSession {
             None => Ok(Step::Resume),
         }
     }
+}
+
+/// Why an evaluation that did not finish in `limit` is refused: it had all
+/// the time an evaluation is given, so it is waiting on a thread it stopped.
+/// An evaluation the run's own budget cut short is no refusal: the run timed
+/// out, and a busy machine only makes that more likely.
+fn refusal_after(limit: Duration) -> Option<String> {
+    (limit >= EVALUATION).then(|| {
+        format!(
+            "the evaluation did not finish within {} s with the program's \
+             other threads stopped",
+            limit.as_secs()
+        )
+    })
 }
 
 /// What a run does after an event.
@@ -1394,7 +1401,20 @@ fn evaluator_answer(out: &str) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::alive;
+    use super::{EVALUATION, alive, refusal_after};
+    use std::time::Duration;
+
+    #[test]
+    fn test_an_evaluation_that_had_its_whole_time_and_did_not_finish_is_refused() {
+        let why = refusal_after(EVALUATION).unwrap();
+        assert!(why.contains("5 s"), "{why}");
+    }
+
+    #[test]
+    fn test_an_evaluation_cut_short_by_the_runs_budget_is_not_a_refusal() {
+        assert_eq!(refusal_after(EVALUATION - Duration::from_millis(1)), None);
+        assert_eq!(refusal_after(Duration::ZERO), None);
+    }
 
     #[test]
     fn test_this_process_is_alive() {
