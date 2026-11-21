@@ -1,3 +1,8 @@
+// Derived from cargo-mutants (https://github.com/sourcefrog/cargo-mutants),
+// src/fnvalue.rs, 26.2.0. Copyright (c) 2021 Martin Pool, MIT licence; the
+// notice is reproduced in THIRD-PARTY-NOTICES.md at the repository root and
+// must travel with copies of this file.
+
 //! Function-body replacement values for Rust result types, as cargo-mutants
 //! 26.2.0 generates them (`src/fnvalue.rs`): a small parser for the type's
 //! source text and the same recursive value table, branch for branch.

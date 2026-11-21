@@ -232,3 +232,6 @@ recipes you run in the container are the ones CI runs.
 
 Apache-2.0 OR BSD-3-Clause, at your option: see [LICENSE-APACHE](LICENSE-APACHE)
 and [LICENSE-BSD](LICENSE-BSD).
+
+One source file is derived from cargo-mutants (MIT): see
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
