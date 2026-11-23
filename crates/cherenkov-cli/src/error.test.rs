@@ -8,7 +8,7 @@ fn test_every_error_has_a_message_using_exactly_its_args() {
 
 #[test]
 fn test_a_request_the_state_forbids_is_declined_and_a_breakage_failed() {
-    // Exit 20 tells a caller to change the request; 10, to look at what broke.
+    // Refused (48) tells a caller to change the request; failed (32), to look at what broke.
     let missing = CliError::ToolMissing { tool: "gdb".into() };
     assert_eq!(missing.exit(), Exit::REFUSED);
     let broke = CliError::Toolchain { reason: "r".into() };

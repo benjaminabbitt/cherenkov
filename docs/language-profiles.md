@@ -657,7 +657,7 @@ mutant's stops, and at each hit runs an `Effect` (`native.rs:41`):
 |---|---|---|---|---|
 | Rust | GDB 14+ over its built-in DAP, plus Python helpers through the repl | yes | yes: the mature path, fidelity-checked | P, then B |
 | Go | Delve, one headless process serving DAP and JSON-RPC | yes | yes: earlier prototype | P only |
-| Python | none | yes | no: `cherenkov run` reports `py: no go.mod or Cargo.toml; only Go and Rust are executable so far` and exits 20 | none |
+| Python | none | yes | no: `cherenkov run` reports `py: no go.mod or Cargo.toml; only Go and Rust are executable so far` and exits 48 | none |
 
 Go details: memory read and write, disassembly and function entry go over
 Delve's JSON-RPC; DAP carries the session lifecycle and crash events

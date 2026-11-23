@@ -36,7 +36,7 @@ use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::Settings;
 use cherenkov_syntax::TreeSitterSyntax;
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use cli_support::{Failure, usage_exit};
+use cli_support::{Exit, Failure, usage_exit};
 
 use crate::error::CliError;
 use crate::output::Listed;
@@ -195,14 +195,14 @@ fn main() -> ExitCode {
         Ok(catalog) => catalog,
         Err(e) => {
             eprintln!("{PROG}: {e}");
-            return ExitCode::FAILURE;
+            return Exit::FAILED.process(false);
         }
     };
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(e) => {
             let _ = e.print();
-            return ExitCode::from(usage_exit(&e).code(false));
+            return usage_exit(&e).process(false);
         }
     };
     let (format, result) = match cli.command {
@@ -278,11 +278,11 @@ fn main() -> ExitCode {
         }
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => Exit::OK.process(false),
         Err(error) => {
             let failure = Failure::of(error);
             let _ = failure.say(PROG, format, &catalog, &mut std::io::stderr());
-            ExitCode::from(failure.exit.code(false))
+            failure.exit.process(false)
         }
     }
 }

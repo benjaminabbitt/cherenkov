@@ -181,8 +181,8 @@ cherenkov run . | jq 'select(.event == "mutant.decided" and .verdict == "survive
 ```
 
 An error is `{"code", "args", "message"}` on stderr under JSON (a line
-`cherenkov: message` under text), with exit code 10 when something broke
-and 20 when the request cannot be done (no project, no debugger, no such
+`cherenkov: message` under text), with exit code 32 when something broke
+and 48 when the request cannot be done (no project, no debugger, no such
 operator set).
 
 Development recipes (`justfile`):
