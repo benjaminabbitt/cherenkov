@@ -214,6 +214,9 @@ Development recipes (`justfile`):
 
 - `just check`: format check, clippy, and the fast tests
 - `just test-slow`: tests against real debuggers and toolchains (gdb, dlv, go)
+- `just test-determinism`: runs the Rust fixture twice under gdb and fails if
+  any mutant's verdict or tier differs between the runs (slow; not in
+  `just check`)
 - `just plan <dir>`: list planned mutants for a directory
 
 ## Fidelity
