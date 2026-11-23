@@ -1,0 +1,9 @@
+[package]
+name = "ws-app"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+ws-core = { path = "../core" }
+ws-util = { path = "../util" }

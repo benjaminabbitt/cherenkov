@@ -1,7 +1,9 @@
 //! `.cargo/mutants.toml`, cargo-mutants' configuration file, and what of it
 //! applies here. Every key cargo-mutants has is accepted; those that only
-//! steer its own build and test runs (`gitignore`, `test_workspace`,
-//! `copy_target`, `cap_lints`, ...) are ignored. Re-derived from its
+//! steer its own build and test runs (`gitignore`, `copy_target`,
+//! `cap_lints`, ...) are ignored. `test_package` and `test_workspace` choose
+//! which packages' tests judge a mutant (`test_scope.rs`,
+//! `docs/test-scope.md`). Re-derived from its
 //! documented behaviour (MIT, Copyright (c) 2022-2025 Martin Pool; the
 //! book's `skip_files`, `filter_mutants` and `skip_calls` pages).
 
@@ -29,8 +31,10 @@ pub struct Config {
     pub skip_calls: Vec<String>,
     /// Add the built-in `skip_calls` (`with_capacity`); on unless false.
     pub skip_calls_defaults: Option<bool>,
-    /// Run the tests of these packages.
+    /// Judge every mutant by the tests of these packages.
     pub test_package: Vec<String>,
+    /// Judge every mutant by the whole workspace's tests.
+    pub test_workspace: Option<bool>,
     /// Scale test timeouts. Cherenkov sets its own timeouts, so this is
     /// read and not used.
     pub timeout_multiplier: Option<f64>,

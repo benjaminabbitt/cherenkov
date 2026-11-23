@@ -185,6 +185,17 @@ target/release/cherenkov run path/to/project --test calc::test_total
 
 `--operators` defaults to `cargo-mutants` for Rust and `breadth` for Go and Python. `--exclude GLOB` skips more files.
 
+### Which tests judge a mutant (Rust workspaces)
+
+As in cargo-mutants (`docs/test-scope.md`): a mutant is judged by the tests
+of its own package, unless `--test-workspace true` (whole workspace) or
+`--test-package A,B` (those packages) says otherwise, on the command line or
+as `test_workspace` / `test_package` in `.cargo/mutants.toml`. Only the test
+programs of the packages that judge a planned mutant are built, prepared and
+recorded, so `--in-diff` on a large workspace costs about what the diff
+touches. Each phase's wall time is written to stderr (`cherenkov: phase
+build: 0.3 s`, `viability check`, `preparation and recording`, `mutants`).
+
 Output is a stream of events, each written as it happens
 (`docs/output-events.md`): JSON Lines when stdout is not a terminal, text
 on one (`--format json|text` chooses). `plan` is the dry run: the run

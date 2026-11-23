@@ -69,3 +69,18 @@ fn test_an_added_line_that_looks_like_a_file_header_is_still_an_added_line() {
     assert!(diff.touches(Path::new("x.rs"), 3, 3));
     assert!(!diff.touches(Path::new("x.rs"), 1, 1));
 }
+
+#[test]
+fn test_the_files_of_a_diff_come_with_the_line_ranges_it_adds() {
+    let diff =
+        "--- a/x/a.rs\n+++ b/x/a.rs\n@@ -1,2 +1,3 @@\n k\n+n\n k\n@@ -9,1 +10,2 @@\n k\n+m\n";
+    let added = cherenkov_core::diff::AddedLines::parse(diff);
+    let files: Vec<_> = added.files().collect();
+    assert_eq!(
+        files,
+        [(
+            std::path::Path::new("x/a.rs"),
+            [(2, 2), (11, 11)].as_slice()
+        )]
+    );
+}

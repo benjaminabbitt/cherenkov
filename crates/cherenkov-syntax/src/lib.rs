@@ -10,6 +10,7 @@ pub mod rust_chains;
 pub mod rust_modules;
 pub mod rust_names;
 pub mod rust_scope;
+pub mod rust_tests;
 pub mod rust_types;
 pub mod rust_values;
 

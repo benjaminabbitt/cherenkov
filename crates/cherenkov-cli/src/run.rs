@@ -2,7 +2,7 @@
 //! package or workspace (GDB) on the run layer, printing each event as it
 //! is recorded (`output.rs`).
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -17,9 +17,13 @@ use cherenkov_core::types::DefaultFacts;
 use cherenkov_exec_dap::delve::{DelveConfig, DelveExecutor};
 use cherenkov_exec_dap::gdb::{GdbConfig, GdbExecutor};
 use cherenkov_exec_dap::isa::Isa;
+use cherenkov_exec_dap::libtest::list_tests;
+use cherenkov_exec_dap::routing::OnlyJudged;
 use cherenkov_exec_dap::toolchain::{
-    build_go_test_binary, build_rust_test_programs_with, cargo_test_env, cargo_workspace,
-    cargo_workspace_prefix, go_test_args, rust_code_files_with, rust_test_args, rustup_toolchain,
+    Package, TestProgram, build_go_test_binary, build_rust_test_programs_of,
+    build_rust_test_programs_with, cargo_test_env, cargo_workspace, cargo_workspace_prefix,
+    go_test_args, package_args, package_of, rust_code_files_with, rust_test_args, rustup_toolchain,
+    workspace_packages,
 };
 use cherenkov_exec_dap::viability::{self, RustcRejects};
 use cherenkov_run_application::host::Readers;
@@ -28,9 +32,12 @@ use cherenkov_run_application::verdicts::VerdictFile;
 use cherenkov_run_application::workers::{Killer, SESSIONS_PER_WORKER};
 use cherenkov_syntax::TreeSitterSyntax;
 
+use crate::changed_tests::{ChangedTest, changed_tests, libtest_names};
 use crate::error::CliError;
 use crate::output::{self, Listed};
+use crate::phases::Phases;
 use crate::selection::{Selection, plan_selected};
+use crate::test_scope::{Scope, records_changed_tests_only};
 
 pub struct Tools {
     pub dlv: Option<PathBuf>,
@@ -190,26 +197,43 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     // inline or in their own files, are never mutated.
     let code = rust_code_files_with(&cargo, root, &tools.cargo_args).map_err(toolchain)?;
     let canonical = root.canonicalize().map_err(|e| unreadable(root, &e))?;
-    let plans: Vec<MutantPlan> = plan_language(root, "rust", asked.sets, &tools.selection)?
+    let every: Vec<MutantPlan> = plan_language(root, "rust", asked.sets, &tools.selection)?
         .into_iter()
         .filter(|p| code.binary_search(&canonical.join(&p.file)).is_ok())
         .collect();
-    let plans = narrowed(plans, asked)?;
-    // cargo builds into the project's own target directory, as for any test run.
-    let mut programs =
-        build_rust_test_programs_with(&cargo, root, &tools.cargo_args).map_err(toolchain)?;
+    // Changed application code: the mutants in the diff.
+    let changed_code = narrowed(every.clone(), asked)?;
+    let packages = workspace_packages(&cargo, root).map_err(toolchain)?;
+    let scope = Scope::of(
+        &tools.selection.test_packages,
+        &changed_code,
+        &packages,
+        &canonical,
+    );
+    // Changed tests: the mutants of what they can reach, judged by them.
+    let changed_tests = diff_tests(asked)?;
+    let scope = scope.with_changed_tests(&changed_tests, &every, &packages, &canonical);
+    let plans = scope.plans_to_run(changed_code, &every);
+    let mut programs = timed("build", || build_programs(&cargo, root, tools, &scope))?;
     programs.sort();
     let prefix = cargo_workspace_prefix(&cargo, root).map_err(toolchain)?;
     let facts = default_facts(&cargo, root, &tools.cargo_args)?;
     let (workspace_root, _) = cargo_workspace(&cargo, root).map_err(toolchain)?;
-    let rejected = rustc_rejects(asked, &cargo, &workspace_root, &plans);
+    let rejected = timed("viability check", || {
+        rustc_rejects(asked, &cargo, &workspace_root, &plans, &scope)
+    });
+    let routed: Vec<Routed> = programs
+        .iter()
+        .map(|program| routed(asked, &packages, &scope, program))
+        .collect();
     // One executor per test program for each worker; every worker has its
-    // own GDB sessions.
+    // own GDB sessions. A program judges the mutants routed to it.
     let set = || -> Vec<Box<dyn MutantExecutor + Send>> {
         programs
             .iter()
             .cloned()
-            .map(|program| {
+            .zip(&routed)
+            .map(|(program, routed)| {
                 // In its package's directory, as `cargo test` runs it.
                 // With cargo's environment too, as `cargo test` runs it.
                 let toolchain = rustup_toolchain(&program.package_dir);
@@ -218,7 +242,7 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
                 let config = GdbConfig {
                     gdb: gdb.clone(),
                     test_binary: program.binary,
-                    test_args: rust_test_args(asked.tests),
+                    test_args: routed.test_args.clone(),
                     cwd: Some(program.package_dir),
                     env,
                     source_root: Some(workspace_root.clone()),
@@ -231,8 +255,11 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
                     )
                     .with_default_facts(facts.clone())
                     .with_toolchain(support_toolchain);
-                Box::new(RustcRejects::new(executor, rejected.clone()))
-                    as Box<dyn MutantExecutor + Send>
+                let executor = RustcRejects::new(executor, rejected.clone());
+                Box::new(
+                    OnlyJudged::new(executor, routed.judged.clone())
+                        .with_changed(routed.only_changed.clone(), routed.changed.clone()),
+                ) as Box<dyn MutantExecutor + Send>
             })
             .collect()
     };
@@ -241,6 +268,81 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     let result = on_run_layer(asked, "rust", &plans, workers_of(sets, jobs));
     cherenkov_exec_dap::support_lib::remove_scratch();
     result
+}
+
+/// What one test program is given: the mutants it judges, those among them
+/// that only the changed tests judge, those tests by libtest name, and the
+/// arguments it runs with.
+struct Routed {
+    judged: Arc<BTreeSet<MutantId>>,
+    only_changed: Arc<BTreeSet<MutantId>>,
+    changed: Vec<String>,
+    test_args: Vec<String>,
+}
+
+/// `program`'s routing. When nothing but changed tests judge here, the
+/// program is baselined and recorded with those tests alone.
+fn routed(asked: &Asked, packages: &[Package], scope: &Scope, program: &TestProgram) -> Routed {
+    let package = package_of(packages, &program.package_dir).unwrap_or_default();
+    let (judged, only_changed) = (scope.judged_by(package), scope.only_changed(package));
+    let listed = list_tests(&program.binary).unwrap_or_default();
+    let changed = libtest_names(&listed, &scope.changed_in(package));
+    let test_args = if records_changed_tests_only(&judged, &only_changed, &changed, asked.tests) {
+        rust_test_args(&changed)
+    } else {
+        rust_test_args(asked.tests)
+    };
+    Routed {
+        judged,
+        only_changed,
+        changed,
+        test_args,
+    }
+}
+
+/// The tests the `--in-diff` diff changes (none without one).
+fn diff_tests(asked: &Asked) -> Result<Vec<ChangedTest>, CliError> {
+    let Some(file) = &asked.tools.in_diff else {
+        return Ok(Vec::new());
+    };
+    let text = std::fs::read_to_string(file).map_err(|e| unreadable(file, &e))?;
+    Ok(tests_changed_by(&text, asked.root))
+}
+
+/// The tests the unified diff `text` changes in the project at `root`.
+fn tests_changed_by(text: &str, root: &Path) -> Vec<ChangedTest> {
+    let below = repository_prefix(root);
+    let read = |relative: &Path| std::fs::read_to_string(root.join(relative)).ok();
+    changed_tests(&AddedLines::parse(text), &below, &read)
+}
+
+/// The test programs of the packages that judge the planned mutants: the
+/// whole workspace's under `test_workspace`, or when a mutant is in no
+/// package.
+fn build_programs(
+    cargo: &Path,
+    root: &Path,
+    tools: &Tools,
+    scope: &Scope,
+) -> Result<Vec<TestProgram>, CliError> {
+    // cargo builds into the project's own target directory, as for any test run.
+    match scope.build() {
+        None => build_rust_test_programs_with(cargo, root, &tools.cargo_args),
+        Some(packages) if packages.is_empty() => Ok(Vec::new()),
+        Some(packages) => build_rust_test_programs_of(cargo, root, &tools.cargo_args, &packages),
+    }
+    .map_err(toolchain)
+}
+
+/// `work`, and what it took on stderr.
+fn timed<T>(phase: &str, work: impl FnOnce() -> T) -> T {
+    let started = std::time::Instant::now();
+    let done = work();
+    eprintln!(
+        "cherenkov: phase {phase}: {:.1} s",
+        started.elapsed().as_secs_f64()
+    );
+    done
 }
 
 /// The mutants rustc rejects, by id, with its error: asked once at the start
@@ -252,6 +354,7 @@ fn rustc_rejects(
     cargo: &Path,
     workspace: &Path,
     plans: &[MutantPlan],
+    scope: &Scope,
 ) -> Arc<HashMap<MutantId, String>> {
     let tools = asked.tools;
     if !tools.viability {
@@ -264,7 +367,9 @@ fn rustc_rejects(
     if candidates.is_empty() {
         return Arc::default();
     }
-    match viability::check(cargo, workspace, asked.root, &tools.cargo_args, &candidates) {
+    // Only the packages the mutants are in are compiled.
+    let args = [tools.cargo_args.clone(), package_args(&scope.mutated())].concat();
+    match viability::check(cargo, workspace, asked.root, &args, &candidates) {
         Ok(found) => {
             eprintln!("{}", viability_summary(candidates.len(), &found));
             Arc::new(found.rejected)
@@ -318,7 +423,16 @@ fn on_run_layer(
         }
         None => None,
     };
-    let sink = output::sink(asked.format, Listed::Decided, log);
+    let in_diff = asked.tools.in_diff.is_some();
+    let mut sink = output::sink(asked.format, Listed::Decided, log);
+    if in_diff {
+        sink = Box::new(output::InDiff::new(
+            sink,
+            Box::new(std::io::stderr()),
+            asked.format == Format::Text,
+        ));
+    }
+    let sink = Box::new(Phases::new(sink, Box::new(std::io::stderr())));
     cherenkov_wiring::run(
         cherenkov_run_store::open(),
         plans,
@@ -326,11 +440,15 @@ fn on_run_layer(
         Some(workers),
         Readers {
             output: output::printing(sink),
-            verdicts: asked
-                .tools
-                .verdict_file
-                .clone()
-                .map(|path| Arc::new(output::JsonVerdictFile::new(path)) as Arc<dyn VerdictFile>),
+            verdicts: asked.tools.verdict_file.clone().map(|path| {
+                let file = output::JsonVerdictFile::new(path);
+                let file = if in_diff {
+                    file.without_not_called()
+                } else {
+                    file
+                };
+                Arc::new(file) as Arc<dyn VerdictFile>
+            }),
         },
     )
     .map(drop)
@@ -450,6 +568,8 @@ fn find_tool(explicit: Option<&Path>, name: &str) -> Result<PathBuf, CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_scope::TestPackages;
+    use crate::test_scope::tests::plan_in;
 
     #[test]
     fn test_the_viability_diagnostic_says_what_was_rejected_and_what_it_cost() {
@@ -470,5 +590,102 @@ mod tests {
         assert_eq!(auto_jobs(20, 22 * GIB, 2 * GIB), 11, "memory-bound");
         assert_eq!(auto_jobs(4, 100 * GIB, GIB), 4, "core-bound");
         assert_eq!(auto_jobs(20, GIB, 8 * GIB), 1, "never none");
+    }
+
+    /// A stand-in for cargo: logs its arguments, answers `test` with one
+    /// test program.
+    fn fake_cargo(tag: &str) -> (PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _one = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let dir =
+            std::env::temp_dir().join(format!("cherenkov-run-fake-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("log");
+        let test = r#"{"reason":"compiler-artifact","manifest_path":"/w/a/Cargo.toml","profile":{"test":true},"executable":"/t/a-1"}"#;
+        let script = format!(
+            "#!/bin/sh\necho \"$@\" >> '{}'\necho '{test}'\n",
+            log.display()
+        );
+        let cargo = dir.join("cargo");
+        std::fs::write(&cargo, script).unwrap();
+        std::fs::set_permissions(&cargo, std::fs::Permissions::from_mode(0o755)).unwrap();
+        (cargo, log)
+    }
+
+    fn tools() -> Tools {
+        Tools {
+            dlv: None,
+            go: None,
+            gdb: None,
+            cargo: None,
+            jobs: None,
+            cargo_args: vec!["--locked".to_string()],
+            in_diff: None,
+            deficiency_log: None,
+            verdict_file: None,
+            viability: true,
+            selection: Selection::default(),
+        }
+    }
+
+    fn package(name: &str) -> cherenkov_exec_dap::toolchain::Package {
+        cherenkov_exec_dap::toolchain::Package {
+            name: name.to_string(),
+            dir: PathBuf::from(format!("/w/{name}")),
+            deps: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn test_the_build_is_of_the_packages_that_judge_and_of_nothing_when_none_does() {
+        let (cargo, log) = fake_cargo("build");
+        let packages = [package("a"), package("b")];
+        let plans = [plan_in("m1", "a/src/lib.rs")];
+        let root = Path::new("/w");
+        let scope = Scope::of(&TestPackages::Mutated, &plans, &packages, root);
+        let built = build_programs(&cargo, Path::new("/"), &tools(), &scope).unwrap();
+        assert_eq!(built.len(), 1);
+        assert_eq!(built[0].binary, PathBuf::from("/t/a-1"));
+        let nothing = Scope::of(&TestPackages::Mutated, &[], &packages, root);
+        assert!(
+            build_programs(&cargo, Path::new("/"), &tools(), &nothing)
+                .unwrap()
+                .is_empty()
+        );
+        let everything = Scope::of(&TestPackages::Workspace, &plans, &packages, root);
+        assert_eq!(
+            build_programs(&cargo, Path::new("/"), &tools(), &everything)
+                .unwrap()
+                .len(),
+            1
+        );
+        let logged = std::fs::read_to_string(&log).unwrap();
+        // The second build never ran cargo: two runs, the package build and the whole.
+        assert_eq!(
+            logged.lines().collect::<Vec<_>>(),
+            [
+                "test --no-run --message-format=json --locked --package a",
+                "test --no-run --message-format=json --locked"
+            ]
+        );
+        let _ = std::fs::remove_dir_all(cargo.parent().unwrap());
+    }
+
+    #[test]
+    fn test_the_tests_a_diff_changes_are_found_in_the_project_s_files() {
+        let root = std::env::temp_dir().join(format!("cherenkov-diff-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(
+            root.join("src/lib.rs"),
+            "pub fn f() {}\n\n#[test]\nfn test_f() {\n    f();\n}\n",
+        )
+        .unwrap();
+        let diff = "--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -5,1 +5,1 @@\n-    g();\n+    f();\n";
+        let found = tests_changed_by(diff, &root);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].path, "test_f");
+        assert_eq!(found[0].file, Path::new("src/lib.rs"));
     }
 }

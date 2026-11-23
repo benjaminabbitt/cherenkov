@@ -799,7 +799,9 @@ touches an added line (`crates/cherenkov-cli/src/run.rs:48`,
 `crates/cherenkov-core/src/diff.rs`). The diff's paths are from the
 repository root; the run's root is placed below it with `git rev-parse
 --show-prefix`. A `fn-value` mutant's site is the whole body, so any added
-line in the body keeps all of that function's value mutants.
+line in the body keeps all of that function's value mutants. For Rust the
+test programs are then those of the packages that judge the kept mutants
+(`docs/test-scope.md`).
 
 ---
 
