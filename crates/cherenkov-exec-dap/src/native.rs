@@ -1963,4 +1963,14 @@ mod tests {
             .unwrap();
         assert_eq!(patch.regions[0].replacement.last(), Some(&0xc3));
     }
+
+    #[test]
+    fn test_a_zero_stub_is_not_written_for_a_result_wider_than_a_register() {
+        let executor = own_executor();
+        let zero = return_plan("pub fn f(a: u32) -> u128 { a as u128 }\n", "0");
+        let wide = executor.derive_all(&zero, &[code_at("probe_u128_result")]);
+        assert!(matches!(wide, Derived::TierB(_)), "wide result");
+        let narrow = executor.derive_all(&zero, &[code_at("probe_u32_result")]);
+        assert!(matches!(narrow, Derived::Patch(_)), "narrow result");
+    }
 }
