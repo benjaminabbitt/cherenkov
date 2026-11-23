@@ -13,12 +13,14 @@ mod config;
 mod error;
 mod names;
 mod output;
+mod phases;
 mod render;
 mod run;
 #[cfg(test)]
 #[path = "run_output.test.rs"]
 mod run_output;
 mod selection;
+mod test_scope;
 
 use std::collections::BTreeMap;
 use std::io::IsTerminal;

@@ -23,6 +23,7 @@ use regex::RegexSet;
 use crate::config::{self, Config};
 use crate::error::CliError;
 use crate::names::name_all;
+use crate::test_scope::TestPackages;
 
 /// The options that choose which mutants there are, shared by `plan` and
 /// `run`; cargo-mutants' names for them where it has one.
@@ -61,10 +62,16 @@ pub struct SelectArgs {
     /// Read no configuration file.
     #[arg(long = "no-config")]
     pub no_config: bool,
-    /// Run the tests of this package only (repeatable); a `--package`
-    /// argument for cargo.
-    #[arg(long = "test-package", value_name = "PACKAGE")]
+    /// Judge every mutant by the tests of these packages (comma separated,
+    /// repeatable), as cargo-mutants does; by default a mutant is judged by
+    /// its own package's tests.
+    #[arg(long = "test-package", value_delimiter = ',', value_name = "PACKAGE")]
     pub test_package: Vec<String>,
+    /// Judge every mutant by the whole workspace's tests (true); false
+    /// keeps the default and the configuration's `test_package`, as
+    /// cargo-mutants does. Takes priority over `--test-package`.
+    #[arg(long = "test-workspace", value_name = "BOOL")]
+    pub test_workspace: Option<bool>,
 }
 
 /// Which mutants are planned and kept.
@@ -76,8 +83,10 @@ pub struct Selection {
     pub exclude_globs: Vec<String>,
     /// Calls (by name) skipped with their arguments.
     pub skip_calls: Vec<String>,
-    /// Arguments for cargo from the configuration and `--test-package`.
+    /// Arguments for cargo from the configuration.
     pub cargo_args: Vec<String>,
+    /// Which packages' tests judge a mutant.
+    pub test_packages: TestPackages,
     examine_globs: Option<GlobSet>,
     examine_re: Option<RegexSet>,
     exclude_re: Option<RegexSet>,
@@ -90,6 +99,7 @@ impl Default for Selection {
             exclude_globs: Vec::new(),
             skip_calls: DEFAULT_SKIP_CALLS.map(String::from).to_vec(),
             cargo_args: Vec::new(),
+            test_packages: TestPackages::default(),
             examine_globs: None,
             examine_re: None,
             exclude_re: None,
@@ -157,11 +167,12 @@ impl Selection {
         if defaults {
             skip_calls.extend(DEFAULT_SKIP_CALLS.map(String::from));
         }
-        let packages = args
-            .test_package
-            .iter()
-            .chain(&config.test_package)
-            .flat_map(|p| ["--package".to_string(), p.clone()]);
+        let test_packages = TestPackages::resolve(
+            args.test_workspace,
+            &args.test_package,
+            config.test_workspace,
+            &config.test_package,
+        );
         let examine = both(&args.file, &config.examine_globs);
         let exclude_globs: Vec<String> = both(exclude, &config.exclude_globs)
             .iter()
@@ -171,12 +182,8 @@ impl Selection {
             include_tests: args.include_tests,
             exclude_globs,
             skip_calls,
-            cargo_args: config
-                .additional_cargo_args
-                .iter()
-                .cloned()
-                .chain(packages)
-                .collect(),
+            cargo_args: config.additional_cargo_args.clone(),
+            test_packages,
             examine_globs: if examine.is_empty() {
                 None
             } else {

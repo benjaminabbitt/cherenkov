@@ -17,9 +17,11 @@ use cherenkov_core::types::DefaultFacts;
 use cherenkov_exec_dap::delve::{DelveConfig, DelveExecutor};
 use cherenkov_exec_dap::gdb::{GdbConfig, GdbExecutor};
 use cherenkov_exec_dap::isa::Isa;
+use cherenkov_exec_dap::routing::OnlyJudged;
 use cherenkov_exec_dap::toolchain::{
-    build_go_test_binary, build_rust_test_programs_with, cargo_test_env, cargo_workspace,
-    cargo_workspace_prefix, go_test_args, rust_code_files_with, rust_test_args, rustup_toolchain,
+    TestProgram, build_go_test_binary, build_rust_test_programs_of, build_rust_test_programs_with,
+    cargo_test_env, cargo_workspace, cargo_workspace_prefix, go_test_args, package_args,
+    package_of, rust_code_files_with, rust_test_args, rustup_toolchain, workspace_packages,
 };
 use cherenkov_exec_dap::viability::{self, RustcRejects};
 use cherenkov_run_application::host::Readers;
@@ -30,7 +32,9 @@ use cherenkov_syntax::TreeSitterSyntax;
 
 use crate::error::CliError;
 use crate::output::{self, Listed};
+use crate::phases::Phases;
 use crate::selection::{Selection, plan_selected};
+use crate::test_scope::Scope;
 
 pub struct Tools {
     pub dlv: Option<PathBuf>,
@@ -195,21 +199,30 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
         .filter(|p| code.binary_search(&canonical.join(&p.file)).is_ok())
         .collect();
     let plans = narrowed(plans, asked)?;
-    // cargo builds into the project's own target directory, as for any test run.
-    let mut programs =
-        build_rust_test_programs_with(&cargo, root, &tools.cargo_args).map_err(toolchain)?;
+    let packages = workspace_packages(&cargo, root).map_err(toolchain)?;
+    let scope = Scope::of(
+        &tools.selection.test_packages,
+        &plans,
+        &packages,
+        &canonical,
+    );
+    let mut programs = timed("build", || build_programs(&cargo, root, tools, &scope))?;
     programs.sort();
     let prefix = cargo_workspace_prefix(&cargo, root).map_err(toolchain)?;
     let facts = default_facts(&cargo, root, &tools.cargo_args)?;
     let (workspace_root, _) = cargo_workspace(&cargo, root).map_err(toolchain)?;
-    let rejected = rustc_rejects(asked, &cargo, &workspace_root, &plans);
+    let rejected = timed("viability check", || {
+        rustc_rejects(asked, &cargo, &workspace_root, &plans, &scope)
+    });
     // One executor per test program for each worker; every worker has its
-    // own GDB sessions.
+    // own GDB sessions. A program judges the mutants routed to it.
     let set = || -> Vec<Box<dyn MutantExecutor + Send>> {
         programs
             .iter()
             .cloned()
             .map(|program| {
+                let judged = package_of(&packages, &program.package_dir)
+                    .map(|package| scope.judged_by(package));
                 // In its package's directory, as `cargo test` runs it.
                 // With cargo's environment too, as `cargo test` runs it.
                 let toolchain = rustup_toolchain(&program.package_dir);
@@ -231,8 +244,12 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
                     )
                     .with_default_facts(facts.clone())
                     .with_toolchain(support_toolchain);
-                Box::new(RustcRejects::new(executor, rejected.clone()))
-                    as Box<dyn MutantExecutor + Send>
+                let executor = RustcRejects::new(executor, rejected.clone());
+                match judged.filter(|_| !scope.all_judge_all()) {
+                    Some(judged) => Box::new(OnlyJudged::new(executor, judged))
+                        as Box<dyn MutantExecutor + Send>,
+                    None => Box::new(executor),
+                }
             })
             .collect()
     };
@@ -241,6 +258,35 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     let result = on_run_layer(asked, "rust", &plans, workers_of(sets, jobs));
     cherenkov_exec_dap::support_lib::remove_scratch();
     result
+}
+
+/// The test programs of the packages that judge the planned mutants: the
+/// whole workspace's under `test_workspace`, or when a mutant is in no
+/// package.
+fn build_programs(
+    cargo: &Path,
+    root: &Path,
+    tools: &Tools,
+    scope: &Scope,
+) -> Result<Vec<TestProgram>, CliError> {
+    // cargo builds into the project's own target directory, as for any test run.
+    match scope.build() {
+        None => build_rust_test_programs_with(cargo, root, &tools.cargo_args),
+        Some(packages) if packages.is_empty() => Ok(Vec::new()),
+        Some(packages) => build_rust_test_programs_of(cargo, root, &tools.cargo_args, &packages),
+    }
+    .map_err(toolchain)
+}
+
+/// `work`, and what it took on stderr.
+fn timed<T>(phase: &str, work: impl FnOnce() -> T) -> T {
+    let started = std::time::Instant::now();
+    let done = work();
+    eprintln!(
+        "cherenkov: phase {phase}: {:.1} s",
+        started.elapsed().as_secs_f64()
+    );
+    done
 }
 
 /// The mutants rustc rejects, by id, with its error: asked once at the start
@@ -252,6 +298,7 @@ fn rustc_rejects(
     cargo: &Path,
     workspace: &Path,
     plans: &[MutantPlan],
+    scope: &Scope,
 ) -> Arc<HashMap<MutantId, String>> {
     let tools = asked.tools;
     if !tools.viability {
@@ -264,7 +311,9 @@ fn rustc_rejects(
     if candidates.is_empty() {
         return Arc::default();
     }
-    match viability::check(cargo, workspace, asked.root, &tools.cargo_args, &candidates) {
+    // Only the packages the mutants are in are compiled.
+    let args = [tools.cargo_args.clone(), package_args(&scope.mutated())].concat();
+    match viability::check(cargo, workspace, asked.root, &args, &candidates) {
         Ok(found) => {
             eprintln!("{}", viability_summary(candidates.len(), &found));
             Arc::new(found.rejected)
@@ -318,7 +367,10 @@ fn on_run_layer(
         }
         None => None,
     };
-    let sink = output::sink(asked.format, Listed::Decided, log);
+    let sink = Box::new(Phases::new(
+        output::sink(asked.format, Listed::Decided, log),
+        Box::new(std::io::stderr()),
+    ));
     cherenkov_wiring::run(
         cherenkov_run_store::open(),
         plans,
