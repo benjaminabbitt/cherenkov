@@ -20,6 +20,19 @@ test:
 test-slow:
     cargo test --workspace -- --ignored
 
+# The tier P gate (runs in `just test`): every arithmetic patch against the
+# mutant rustc compiles from the same source, natively, over edge values and
+# seeded random inputs (every value of an 8-bit type), and the committed
+# isa/tierp-shapes.toml against what the gate finds.
+tierp-gate:
+    cargo test -p cherenkov-exec-dap --test tierp_gate
+
+# Regenerate isa/tierp-shapes.toml with the toolchain in use and fail on any
+# difference from the committed one (CI: a toolchain bump; commit the result).
+tierp-harvest:
+    TIERP_HARVEST=write cargo test -p cherenkov-exec-dap --test tierp_gate
+    git diff --exit-code -- isa/tierp-shapes.toml
+
 # The same corpus run twice must decide every mutant the same way: run it
 # on a loaded machine to mean something. Outside `just check`.
 test-determinism:

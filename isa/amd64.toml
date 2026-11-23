@@ -89,26 +89,32 @@ ne = "ne"
 
 # Arithmetic operator replacement: add and sub encodings that differ only
 # in the opcode byte or the ModRM reg field, as (add form, sub form) pairs.
-# `inc`/`dec` count as add/sub of one. All may follow one REX prefix.
+# `inc`/`dec` count as add/sub of one. All may follow the operand-size
+# prefix (66, 16-bit operands) and one REX prefix. `byte = true` marks the
+# 8-bit forms; `modrm = false` the `al/eax, imm` ones, which have no ModRM.
 [[arith]] # add r/m, r      <-> sub r/m, r
 add = { opcode = 0x01 }
 sub = { opcode = 0x29 }
 
 [[arith]] # 8-bit
-add = { opcode = 0x00 }
-sub = { opcode = 0x28 }
+add = { opcode = 0x00, byte = true }
+sub = { opcode = 0x28, byte = true }
 
 [[arith]] # add r, r/m      <-> sub r, r/m
 add = { opcode = 0x03 }
 sub = { opcode = 0x2b }
 
 [[arith]] # 8-bit
-add = { opcode = 0x02 }
-sub = { opcode = 0x2a }
+add = { opcode = 0x02, byte = true }
+sub = { opcode = 0x2a, byte = true }
 
 [[arith]] # add eax, imm32  <-> sub eax, imm32
-add = { opcode = 0x05 }
-sub = { opcode = 0x2d }
+add = { opcode = 0x05, modrm = false }
+sub = { opcode = 0x2d, modrm = false }
+
+[[arith]] # add al, imm8    <-> sub al, imm8
+add = { opcode = 0x04, modrm = false, byte = true }
+sub = { opcode = 0x2c, modrm = false, byte = true }
 
 [[arith]] # add r/m, imm8   <-> sub r/m, imm8
 add = { opcode = 0x83, modrm_reg = 0 }
@@ -119,16 +125,16 @@ add = { opcode = 0x81, modrm_reg = 0 }
 sub = { opcode = 0x81, modrm_reg = 5 }
 
 [[arith]] # 8-bit immediate forms
-add = { opcode = 0x80, modrm_reg = 0 }
-sub = { opcode = 0x80, modrm_reg = 5 }
+add = { opcode = 0x80, modrm_reg = 0, byte = true }
+sub = { opcode = 0x80, modrm_reg = 5, byte = true }
 
 [[arith]] # inc r/m         <-> dec r/m
 add = { opcode = 0xff, modrm_reg = 0 }
 sub = { opcode = 0xff, modrm_reg = 1 }
 
 [[arith]] # 8-bit
-add = { opcode = 0xfe, modrm_reg = 0 }
-sub = { opcode = 0xfe, modrm_reg = 1 }
+add = { opcode = 0xfe, modrm_reg = 0, byte = true }
+sub = { opcode = 0xfe, modrm_reg = 1, byte = true }
 
 # Bitwise operator replacement (compound assignments): and, or and xor
 # encodings of one shape, differing in the opcode byte or the ModRM reg
@@ -139,9 +145,9 @@ or = { opcode = 0x09 }
 xor = { opcode = 0x31 }
 
 [[bitwise]] # 8-bit
-and = { opcode = 0x20 }
-or = { opcode = 0x08 }
-xor = { opcode = 0x30 }
+and = { opcode = 0x20, byte = true }
+or = { opcode = 0x08, byte = true }
+xor = { opcode = 0x30, byte = true }
 
 [[bitwise]] # op r, r/m
 and = { opcode = 0x23 }
@@ -149,9 +155,9 @@ or = { opcode = 0x0b }
 xor = { opcode = 0x33 }
 
 [[bitwise]] # 8-bit
-and = { opcode = 0x22 }
-or = { opcode = 0x0a }
-xor = { opcode = 0x32 }
+and = { opcode = 0x22, byte = true }
+or = { opcode = 0x0a, byte = true }
+xor = { opcode = 0x32, byte = true }
 
 [[bitwise]] # op eax, imm32
 and = { opcode = 0x25, modrm = false }
@@ -159,9 +165,9 @@ or = { opcode = 0x0d, modrm = false }
 xor = { opcode = 0x35, modrm = false }
 
 [[bitwise]] # op al, imm8
-and = { opcode = 0x24, modrm = false }
-or = { opcode = 0x0c, modrm = false }
-xor = { opcode = 0x34, modrm = false }
+and = { opcode = 0x24, modrm = false, byte = true }
+or = { opcode = 0x0c, modrm = false, byte = true }
+xor = { opcode = 0x34, modrm = false, byte = true }
 
 [[bitwise]] # op r/m, imm8
 and = { opcode = 0x83, modrm_reg = 4 }
@@ -174,9 +180,9 @@ or = { opcode = 0x81, modrm_reg = 1 }
 xor = { opcode = 0x81, modrm_reg = 6 }
 
 [[bitwise]] # 8-bit immediate forms
-and = { opcode = 0x80, modrm_reg = 4 }
-or = { opcode = 0x80, modrm_reg = 1 }
-xor = { opcode = 0x80, modrm_reg = 6 }
+and = { opcode = 0x80, modrm_reg = 4, byte = true }
+or = { opcode = 0x80, modrm_reg = 1, byte = true }
+xor = { opcode = 0x80, modrm_reg = 6, byte = true }
 
 # Scalar floating-point arithmetic (SSE): `<prefix> [REX] 0F <opcode>
 # ModRM`, prefix F2 for a double, F3 for a single. The four operations

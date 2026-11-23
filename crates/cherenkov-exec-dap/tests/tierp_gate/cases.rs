@@ -1,0 +1,93 @@
+//! The gate's cases: every arithmetic or bitwise operator replacement the
+//! planner makes in a snippet, with the source it would compile to.
+
+use std::path::Path;
+use std::sync::Arc;
+
+use cherenkov_core::edit::Edit;
+use cherenkov_core::operator_set::registry;
+use cherenkov_core::plan::{MutantPlan, render_source};
+use cherenkov_core::plan_sets::plan_file_sets;
+use cherenkov_core::ports::SyntaxPort;
+use cherenkov_core::profile::Profile;
+use cherenkov_core::syntax::LanguageId;
+use cherenkov_core::token::Token;
+use cherenkov_syntax::TreeSitterSyntax;
+
+use crate::snippets::{self, Snippet};
+
+/// One mutant of one snippet.
+pub struct Case {
+    pub id: usize,
+    pub snippet: Snippet,
+    pub plan: MutantPlan,
+    /// The snippet's file as the mutant has it.
+    pub mutated: String,
+}
+
+fn arithmetic(t: Token) -> bool {
+    let base = t.compound_base().unwrap_or(t);
+    matches!(
+        base,
+        Token::Add
+            | Token::Sub
+            | Token::Mul
+            | Token::Div
+            | Token::Rem
+            | Token::BitAnd
+            | Token::BitOr
+            | Token::BitXor
+    )
+}
+
+fn operator_replacement(plan: &MutantPlan) -> bool {
+    matches!(&plan.edit, Edit::ReplaceToken { from, .. } if arithmetic(*from))
+}
+
+fn rust_profile(syntax: &TreeSitterSyntax) -> Profile {
+    let rust = LanguageId::new("rust");
+    syntax
+        .profiles()
+        .into_iter()
+        .find(|p| p.lang == rust)
+        .expect("a Rust profile")
+}
+
+fn cases_of(
+    syntax: &TreeSitterSyntax,
+    profile: &Profile,
+    snippet: &Snippet,
+    next: &mut usize,
+) -> Vec<Case> {
+    let rust = LanguageId::new("rust");
+    let file = syntax
+        .analyze(&rust, Path::new("s.rs"), Arc::from(snippet.source.as_str()))
+        .expect("a snippet parses");
+    let planned = plan_file_sets(&file, profile, &registry(), false);
+    let mut out = Vec::new();
+    for plan in planned.plans.into_iter().filter(operator_replacement) {
+        let Some(mutated) = render_source(&snippet.source, &plan, profile) else {
+            continue;
+        };
+        out.push(Case {
+            id: *next,
+            snippet: snippet.clone(),
+            plan,
+            mutated,
+        });
+        *next += 1;
+    }
+    out
+}
+
+/// Every case of every snippet, numbered.
+pub fn all() -> Vec<Case> {
+    let syntax = TreeSitterSyntax::builtin().expect("the built-in profiles load");
+    let profile = rust_profile(&syntax);
+    let mut next = 0;
+    let mut out = Vec::new();
+    for snippet in snippets::all() {
+        out.extend(cases_of(&syntax, &profile, &snippet, &mut next));
+    }
+    out
+}

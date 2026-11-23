@@ -8,11 +8,12 @@ use cherenkov_core::plan::{Action, MutantPlan, Target};
 use cherenkov_core::syntax::{Pos, Span};
 use cherenkov_core::token::Token;
 
-use crate::isa::{Isa, Jcc, Signedness};
+use crate::isa::{Isa, Jcc, Matched, Signedness};
+use crate::shapes::{Check, Kind, Shape};
 use crate::x86;
 
 mod column;
-use column::{arithmetic_at, memory_source};
+use column::{Shaped, arithmetic_at, is_rust, memory_source, shape_of};
 
 /// One instruction of the function under mutation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -179,6 +180,54 @@ impl std::error::Error for Unpatchable {}
 /// Derive the patch for `plan`. `file` is the path the instructions report
 /// for the plan's source file; instructions from other files are ignored.
 pub fn derive(
+    plan: &MutantPlan,
+    file: &str,
+    insns: &[Insn],
+    isa: &Isa,
+) -> Result<Patch, Unpatchable> {
+    derive_shaped(plan, file, insns, isa).map(|(patch, _)| patch)
+}
+
+/// [`derive`], with the shape of the patch where it is an arithmetic one
+/// (`isa/tierp-shapes.toml`).
+pub fn derive_shaped(
+    plan: &MutantPlan,
+    file: &str,
+    insns: &[Insn],
+    isa: &Isa,
+) -> Result<(Patch, Option<Shape>), Unpatchable> {
+    let mut ours: Vec<&Insn> = insns.iter().filter(|i| i.file == file).collect();
+    ours.sort_by_key(|i| i.pc);
+    if let Some(done) = arithmetic_route(plan, &ours, isa) {
+        return done.map(|s| (s.patch, Some(s.shape)));
+    }
+    derive_other(plan, file, insns, isa).map(|patch| (patch, None))
+}
+
+/// An operator replacement that swaps arithmetic: found by the column
+/// (inside a call argument, a field, a method chain, a returned value, a
+/// condition), or in a statement by its line first.
+fn arithmetic_route(
+    plan: &MutantPlan,
+    ours: &[&Insn],
+    isa: &Isa,
+) -> Option<Result<Shaped, Unpatchable>> {
+    match (&plan.action, &plan.edit) {
+        (
+            Action::EvalThenJump {
+                resume: Target::AfterStatement(stmt),
+                ..
+            },
+            Edit::ReplaceToken { from, with, .. },
+        ) => Some(arithmetic_swap(plan, stmt, *from, *with, ours, isa)),
+        (_, Edit::ReplaceToken { from, with, .. }) if is_arithmetic(*from) => {
+            Some(arithmetic_at(plan, *from, *with, ours, isa))
+        }
+        _ => None,
+    }
+}
+
+fn derive_other(
     plan: &MutantPlan,
     file: &str,
     insns: &[Insn],
@@ -357,14 +406,6 @@ fn derive_in_context(
             let cc = isa.inverse(site.jcc.cc);
             Ok(site.patch(isa, cc))
         }
-        // An operator inside a call argument, a field, a method chain, a
-        // returned value or a condition: its instruction is found by the
-        // column. A statement tries its line first (`arithmetic_swap`).
-        (action, Edit::ReplaceToken { from, with, .. })
-            if is_arithmetic(*from) && !matches!(action, Action::EvalThenJump { .. }) =>
-        {
-            arithmetic_at(plan, *from, *with, &ours, isa)
-        }
         (
             Action::EvalBranch {
                 if_true: Target::BlockStart(then),
@@ -378,13 +419,6 @@ fn derive_in_context(
             },
             Edit::DeleteStatement,
         ) => delete_statement(plan.stop_at.line, stmt.end.line, &ours, isa),
-        (
-            Action::EvalThenJump {
-                resume: Target::AfterStatement(stmt),
-                ..
-            },
-            Edit::ReplaceToken { from, with, .. },
-        ) => arithmetic_swap(plan, stmt, *from, *with, &ours, isa),
         (
             Action::EvalReturn { .. },
             Edit::ReplaceWithLiteral {
@@ -531,10 +565,11 @@ fn arithmetic_swap(
     with: Token,
     ours: &[&Insn],
     isa: &Isa,
-) -> Result<Patch, Unpatchable> {
+) -> Result<Shaped, Unpatchable> {
+    let lines = (plan.stop_at.line, stmt.end.line);
     let by_line = match (from, with) {
-        (Token::Add, Token::Sub) => arithmetic(plan.stop_at.line, stmt.end.line, false, ours, isa),
-        (Token::Sub, Token::Add) => arithmetic(plan.stop_at.line, stmt.end.line, true, ours, isa),
+        (Token::Add, Token::Sub) => arithmetic(plan, lines, false, ours, isa),
+        (Token::Sub, Token::Add) => arithmetic(plan, lines, true, ours, isa),
         _ => Err(Unpatchable::UnsupportedEdit(format!(
             "{} {} -> {}",
             plan.operator,
@@ -822,18 +857,18 @@ fn delete_statement(
 /// Swap the one add-family instruction (or sub-family, when `to_add`) on
 /// the statement's lines.
 fn arithmetic(
-    first: u32,
-    last: u32,
+    plan: &MutantPlan,
+    (first, last): (u32, u32),
     to_add: bool,
     insns: &[&Insn],
     isa: &Isa,
-) -> Result<Patch, Unpatchable> {
-    let swaps: Vec<(&Insn, Vec<u8>)> = insns
+) -> Result<Shaped, Unpatchable> {
+    let swaps: Vec<(&Insn, Matched)> = insns
         .iter()
         .filter(|i| (first..=last).contains(&i.line))
-        .filter_map(|i| isa.arith_swap(&i.bytes, to_add).map(|b| (*i, b)))
+        .filter_map(|i| isa.arith_match(&i.bytes, to_add).map(|m| (*i, m)))
         .collect();
-    let [(insn, replacement)] = &swaps[..] else {
+    let [(insn, matched)] = &swaps[..] else {
         return Err(Unpatchable::ArithmeticInstructions {
             line: first,
             found: swaps.len(),
@@ -866,11 +901,25 @@ fn arithmetic(
             "arithmetic whose overflow check is not the overflow flag's".into(),
         ));
     }
-    Ok(Patch::single(
-        insn.pc,
-        insn.bytes.clone(),
-        replacement.clone(),
-    ))
+    let check = match first_check {
+        Some(_) => Check::Overflow,
+        None => Check::Unchecked,
+    };
+    let (from, with) = if to_add {
+        (Token::Sub, Token::Add)
+    } else {
+        (Token::Add, Token::Sub)
+    };
+    let shape = shape_of(matched, Kind::Int(check), from, with);
+    if is_rust(plan) && !isa.admits(&shape) {
+        return Err(Unpatchable::UnsupportedEdit(format!(
+            "no harvested rustc shape `{shape}`"
+        )));
+    }
+    Ok(Shaped {
+        patch: Patch::single(insn.pc, insn.bytes.clone(), matched.replacement.clone()),
+        shape,
+    })
 }
 
 /// Flip every store of the returned constant `value` on the return's line.

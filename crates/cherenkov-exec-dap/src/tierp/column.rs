@@ -14,7 +14,8 @@ use cherenkov_core::plan::MutantPlan;
 use cherenkov_core::token::Token;
 
 use super::{Insn, Patch, Region, Unpatchable};
-use crate::isa::Isa;
+use crate::isa::{Isa, Matched};
+use crate::shapes::{Check, Kind, Shape};
 use crate::x86;
 
 /// How many instructions after an operation its overflow check may take:
@@ -30,6 +31,17 @@ enum Swap {
     Float { from: Token, with: Token },
     /// `and`, `or`, `xor` of a compound assignment.
     Bitwise { from: Token, with: Token },
+}
+
+impl Swap {
+    /// The operators it swaps (base operators, not compound ones).
+    fn tokens(self) -> (Token, Token) {
+        match self {
+            Swap::Integer { to_add: true } => (Token::Sub, Token::Add),
+            Swap::Integer { to_add: false } => (Token::Add, Token::Sub),
+            Swap::Float { from, with } | Swap::Bitwise { from, with } => (from, with),
+        }
+    }
 }
 
 /// The binary operator a compound assignment applies, and whether it is one.
@@ -77,6 +89,25 @@ fn is_literal(text: &str) -> bool {
         .starts_with(|c: char| c.is_ascii_digit())
 }
 
+/// A patch and the shape it is made of.
+pub(super) struct Shaped {
+    pub patch: Patch,
+    pub shape: Shape,
+}
+
+/// A patch of one instruction, before the choice between them.
+struct Candidate {
+    insn: usize,
+    regions: Vec<Region>,
+    shape: Shape,
+}
+
+/// Whether the plan is of a Rust file, whose compiler the shapes table
+/// was harvested with.
+pub(super) fn is_rust(plan: &MutantPlan) -> bool {
+    plan.file.extension().is_some_and(|e| e == "rs")
+}
+
 /// The mutated operator, of the plan's expression that starts at its first
 /// operand, found among the instructions positioned there.
 pub(super) fn arithmetic_at(
@@ -85,10 +116,10 @@ pub(super) fn arithmetic_at(
     with: Token,
     ours: &[&Insn],
     isa: &Isa,
-) -> Result<Patch, Unpatchable> {
-    let unsupported = || {
+) -> Result<Shaped, Unpatchable> {
+    let unsupported = |why: &str| {
         Unpatchable::UnsupportedEdit(format!(
-            "{} {} -> {} by column",
+            "{} {} -> {} by column{why}",
             plan.operator,
             from.name(),
             with.name()
@@ -99,14 +130,12 @@ pub(super) fn arithmetic_at(
     let start = plan.operands.first().map_or(plan.stop_at, |s| s.start);
     let swaps = swaps(from, with);
     if swaps.is_empty() {
-        return Err(unsupported());
+        return Err(unsupported(""));
     }
     // `1 + x` is compiled as `x + 1`: a swap to `-` would compute `x - 1`.
-    let commutes_in_source = matches!(from, Token::Add | Token::Mul);
-    let needs_order = matches!(with, Token::Sub | Token::Div);
     let literal_first = plan.operand_texts.first().is_some_and(|t| is_literal(t));
-    if commutes_in_source && needs_order && literal_first {
-        return Err(unsupported());
+    if reorders(from, with) && literal_first {
+        return Err(unsupported(""));
     }
     let at = (start.line, start.col);
     let here: Vec<usize> = (0..ours.len())
@@ -118,40 +147,72 @@ pub(super) fn arithmetic_at(
             col: at.1,
         });
     }
-    // A commutative source swapped to an operation that does not commute
-    // is exact only where the operands are in the source's order: not
-    // where rustc folded the left one from memory.
-    let reorders = matches!(base(from).0, Token::Add | Token::Mul)
-        && matches!(base(with).0, Token::Sub | Token::Div);
-    let candidates: Vec<(usize, Vec<Region>)> = here
+    let candidates: Vec<Candidate> = here
         .iter()
         .flat_map(|&k| {
             swaps
                 .iter()
-                .filter_map(move |s| regions(*s, ours, k, isa).map(|r| (k, r)))
+                .filter_map(move |s| candidate(*s, ours, k, isa))
         })
         .collect();
-    let mut found: Vec<Vec<Region>> = candidates
-        .iter()
-        .filter(|(k, _)| !(reorders && memory_source(ours[*k])))
-        .map(|(_, r)| r.clone())
-        .collect();
-    if found.is_empty() && !candidates.is_empty() {
-        return Err(Unpatchable::UnsupportedEdit(format!(
-            "{} {} -> {}: the left operand is loaded from memory, so the swap would reverse them",
-            plan.operator,
-            from.name(),
-            with.name()
-        )));
-    }
-    match found.len() {
-        1 => Ok(Patch {
-            regions: found.remove(0),
-        }),
+    let mut chosen = choose(candidates, reorders(from, with), ours, plan, isa)
+        .map_err(|why| unsupported(&format!(": {why}")))?;
+    match chosen.len() {
+        1 => {
+            let c = chosen.remove(0);
+            Ok(Shaped {
+                patch: Patch { regions: c.regions },
+                shape: c.shape,
+            })
+        }
         n => Err(Unpatchable::ArithmeticInstructions {
             line: at.0,
             found: n,
         }),
+    }
+}
+
+/// Whether the swap computes with its operands in the other order where the
+/// compiler had them the other way round: a commutative operation swapped
+/// to one that is not.
+fn reorders(from: Token, with: Token) -> bool {
+    matches!(base(from).0, Token::Add | Token::Mul)
+        && matches!(base(with).0, Token::Sub | Token::Div)
+}
+
+/// The candidates that are right: not reversing their operands where the
+/// left one was loaded from memory, and of a shape the gate has passed (for
+/// Rust code). An error when every candidate is refused, saying why.
+fn choose(
+    candidates: Vec<Candidate>,
+    reorders: bool,
+    ours: &[&Insn],
+    plan: &MutantPlan,
+    isa: &Isa,
+) -> Result<Vec<Candidate>, String> {
+    let all = candidates.len();
+    let mut refusal = None;
+    let kept: Vec<Candidate> = candidates
+        .into_iter()
+        .filter(|c| {
+            if reorders && memory_source(ours[c.insn]) {
+                refusal = Some(
+                    "the left operand is loaded from memory, so a swap would reverse the operands"
+                        .to_string(),
+                );
+                return false;
+            }
+            if is_rust(plan) && !isa.admits(&c.shape) {
+                refusal = Some(format!("no harvested rustc shape `{}`", c.shape));
+                return false;
+            }
+            true
+        })
+        .collect();
+    match (kept.is_empty(), all) {
+        (true, 0) => Ok(kept),
+        (true, _) => Err(refusal.unwrap_or_default()),
+        _ => Ok(kept),
     }
 }
 
@@ -160,44 +221,74 @@ pub(super) fn memory_source(insn: &Insn) -> bool {
     x86::decode(insn.pc, &insn.bytes).is_some_and(|d| d.reads_memory_source())
 }
 
-/// The bytes that make instruction `k` do the swapped operation, with the
-/// compare of its overflow check removed where there is one.
-fn regions(swap: Swap, ours: &[&Insn], k: usize, isa: &Isa) -> Option<Vec<Region>> {
+/// The patch that makes instruction `k` do the swapped operation, with the
+/// compare of its overflow check removed where there is one, and its shape.
+fn candidate(swap: Swap, ours: &[&Insn], k: usize, isa: &Isa) -> Option<Candidate> {
     let insn = ours[k];
-    let (replacement, check) = match swap {
+    let (matched, kind, cmp) = match swap {
         Swap::Integer { to_add } => {
-            let replacement = isa.arith_swap(&insn.bytes, to_add)?;
-            (replacement, Some(overflow_check(ours, k)?))
+            let matched = isa.arith_match(&insn.bytes, to_add)?;
+            let checked = overflow_check(ours, k)?;
+            (matched, Kind::Int(checked.check), checked.compare)
         }
-        Swap::Float { from, with } => (isa.float_swap(&insn.bytes, from, with)?, None),
-        Swap::Bitwise { from, with } => (isa.bitwise_swap(&insn.bytes, from, with)?, None),
+        Swap::Float { from, with } => {
+            (isa.float_match(&insn.bytes, from, with)?, Kind::Float, None)
+        }
+        Swap::Bitwise { from, with } => (
+            isa.bitwise_match(&insn.bytes, from, with)?,
+            Kind::Bitwise,
+            None,
+        ),
     };
-    let mut out = vec![Region {
+    let (from, with) = swap.tokens();
+    let shape = shape_of(&matched, kind, from, with);
+    let mut regions = vec![Region {
         addr: insn.pc,
         original: insn.bytes.clone(),
-        replacement,
+        replacement: matched.replacement,
     }];
-    if let Some(cmp) = check.flatten() {
-        out.push(Region {
+    if let Some(cmp) = cmp {
+        regions.push(Region {
             addr: cmp.pc,
             original: cmp.bytes.clone(),
             replacement: vec![0x90; cmp.bytes.len()],
         });
     }
-    Some(out)
+    Some(Candidate {
+        insn: k,
+        regions,
+        shape,
+    })
 }
 
-/// The check rustc emits after the checked operation `k`, as the compare
-/// to drop (`Some(Some(cmp))`), or that the flags the operation set are
-/// the ones the jump reads (`Some(None)`); `None` when no check follows in
-/// a way that keeps the swapped operation exact.
+/// The shape of a swapped instruction.
+pub(super) fn shape_of(matched: &Matched, kind: Kind, from: Token, with: Token) -> Shape {
+    Shape {
+        kind,
+        width: matched.width,
+        from,
+        with,
+        encoding: matched.encoding.clone(),
+        memory: matched.memory,
+    }
+}
+
+/// An integer operation's check of its overflow: how, and the compare to
+/// drop.
+pub(super) struct Checked<'a> {
+    pub check: Check,
+    pub compare: Option<&'a Insn>,
+}
+
+/// The check rustc emits after the checked operation `k`; `None` when no
+/// check follows in a way that keeps the swapped operation exact.
 ///
 /// Signed arithmetic is checked with the overflow flag (`seto; jo`), which
 /// every add/sub variant sets as its own. Unsigned arithmetic is checked
 /// by comparing the result with an operand (`cmp; jb`), which a swapped
 /// operation would trip wrongly: without the compare, the jump reads the
 /// carry flag, which is the swapped operation's own carry or borrow.
-fn overflow_check<'a>(ours: &[&'a Insn], k: usize) -> Option<Option<&'a Insn>> {
+fn overflow_check<'a>(ours: &[&'a Insn], k: usize) -> Option<Checked<'a>> {
     let mut compare = None;
     let mut end = ours[k].pc + ours[k].bytes.len() as u64;
     for next in ours.iter().skip(k + 1).take(CHECK_REACH) {
@@ -214,8 +305,14 @@ fn overflow_check<'a>(ours: &[&'a Insn], k: usize) -> Option<Option<&'a Insn>> {
             continue;
         }
         return match (d.condition()?, compare) {
-            (0x0 | 0x1, None) => Some(None),
-            (0x2 | 0x3, cmp) => Some(cmp),
+            (0x0 | 0x1, None) => Some(Checked {
+                check: Check::Overflow,
+                compare: None,
+            }),
+            (0x2 | 0x3, compare) => Some(Checked {
+                check: Check::Carry,
+                compare,
+            }),
             _ => None,
         };
     }

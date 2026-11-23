@@ -5,6 +5,8 @@ use std::collections::BTreeMap;
 use cherenkov_core::token::Token;
 use serde::Deserialize;
 
+use crate::shapes::{Check, Kind, Shape, Table};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IsaError(pub String);
 
@@ -52,6 +54,21 @@ pub struct Isa {
     abi: Option<String>,
     relational: BTreeMap<(Signedness, Token), u8>,
     swapped: BTreeMap<Token, Token>,
+    /// The arithmetic patch shapes known to be right (Rust code only).
+    shapes: Option<Table>,
+}
+
+/// An instruction swapped to another operation, and what kind of
+/// instruction it was.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Matched {
+    pub replacement: Vec<u8>,
+    /// The source instruction's opcode (and ModRM reg field), in hex.
+    pub encoding: String,
+    /// The operand width in bits.
+    pub width: u8,
+    /// The second operand is in memory.
+    pub memory: bool,
 }
 
 #[derive(Deserialize)]
@@ -96,6 +113,9 @@ struct Form {
     /// The opcode is followed by a ModRM byte (not the `al/eax, imm` forms).
     #[serde(default = "yes")]
     modrm: bool,
+    /// The operands are bytes.
+    #[serde(default)]
+    byte: bool,
 }
 
 fn yes() -> bool {
@@ -163,6 +183,55 @@ struct RelationalToml {
     swapped: BTreeMap<String, String>,
 }
 
+/// A form's opcode, and its ModRM reg field where the encoding has one, in hex.
+fn encoding(form: &Form) -> String {
+    match form.modrm_reg {
+        Some(r) => format!("{:02x}/{r}", form.opcode),
+        None => format!("{:02x}", form.opcode),
+    }
+}
+
+fn bitwise_form(row: &BitwiseToml, t: Token) -> Option<Form> {
+    match t {
+        Token::BitAnd => Some(row.and),
+        Token::BitOr => Some(row.or),
+        Token::BitXor => Some(row.xor),
+        _ => None,
+    }
+}
+
+fn ordered_pairs(tokens: &[Token]) -> Vec<(Token, Token)> {
+    tokens
+        .iter()
+        .flat_map(|&a| {
+            tokens
+                .iter()
+                .filter(move |&&b| b != a)
+                .map(move |&b| (a, b))
+        })
+        .collect()
+}
+
+/// The shapes of one encoding: each width it can have, its second operand
+/// in a register and (where it has a ModRM byte) in memory.
+fn form_shapes(kind: Kind, form: &Form, from: Token, with: Token) -> Vec<Shape> {
+    let widths: &[u8] = if form.byte { &[8] } else { &[16, 32, 64] };
+    let memories: &[bool] = if form.modrm { &[false, true] } else { &[false] };
+    widths
+        .iter()
+        .flat_map(|&width| {
+            memories.iter().map(move |&memory| Shape {
+                kind,
+                width,
+                from,
+                with,
+                encoding: encoding(form),
+                memory,
+            })
+        })
+        .collect()
+}
+
 fn token(name: &str) -> Result<Token, IsaError> {
     Token::from_name(name).ok_or_else(|| IsaError(format!("unknown token {name:?}")))
 }
@@ -226,12 +295,46 @@ impl Isa {
             abi: None,
             relational,
             swapped,
+            shapes: None,
         })
     }
 
-    /// The table shipped in `isa/amd64.toml`.
+    /// The table shipped in `isa/amd64.toml`, with the arithmetic shapes
+    /// of `isa/tierp-shapes.toml`: Rust code's arithmetic is patched only
+    /// where they say it is right.
     pub fn amd64() -> Isa {
+        Isa {
+            shapes: Some(
+                Table::parse(include_str!("../../../isa/tierp-shapes.toml"))
+                    .expect("isa/tierp-shapes.toml is valid"),
+            ),
+            ..Isa::amd64_unfiltered()
+        }
+    }
+
+    /// The same without the shapes table: what the gate that writes the
+    /// table patches with.
+    pub fn amd64_unfiltered() -> Isa {
         Isa::parse(include_str!("../../../isa/amd64.toml")).expect("isa/amd64.toml is valid")
+    }
+
+    /// The same, deciding arithmetic shapes by `table`.
+    pub fn with_shapes(&self, table: Table) -> Isa {
+        Isa {
+            shapes: Some(table),
+            ..self.clone()
+        }
+    }
+
+    /// The table of arithmetic shapes, when this ISA has one.
+    pub fn shapes(&self) -> Option<&Table> {
+        self.shapes.as_ref()
+    }
+
+    /// Whether arithmetic of `shape` may be patched (any shape, without a
+    /// table).
+    pub fn admits(&self, shape: &Shape) -> bool {
+        self.shapes.as_ref().is_none_or(|t| t.admits(shape))
     }
 
     pub fn cc_name(&self, cc: u8) -> Option<&str> {
@@ -295,10 +398,38 @@ impl Isa {
         }
     }
 
+    /// Split the operand-size prefix (`66`) and a REX prefix, each
+    /// optional, from the instruction.
+    fn legacy_split<'a>(&self, bytes: &'a [u8]) -> (&'a [u8], &'a [u8]) {
+        let size = usize::from(bytes.first() == Some(&0x66));
+        let rex = bytes
+            .get(size)
+            .is_some_and(|b| (self.rex.0..=self.rex.1).contains(b));
+        bytes.split_at(size + usize::from(rex))
+    }
+
+    /// The operand width a prefix and the form's own size give.
+    fn width(&self, prefix: &[u8], byte: bool) -> u8 {
+        let wide = prefix
+            .last()
+            .is_some_and(|&b| (self.rex.0..=self.rex.1).contains(&b) && b & 0x8 != 0);
+        match (byte, wide, prefix.contains(&0x66)) {
+            (true, _, _) => 8,
+            (_, true, _) => 64,
+            (_, _, true) => 16,
+            _ => 32,
+        }
+    }
+
     /// `bytes` with an add-family instruction turned into the matching sub
     /// (or back, when `to_add`); `None` if it is not of the source family.
     pub fn arith_swap(&self, bytes: &[u8], to_add: bool) -> Option<Vec<u8>> {
-        let (rex, body) = self.rex_split(bytes);
+        self.arith_match(bytes, to_add).map(|m| m.replacement)
+    }
+
+    /// [`Isa::arith_swap`], with what kind of instruction was swapped.
+    pub fn arith_match(&self, bytes: &[u8], to_add: bool) -> Option<Matched> {
+        let (prefix, body) = self.legacy_split(bytes);
         let (&opcode, rest) = body.split_first()?;
         let modrm_reg = rest.first().map(|m| (m >> 3) & 0x7);
         let matches =
@@ -307,14 +438,19 @@ impl Isa {
             let (from, to) = if to_add { (sub, add) } else { (add, sub) };
             matches(from).then_some((*from, *to))
         })?;
-        let mut out = rex.to_vec();
+        let mut out = prefix.to_vec();
         out.push(to.opcode);
         out.extend_from_slice(rest);
         if let (Some(r), Some(_)) = (to.modrm_reg, from.modrm_reg) {
-            let m = rex.len() + 1;
+            let m = prefix.len() + 1;
             out[m] = (out[m] & !0x38) | (r << 3);
         }
-        Some(out)
+        Some(Matched {
+            replacement: out,
+            encoding: encoding(&from),
+            width: self.width(prefix, from.byte),
+            memory: from.modrm && rest.first().is_some_and(|m| m >> 6 != 3),
+        })
     }
 
     /// `bytes`, a bitwise instruction (`and`, `or` or `xor`, any shape of
@@ -322,17 +458,16 @@ impl Isa {
     /// it is not of `from`'s. The registers-only forms that name one
     /// register twice are skipped: `xor r, r` zeroes, `and r, r` tests.
     pub fn bitwise_swap(&self, bytes: &[u8], from: Token, with: Token) -> Option<Vec<u8>> {
-        let (rex, body) = self.rex_split(bytes);
+        self.bitwise_match(bytes, from, with).map(|m| m.replacement)
+    }
+
+    /// [`Isa::bitwise_swap`], with what kind of instruction was swapped.
+    pub fn bitwise_match(&self, bytes: &[u8], from: Token, with: Token) -> Option<Matched> {
+        let (prefix, body) = self.legacy_split(bytes);
         let (&opcode, rest) = body.split_first()?;
         let modrm = rest.first().copied();
-        let pick = |row: &BitwiseToml, t: Token| match t {
-            Token::BitAnd => Some(row.and),
-            Token::BitOr => Some(row.or),
-            Token::BitXor => Some(row.xor),
-            _ => None,
-        };
         let (source, target) = self.bitwise.iter().find_map(|row| {
-            let source = pick(row, from)?;
+            let source = bitwise_form(row, from)?;
             let hit = source.opcode == opcode
                 && source
                     .modrm_reg
@@ -340,7 +475,7 @@ impl Isa {
             if !hit {
                 return None;
             }
-            Some((source, pick(row, with)?))
+            Some((source, bitwise_form(row, with)?))
         })?;
         if source.modrm
             && source.modrm_reg.is_none()
@@ -348,19 +483,29 @@ impl Isa {
         {
             return None;
         }
-        let mut out = rex.to_vec();
+        let mut out = prefix.to_vec();
         out.push(target.opcode);
         out.extend_from_slice(rest);
         if let (Some(r), Some(_)) = (target.modrm_reg, source.modrm_reg) {
-            let m = rex.len() + 1;
+            let m = prefix.len() + 1;
             out[m] = (out[m] & !0x38) | (r << 3);
         }
-        Some(out)
+        Some(Matched {
+            replacement: out,
+            encoding: encoding(&source),
+            width: self.width(prefix, source.byte),
+            memory: source.modrm && modrm.is_some_and(|m| m >> 6 != 3),
+        })
     }
 
     /// `bytes`, a scalar floating-point `from` (`+`, `-`, `*`, `/`), as the
     /// instruction of `with`; `None` if it is not one of `from`'s.
     pub fn float_swap(&self, bytes: &[u8], from: Token, with: Token) -> Option<Vec<u8>> {
+        self.float_match(bytes, from, with).map(|m| m.replacement)
+    }
+
+    /// [`Isa::float_swap`], with what kind of instruction was swapped.
+    pub fn float_match(&self, bytes: &[u8], from: Token, with: Token) -> Option<Matched> {
         let opcode = |t: Token| match t {
             Token::Add => Some(self.float.add),
             Token::Sub => Some(self.float.sub),
@@ -376,12 +521,63 @@ impl Isa {
         // The opcode byte: after the prefix, the REX and the escape.
         let at = 1 + rex.len() + 1;
         match body {
-            [escape, op, _, ..] if *escape == self.float.escape && *op == opcode(from)? => {
+            [escape, op, modrm, ..] if *escape == self.float.escape && *op == opcode(from)? => {
                 let mut out = bytes.to_vec();
                 out[at] = opcode(with)?;
-                Some(out)
+                Some(Matched {
+                    replacement: out,
+                    encoding: format!("{op:02x}"),
+                    width: if prefix == 0xf3 { 32 } else { 64 },
+                    memory: modrm >> 6 != 3,
+                })
             }
             _ => None,
+        }
+    }
+
+    /// Every shape of arithmetic patch these rules can make: each swap of
+    /// each encoding at each width, each check, with the second operand in a
+    /// register and in memory. The shapes table decides every one of them.
+    pub fn shape_universe(&self) -> Vec<Shape> {
+        let mut out = Vec::new();
+        for (add, sub) in &self.arith {
+            for (source, from, with) in
+                [(add, Token::Add, Token::Sub), (sub, Token::Sub, Token::Add)]
+            {
+                for check in [Check::Overflow, Check::Carry, Check::Unchecked] {
+                    out.extend(form_shapes(Kind::Int(check), source, from, with));
+                }
+            }
+        }
+        for row in &self.bitwise {
+            for (from, with) in ordered_pairs(&[Token::BitAnd, Token::BitOr, Token::BitXor]) {
+                let source = bitwise_form(row, from).expect("a bitwise token");
+                out.extend(form_shapes(Kind::Bitwise, &source, from, with));
+            }
+        }
+        for (from, with) in ordered_pairs(&[Token::Add, Token::Sub, Token::Mul, Token::Div]) {
+            for width in [32, 64] {
+                for memory in [false, true] {
+                    out.push(Shape {
+                        kind: Kind::Float,
+                        width,
+                        from,
+                        with,
+                        encoding: format!("{:02x}", self.float_opcode(from)),
+                        memory,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    fn float_opcode(&self, t: Token) -> u8 {
+        match t {
+            Token::Add => self.float.add,
+            Token::Sub => self.float.sub,
+            Token::Mul => self.float.mul,
+            _ => self.float.div,
         }
     }
 

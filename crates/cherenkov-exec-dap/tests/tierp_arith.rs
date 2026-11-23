@@ -52,8 +52,10 @@ fn region(addr: u64, original: &str, replacement: &str) -> Region {
     }
 }
 
+/// The rules alone: which instruction, in which order; the shapes table that
+/// decides what rustc's output may be patched is tested below.
 fn isa() -> Isa {
-    Isa::amd64()
+    Isa::amd64_unfiltered()
 }
 
 /// A plan for `lhs from rhs` whose left operand starts at `line:col`,
@@ -757,4 +759,55 @@ fn test_signed_assign_through_a_reference_is_swapped_for_sub_to_add() {
         derive(&p, FILE, &int_through_a_reference("2b"), &isa()),
         Ok(patch(vec![region(0x89aa3, "482b37", "480337")]))
     );
+}
+
+// --- The shapes table: Rust code's arithmetic is patched only for a shape
+// the gate (tests/tierp_gate) has passed.
+
+use cherenkov_exec_dap::shapes::Table;
+
+/// `g2(s + 1)` on u64 is `int w64 carry add->sub 83/0 reg`.
+const SEQ_SHAPE: &str = "int w64 carry add->sub 83/0 reg";
+
+fn table(pass: &[&str]) -> Table {
+    let list = pass
+        .iter()
+        .map(|s| format!("{s:?}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Table::parse(&format!(
+        "rustc = \"test\"\npass = [{list}]\ndeclined = []\n"
+    ))
+    .unwrap()
+}
+
+#[test]
+fn test_rust_arithmetic_of_a_shape_in_the_table_is_patched() {
+    let p = arith_plan(Token::Add, Token::Sub, 605, 8, "s", in_place());
+    let isa = Isa::amd64_unfiltered().with_shapes(table(&[SEQ_SHAPE]));
+    assert!(derive(&p, FILE, &seq(), &isa).is_ok());
+}
+
+#[test]
+fn test_rust_arithmetic_of_a_shape_the_table_lacks_is_declined() {
+    let p = arith_plan(Token::Add, Token::Sub, 605, 8, "s", in_place());
+    let isa = Isa::amd64_unfiltered().with_shapes(table(&[]));
+    let refused = derive(&p, FILE, &seq(), &isa).unwrap_err().to_string();
+    assert!(refused.contains(SEQ_SHAPE), "{refused}");
+}
+
+#[test]
+fn test_arithmetic_of_other_languages_does_not_need_the_rustc_table() {
+    let mut p = arith_plan(Token::Add, Token::Sub, 605, 8, "s", in_place());
+    p.file = "main.go".into();
+    let isa = Isa::amd64_unfiltered().with_shapes(table(&[]));
+    assert!(derive(&p, FILE, &seq(), &isa).is_ok());
+}
+
+#[test]
+fn test_a_statements_line_swap_is_declined_for_a_shape_the_table_lacks() {
+    // Both the line's rule and the column's refuse it.
+    let p = arith_plan(Token::Add, Token::Sub, 605, 8, "s", statement(605));
+    let isa = Isa::amd64_unfiltered().with_shapes(table(&[]));
+    assert!(derive(&p, FILE, &seq(), &isa).is_err());
 }

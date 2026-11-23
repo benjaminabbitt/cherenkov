@@ -272,3 +272,40 @@ fn test_bitwise_swap_is_only_for_the_source_operation_and_not_for_zeroing() {
     );
     assert_eq!(isa.bitwise_swap(&[], Token::BitOr, Token::BitAnd), None);
 }
+
+#[test]
+fn test_every_shape_the_rules_can_make_is_decided_by_the_shapes_table() {
+    let isa = Isa::amd64();
+    let table = isa.shapes().expect("the shipped table");
+    let undecided: Vec<String> = isa
+        .shape_universe()
+        .iter()
+        .filter(|s| !table.knows(s))
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(
+        undecided,
+        Vec::<String>::new(),
+        "a rule or an encoding was added: run `just tierp-harvest`"
+    );
+}
+
+#[test]
+fn test_the_shapes_table_is_the_one_of_the_rustc_in_use() {
+    let out = std::process::Command::new("rustc")
+        .arg("-vV")
+        .output()
+        .unwrap();
+    let text = String::from_utf8(out.stdout).unwrap();
+    let field = |name: &str| {
+        text.lines()
+            .find_map(|l| l.strip_prefix(name).map(|v| v.trim().to_string()))
+            .unwrap()
+    };
+    let in_use = format!("{} ({})", field("release:"), field("commit-hash:"));
+    let table = Isa::amd64().shapes().unwrap().rustc.clone();
+    assert_eq!(
+        table, in_use,
+        "the toolchain changed: run `just tierp-harvest`"
+    );
+}

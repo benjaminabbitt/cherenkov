@@ -14,6 +14,7 @@ pub mod lines;
 pub mod load;
 pub mod native;
 pub mod rpc;
+pub mod shapes;
 pub mod support_lib;
 pub mod tierp;
 pub mod toolchain;
