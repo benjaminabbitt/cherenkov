@@ -141,19 +141,24 @@ fn test_a_profile_setting_the_caller_made_is_kept() {
 fn test_a_workspace_s_packages_are_its_members_names_and_directories() {
     use cherenkov_exec_dap::toolchain::{Package, packages_from_metadata};
     let meta: serde_json::Value = serde_json::json!({"packages": [
-        {"name": "calc-core", "manifest_path": "/w/crates/core/Cargo.toml"},
-        {"name": "calc", "manifest_path": "/w/Cargo.toml"}
+        {"name": "calc-core", "manifest_path": "/w/crates/core/Cargo.toml", "dependencies": []},
+        {"name": "calc", "manifest_path": "/w/Cargo.toml", "dependencies": [
+            {"name": "calc-core", "path": "/w/crates/core"},
+            {"name": "serde"}
+        ]}
     ]});
     assert_eq!(
         packages_from_metadata(&meta),
         [
             Package {
                 name: "calc-core".into(),
-                dir: PathBuf::from("/w/crates/core")
+                dir: PathBuf::from("/w/crates/core"),
+                deps: vec![]
             },
             Package {
                 name: "calc".into(),
-                dir: PathBuf::from("/w")
+                dir: PathBuf::from("/w"),
+                deps: vec!["calc-core".into()]
             },
         ]
     );
@@ -166,10 +171,12 @@ fn test_a_file_belongs_to_the_package_with_the_deepest_directory_above_it() {
         Package {
             name: "calc".into(),
             dir: PathBuf::from("/w"),
+            deps: vec![],
         },
         Package {
             name: "calc-core".into(),
             dir: PathBuf::from("/w/crates/core"),
+            deps: vec![],
         },
     ];
     let of = |f: &str| package_of(&packages, std::path::Path::new(f));

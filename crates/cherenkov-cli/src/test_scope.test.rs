@@ -1,4 +1,5 @@
 use super::*;
+use crate::changed_tests::ChangedTest;
 use std::path::PathBuf;
 
 use crate::selection::{SelectArgs, Selection};
@@ -33,6 +34,7 @@ fn packages() -> Vec<Package> {
         .map(|n| Package {
             name: n.to_string(),
             dir: PathBuf::from(format!("/w/{n}")),
+            deps: deps_of(n),
         })
         .to_vec()
 }
@@ -147,7 +149,9 @@ fn test_the_workspace_scope_builds_everything_and_every_program_judges_every_mut
         Path::new("/w"),
     );
     assert_eq!(scope.build(), None);
-    assert!(scope.all_judge_all());
+    for package in ["core", "util", "app"] {
+        assert_eq!(ids(&scope, package), ["m1"], "{package}");
+    }
 }
 
 #[test]
@@ -158,7 +162,7 @@ fn test_a_mutant_in_no_package_makes_the_whole_workspace_judge() {
     ];
     let scope = Scope::of(&TestPackages::Mutated, &plans, &packages(), Path::new("/w"));
     assert_eq!(scope.build(), None);
-    assert!(scope.all_judge_all());
+    assert_eq!(ids(&scope, "util"), ["m1", "m2"]);
     assert!(
         scope.mutated().is_empty(),
         "the check then compiles the workspace"
@@ -217,4 +221,82 @@ fn test_test_package_is_a_list_of_packages_to_judge_by_and_not_an_argument_for_c
         TestPackages::Named(named(&["a", "b"]))
     );
     assert_eq!(selection.cargo_args, ["--locked"]);
+}
+
+/// app depends on core; util on nothing.
+fn deps_of(name: &str) -> Vec<String> {
+    match name {
+        "app" => vec!["core".to_string(), "util".to_string()],
+        "util" => vec!["core".to_string()],
+        _ => Vec::new(),
+    }
+}
+
+fn changed(file: &str, path: &str) -> ChangedTest {
+    ChangedTest {
+        file: PathBuf::from(file),
+        path: path.to_string(),
+    }
+}
+
+#[test]
+fn test_a_package_reaches_itself_and_its_workspace_dependencies_transitively() {
+    let mut reached: Vec<_> = reach(&packages(), "app").into_iter().collect();
+    reached.sort();
+    assert_eq!(reached, ["app", "core", "util"]);
+    let mut reached: Vec<_> = reach(&packages(), "util").into_iter().collect();
+    reached.sort();
+    assert_eq!(reached, ["core", "util"]);
+    assert_eq!(reach(&packages(), "core").len(), 1);
+}
+
+#[test]
+fn test_a_changed_test_judges_the_mutants_of_every_package_its_package_reaches() {
+    let app_plans = [plan_in("m1", "app/src/lib.rs")];
+    let all = [
+        plan_in("m1", "app/src/lib.rs"),
+        plan_in("m2", "core/src/lib.rs"),
+        plan_in("m3", "util/src/lib.rs"),
+    ];
+    let scope = Scope::of(
+        &TestPackages::Mutated,
+        &app_plans,
+        &packages(),
+        Path::new("/w"),
+    )
+    .with_changed_tests(
+        &[changed("util/src/lib.rs", "tests::t")],
+        &all,
+        &packages(),
+        Path::new("/w"),
+    );
+    // util reaches util and core: m2, m3 are judged by util's tests, and by
+    // the changed ones alone; m1 (app's, changed code) is not util's.
+    assert_eq!(ids(&scope, "util"), ["m2", "m3"]);
+    assert_eq!(scope.only_changed("util").len(), 2);
+    assert_eq!(ids(&scope, "app"), ["m1"]);
+    assert!(scope.only_changed("app").is_empty());
+    assert_eq!(scope.build(), Some(named(&["app", "util"])));
+    assert_eq!(
+        scope.changed_in("util"),
+        [changed("util/src/lib.rs", "tests::t")]
+    );
+    assert_eq!(scope.mutated(), named(&["app", "core", "util"]));
+}
+
+#[test]
+fn test_a_mutant_changed_application_code_and_reached_by_a_changed_test_runs_every_test() {
+    let plans = [plan_in("m1", "core/src/lib.rs")];
+    let scope = Scope::of(&TestPackages::Mutated, &plans, &packages(), Path::new("/w"))
+        .with_changed_tests(
+            &[changed("core/src/lib.rs", "tests::t")],
+            &plans,
+            &packages(),
+            Path::new("/w"),
+        );
+    assert_eq!(ids(&scope, "core"), ["m1"]);
+    assert!(
+        scope.only_changed("core").is_empty(),
+        "not only the changed tests"
+    );
 }

@@ -419,6 +419,9 @@ pub fn workspace_from_metadata(meta: &Value) -> (PathBuf, Vec<String>) {
 pub struct Package {
     pub name: String,
     pub dir: PathBuf,
+    /// The packages it depends on by path (the workspace's own, as far as
+    /// they are in it).
+    pub deps: Vec<String>,
 }
 
 /// The members of `dir`'s Cargo workspace, from `cargo metadata`.
@@ -448,9 +451,17 @@ pub fn packages_from_metadata(meta: &Value) -> Vec<Package> {
         .flatten()
         .filter_map(|p| {
             let manifest = PathBuf::from(p["manifest_path"].as_str()?);
+            let deps = p["dependencies"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|d| d["path"].is_string())
+                .filter_map(|d| d["name"].as_str().map(String::from))
+                .collect();
             Some(Package {
                 name: p["name"].as_str()?.to_string(),
                 dir: manifest.parent()?.to_path_buf(),
+                deps,
             })
         })
         .collect()

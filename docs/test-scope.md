@@ -49,6 +49,28 @@ rules are `TestPackages::resolve` in `crates/cherenkov-cli/src/test_scope.rs`.
 - `--test-package` is no longer a `--package` argument for every cargo
   call: it names the judging packages, as in cargo-mutants.
 
+## Changed tests (`--in-diff`)
+
+Beyond cargo-mutants, which ignores a diff that only touches tests: a test
+function (`#[test]`, in an inline `#[cfg(test)]` module, a `*.test.rs` file
+or `tests/*.rs`) whose body overlaps a line the diff adds is a changed test.
+For each package with a changed test:
+
+- the mutants of every function in the package and its workspace
+  dependencies (by path) are planned, in addition to the mutants of changed
+  application code;
+- the package's test program is baselined and recorded with the changed
+  tests alone, unless changed application code also has mutants judged by
+  that program (then it records as before);
+- each of those added mutants runs only the changed tests that call its
+  function, and is `not-called` when none does. A mutant of changed
+  application code keeps every test that calls it, as before.
+
+A changed test is matched to libtest names by its path in its file
+(`tests::test_a`): a same-named test in another module of the package is
+judged too. The not-called mutants are still decided and printed one line
+each; see the ruling pending on a count.
+
 ## Phase times
 
 Written to stderr: `cherenkov: phase build`, `phase viability check`, and,

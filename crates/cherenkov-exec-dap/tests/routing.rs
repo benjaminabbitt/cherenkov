@@ -16,7 +16,7 @@ use cherenkov_exec_dap::routing::OnlyJudged;
 #[derive(Default, Clone)]
 struct Seen(Arc<Mutex<Vec<String>>>);
 
-struct Program(Seen);
+struct Program(Seen, Vec<Driven>);
 
 impl MutantExecutor for Program {
     fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
@@ -39,6 +39,9 @@ impl MutantExecutor for Program {
             .lock()
             .unwrap()
             .extend(plans.iter().map(|p| p.id.0.clone()));
+        if !self.1.is_empty() {
+            return Ok(Some(self.1.clone()));
+        }
         Ok(Some(
             plans
                 .iter()
@@ -86,7 +89,7 @@ fn judging(ids: &[&str]) -> (OnlyJudged<Program>, Seen) {
     let seen = Seen::default();
     let judged: BTreeSet<MutantId> = ids.iter().map(|i| MutantId((*i).into())).collect();
     (
-        OnlyJudged::new(Program(seen.clone()), Arc::new(judged)),
+        OnlyJudged::new(Program(seen.clone(), Vec::new()), Arc::new(judged)),
         seen,
     )
 }
@@ -136,4 +139,48 @@ fn test_a_program_that_cannot_record_is_left_as_it_is_with_every_test_for_every_
     // answers to give; routing cannot be told through it.
     assert_eq!(recording.driven, None);
     assert!(matches!(recording.selection, Selection::EveryTest { .. }));
+}
+
+fn only_changed(
+    answers: Vec<Driven>,
+    ids: &[&str],
+    only: &[&str],
+    changed: &[&str],
+) -> Vec<Driven> {
+    let set =
+        |l: &[&str]| -> BTreeSet<MutantId> { l.iter().map(|i| MutantId((*i).into())).collect() };
+    let mut program = OnlyJudged::new(Program(Seen::default(), answers), Arc::new(set(ids)))
+        .with_changed(
+            Arc::new(set(only)),
+            changed.iter().map(|c| (*c).to_string()).collect(),
+        );
+    let plans: Vec<MutantPlan> = ids.iter().map(|i| plan_of(i)).collect();
+    program.recording(&plans, BUDGET).unwrap().driven.unwrap()
+}
+
+#[test]
+fn test_a_mutant_only_the_changed_tests_judge_runs_the_changed_tests_that_call_it() {
+    let got = only_changed(
+        vec![
+            Driven::Tests(vec!["a".into(), "changed".into()]),
+            Driven::Tests(vec!["a".into(), "b".into()]),
+            Driven::Every,
+            Driven::NotCalled,
+            Driven::Tests(vec!["a".into()]),
+        ],
+        &["m1", "m2", "m3", "m4", "app"],
+        &["m1", "m2", "m3", "m4"],
+        &["changed"],
+    );
+    assert_eq!(
+        got,
+        [
+            Driven::Tests(vec!["changed".into()]),
+            Driven::NotCalled,
+            Driven::Tests(vec!["changed".into()]),
+            Driven::NotCalled,
+            Driven::Tests(vec!["a".into()]),
+        ],
+        "the mutant of changed application code keeps every test that calls it"
+    );
 }

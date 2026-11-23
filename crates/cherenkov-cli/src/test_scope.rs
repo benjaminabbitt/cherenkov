@@ -27,6 +27,8 @@ use cherenkov_core::id::MutantId;
 use cherenkov_core::plan::MutantPlan;
 use cherenkov_exec_dap::toolchain::{Package, package_of};
 
+use crate::changed_tests::ChangedTest;
+
 /// Which packages' tests judge a mutant.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub enum TestPackages {
@@ -62,6 +64,20 @@ impl TestPackages {
     }
 }
 
+/// `package` and the workspace packages it depends on, directly or not.
+pub fn reach(packages: &[Package], package: &str) -> BTreeSet<String> {
+    let mut reached = BTreeSet::new();
+    let mut todo = vec![package.to_string()];
+    while let Some(next) = todo.pop() {
+        if !reached.insert(next.clone()) {
+            continue;
+        }
+        let deps = packages.iter().find(|p| p.name == next).map(|p| &p.deps);
+        todo.extend(deps.into_iter().flatten().cloned());
+    }
+    reached
+}
+
 /// Which test programs a run builds and which mutants each judges.
 #[derive(Debug, Clone, Default)]
 pub struct Scope {
@@ -73,6 +89,13 @@ pub struct Scope {
     mutated: BTreeSet<String>,
     /// A mutant is in no package: nothing can be scoped to packages.
     unplaced: bool,
+    /// The mutants of the changed application code (every plan given to
+    /// [`Scope::of`]).
+    app: BTreeSet<MutantId>,
+    /// For each package with changed tests, the mutants only those tests
+    /// judge, and the tests.
+    only_changed: BTreeMap<String, Arc<BTreeSet<MutantId>>>,
+    changed: BTreeMap<String, Vec<ChangedTest>>,
 }
 
 impl Scope {
@@ -107,11 +130,22 @@ impl Scope {
                     .insert(plan.id.clone());
             }
         }
+        let app: BTreeSet<MutantId> = plans.iter().map(|p| p.id.clone()).collect();
+        let workspace = unplaced || *tests == TestPackages::Workspace;
+        if workspace {
+            // Every program judges every mutant.
+            for package in packages {
+                judges.insert(package.name.clone(), app.clone());
+            }
+        }
         Scope {
-            workspace: unplaced || *tests == TestPackages::Workspace,
+            workspace,
             unplaced,
             judges: judges.into_iter().map(|(k, v)| (k, Arc::new(v))).collect(),
             mutated,
+            app,
+            only_changed: BTreeMap::new(),
+            changed: BTreeMap::new(),
         }
     }
 
@@ -121,9 +155,68 @@ impl Scope {
         (!self.workspace).then(|| self.judges.keys().cloned().collect())
     }
 
-    /// Whether every test program judges every mutant.
-    pub fn all_judge_all(&self) -> bool {
-        self.workspace
+    /// `changed` tests, found in the diff, also judge: for each package
+    /// that has one, the mutants of every function in the packages it
+    /// reaches (itself and its workspace dependencies), among `plans`
+    /// (all the mutants of the code). Those not already judged for changed
+    /// application code are judged by the changed tests alone.
+    pub fn with_changed_tests(
+        mut self,
+        changed: &[ChangedTest],
+        plans: &[MutantPlan],
+        packages: &[Package],
+        root: &Path,
+    ) -> Scope {
+        for test in changed {
+            if let Some(package) = package_of(packages, &root.join(&test.file)) {
+                self.changed
+                    .entry(package.to_string())
+                    .or_default()
+                    .push(test.clone());
+            }
+        }
+        let owners: Vec<String> = self.changed.keys().cloned().collect();
+        for owner in owners {
+            let reached = reach(packages, &owner);
+            let mut judged = self
+                .judges
+                .get(&owner)
+                .map_or_else(BTreeSet::new, |j| (**j).clone());
+            let mut only = BTreeSet::new();
+            for plan in plans {
+                let Some(package) = package_of(packages, &root.join(&plan.file)) else {
+                    continue;
+                };
+                if !reached.contains(package) {
+                    continue;
+                }
+                self.mutated.insert(package.to_string());
+                if judged.insert(plan.id.clone()) && !self.app.contains(&plan.id) {
+                    only.insert(plan.id.clone());
+                }
+            }
+            self.judges.insert(owner.clone(), Arc::new(judged));
+            self.only_changed.insert(owner, Arc::new(only));
+        }
+        self
+    }
+
+    /// The mutants some changed test judges that are not of changed code.
+    pub fn judged_for_changed_tests(&self) -> BTreeSet<MutantId> {
+        self.only_changed
+            .values()
+            .flat_map(|o| o.iter().cloned())
+            .collect()
+    }
+
+    /// The mutants only `package`'s changed tests judge.
+    pub fn only_changed(&self, package: &str) -> Arc<BTreeSet<MutantId>> {
+        self.only_changed.get(package).cloned().unwrap_or_default()
+    }
+
+    /// The tests the diff changes in `package`.
+    pub fn changed_in(&self, package: &str) -> Vec<ChangedTest> {
+        self.changed.get(package).cloned().unwrap_or_default()
     }
 
     /// The mutants `package`'s tests judge.

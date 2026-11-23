@@ -18,11 +18,28 @@ use cherenkov_core::plan::MutantPlan;
 pub struct OnlyJudged<E> {
     inner: E,
     judged: Arc<BTreeSet<MutantId>>,
+    /// Mutants only the changed tests judge, and those tests.
+    only_changed: Arc<BTreeSet<MutantId>>,
+    changed: Vec<String>,
 }
 
 impl<E> OnlyJudged<E> {
     pub fn new(inner: E, judged: Arc<BTreeSet<MutantId>>) -> Self {
-        OnlyJudged { inner, judged }
+        OnlyJudged {
+            inner,
+            judged,
+            only_changed: Arc::default(),
+            changed: Vec::new(),
+        }
+    }
+
+    /// The mutants in `only` are judged by the `changed` tests alone (their
+    /// libtest names in this program): each runs those of them that call
+    /// it, and none when they do not.
+    pub fn with_changed(mut self, only: Arc<BTreeSet<MutantId>>, changed: Vec<String>) -> Self {
+        self.only_changed = only;
+        self.changed = changed;
+        self
     }
 
     /// The plans this program judges.
@@ -41,13 +58,34 @@ impl<E> OnlyJudged<E> {
         plans
             .iter()
             .map(|p| {
-                if self.judged.contains(&p.id) {
-                    found.next().unwrap_or(Driven::Every)
+                if !self.judged.contains(&p.id) {
+                    return Driven::NotCalled;
+                }
+                let driven = found.next().unwrap_or(Driven::Every);
+                if self.only_changed.contains(&p.id) {
+                    self.of_changed(driven)
                 } else {
-                    Driven::NotCalled
+                    driven
                 }
             })
             .collect()
+    }
+
+    /// `driven`, as far as the changed tests are concerned.
+    fn of_changed(&self, driven: Driven) -> Driven {
+        let tests = match driven {
+            Driven::NotCalled => return Driven::NotCalled,
+            Driven::Every => self.changed.clone(),
+            Driven::Tests(tests) => tests
+                .into_iter()
+                .filter(|t| self.changed.contains(t))
+                .collect(),
+        };
+        if tests.is_empty() {
+            Driven::NotCalled
+        } else {
+            Driven::Tests(tests)
+        }
     }
 }
 

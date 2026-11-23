@@ -9,6 +9,7 @@
 //! JSON, `cherenkov: message` under text, with the exit-code convention's
 //! code (10 failed, 20 declined).
 
+mod changed_tests;
 mod config;
 mod error;
 mod names;

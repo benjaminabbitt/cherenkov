@@ -2,7 +2,7 @@
 //! package or workspace (GDB) on the run layer, printing each event as it
 //! is recorded (`output.rs`).
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -17,11 +17,13 @@ use cherenkov_core::types::DefaultFacts;
 use cherenkov_exec_dap::delve::{DelveConfig, DelveExecutor};
 use cherenkov_exec_dap::gdb::{GdbConfig, GdbExecutor};
 use cherenkov_exec_dap::isa::Isa;
+use cherenkov_exec_dap::libtest::list_tests;
 use cherenkov_exec_dap::routing::OnlyJudged;
 use cherenkov_exec_dap::toolchain::{
-    TestProgram, build_go_test_binary, build_rust_test_programs_of, build_rust_test_programs_with,
-    cargo_test_env, cargo_workspace, cargo_workspace_prefix, go_test_args, package_args,
-    package_of, rust_code_files_with, rust_test_args, rustup_toolchain, workspace_packages,
+    Package, TestProgram, build_go_test_binary, build_rust_test_programs_of,
+    build_rust_test_programs_with, cargo_test_env, cargo_workspace, cargo_workspace_prefix,
+    go_test_args, package_args, package_of, rust_code_files_with, rust_test_args, rustup_toolchain,
+    workspace_packages,
 };
 use cherenkov_exec_dap::viability::{self, RustcRejects};
 use cherenkov_run_application::host::Readers;
@@ -30,6 +32,7 @@ use cherenkov_run_application::verdicts::VerdictFile;
 use cherenkov_run_application::workers::{Killer, SESSIONS_PER_WORKER};
 use cherenkov_syntax::TreeSitterSyntax;
 
+use crate::changed_tests::{ChangedTest, changed_tests, libtest_names};
 use crate::error::CliError;
 use crate::output::{self, Listed};
 use crate::phases::Phases;
@@ -194,18 +197,23 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     // inline or in their own files, are never mutated.
     let code = rust_code_files_with(&cargo, root, &tools.cargo_args).map_err(toolchain)?;
     let canonical = root.canonicalize().map_err(|e| unreadable(root, &e))?;
-    let plans: Vec<MutantPlan> = plan_language(root, "rust", asked.sets, &tools.selection)?
+    let every: Vec<MutantPlan> = plan_language(root, "rust", asked.sets, &tools.selection)?
         .into_iter()
         .filter(|p| code.binary_search(&canonical.join(&p.file)).is_ok())
         .collect();
-    let plans = narrowed(plans, asked)?;
+    // Changed application code: the mutants in the diff.
+    let changed_code = narrowed(every.clone(), asked)?;
     let packages = workspace_packages(&cargo, root).map_err(toolchain)?;
     let scope = Scope::of(
         &tools.selection.test_packages,
-        &plans,
+        &changed_code,
         &packages,
         &canonical,
     );
+    // Changed tests: the mutants of what they can reach, judged by them.
+    let changed_tests = diff_tests(asked)?;
+    let scope = scope.with_changed_tests(&changed_tests, &every, &packages, &canonical);
+    let plans = with_changed_tests_plans(changed_code, &every, &scope);
     let mut programs = timed("build", || build_programs(&cargo, root, tools, &scope))?;
     programs.sort();
     let prefix = cargo_workspace_prefix(&cargo, root).map_err(toolchain)?;
@@ -214,15 +222,18 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     let rejected = timed("viability check", || {
         rustc_rejects(asked, &cargo, &workspace_root, &plans, &scope)
     });
+    let routed: Vec<Routed> = programs
+        .iter()
+        .map(|program| routed(asked, &packages, &scope, program))
+        .collect();
     // One executor per test program for each worker; every worker has its
     // own GDB sessions. A program judges the mutants routed to it.
     let set = || -> Vec<Box<dyn MutantExecutor + Send>> {
         programs
             .iter()
             .cloned()
-            .map(|program| {
-                let judged = package_of(&packages, &program.package_dir)
-                    .map(|package| scope.judged_by(package));
+            .zip(&routed)
+            .map(|(program, routed)| {
                 // In its package's directory, as `cargo test` runs it.
                 // With cargo's environment too, as `cargo test` runs it.
                 let toolchain = rustup_toolchain(&program.package_dir);
@@ -231,7 +242,7 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
                 let config = GdbConfig {
                     gdb: gdb.clone(),
                     test_binary: program.binary,
-                    test_args: rust_test_args(asked.tests),
+                    test_args: routed.test_args.clone(),
                     cwd: Some(program.package_dir),
                     env,
                     source_root: Some(workspace_root.clone()),
@@ -245,11 +256,10 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
                     .with_default_facts(facts.clone())
                     .with_toolchain(support_toolchain);
                 let executor = RustcRejects::new(executor, rejected.clone());
-                match judged.filter(|_| !scope.all_judge_all()) {
-                    Some(judged) => Box::new(OnlyJudged::new(executor, judged))
-                        as Box<dyn MutantExecutor + Send>,
-                    None => Box::new(executor),
-                }
+                Box::new(
+                    OnlyJudged::new(executor, routed.judged.clone())
+                        .with_changed(routed.only_changed.clone(), routed.changed.clone()),
+                ) as Box<dyn MutantExecutor + Send>
             })
             .collect()
     };
@@ -258,6 +268,70 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     let result = on_run_layer(asked, "rust", &plans, workers_of(sets, jobs));
     cherenkov_exec_dap::support_lib::remove_scratch();
     result
+}
+
+/// What one test program is given: the mutants it judges, those among them
+/// that only the changed tests judge, those tests by libtest name, and the
+/// arguments it runs with.
+struct Routed {
+    judged: Arc<BTreeSet<MutantId>>,
+    only_changed: Arc<BTreeSet<MutantId>>,
+    changed: Vec<String>,
+    test_args: Vec<String>,
+}
+
+/// `program`'s routing. When nothing but changed tests judge here, the
+/// program is baselined and recorded with those tests alone.
+fn routed(asked: &Asked, packages: &[Package], scope: &Scope, program: &TestProgram) -> Routed {
+    let package = package_of(packages, &program.package_dir).unwrap_or_default();
+    let (judged, only_changed) = (scope.judged_by(package), scope.only_changed(package));
+    let listed = list_tests(&program.binary).unwrap_or_default();
+    let changed = libtest_names(&listed, &scope.changed_in(package));
+    let only_those = !only_changed.is_empty()
+        && judged.iter().all(|id| only_changed.contains(id))
+        && !changed.is_empty()
+        && asked.tests.is_empty();
+    let test_args = if only_those {
+        rust_test_args(&changed)
+    } else {
+        rust_test_args(asked.tests)
+    };
+    Routed {
+        judged,
+        only_changed,
+        changed,
+        test_args,
+    }
+}
+
+/// The plans to run: those of the changed application code and those of
+/// what the changed tests reach.
+fn with_changed_tests_plans(
+    changed_code: Vec<MutantPlan>,
+    every: &[MutantPlan],
+    scope: &Scope,
+) -> Vec<MutantPlan> {
+    let mut plans = changed_code;
+    let kept: BTreeSet<MutantId> = plans.iter().map(|p| p.id.clone()).collect();
+    let reached = scope.judged_for_changed_tests();
+    plans.extend(
+        every
+            .iter()
+            .filter(|p| !kept.contains(&p.id) && reached.contains(&p.id))
+            .cloned(),
+    );
+    plans
+}
+
+/// The tests the `--in-diff` diff changes (none without one).
+fn diff_tests(asked: &Asked) -> Result<Vec<ChangedTest>, CliError> {
+    let Some(file) = &asked.tools.in_diff else {
+        return Ok(Vec::new());
+    };
+    let text = std::fs::read_to_string(file).map_err(|e| unreadable(file, &e))?;
+    let below = repository_prefix(asked.root);
+    let read = |relative: &Path| std::fs::read_to_string(asked.root.join(relative)).ok();
+    Ok(changed_tests(&AddedLines::parse(&text), &below, &read))
 }
 
 /// The test programs of the packages that judge the planned mutants: the

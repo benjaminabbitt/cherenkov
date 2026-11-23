@@ -466,3 +466,50 @@ fn test_run_of_a_diff_with_test_package_judges_by_that_package_s_tests_alone() {
     let _ = std::fs::remove_file(&diff);
     assert_eq!(prepared_packages(&out.stderr), ["ws_app"]);
 }
+
+/// A diff that changes `app`'s test `test_run_doubles_an_even_number` only
+/// (its body line, line 13).
+fn app_test_diff() -> PathBuf {
+    let path = std::env::temp_dir().join(format!("cherenkov-app-{}.diff", std::process::id()));
+    std::fs::write(
+        &path,
+        "--- a/fixtures/rust-workspace/app/src/lib.rs\n\
+         +++ b/fixtures/rust-workspace/app/src/lib.rs\n\
+         @@ -12,3 +12,3 @@\n fn test_run_doubles_an_even_number() {\n-        assert_eq!(run(4), 7);\n+        assert_eq!(run(4), 8);\n     }\n",
+    )
+    .unwrap();
+    path
+}
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_run_of_a_changed_test_runs_the_mutants_it_calls_with_that_test_alone() {
+    let diff = app_test_diff();
+    let out = run(
+        &fixtures().join("rust-workspace"),
+        &["--format", "json", "--in-diff", diff.to_str().unwrap()],
+    );
+    let _ = std::fs::remove_file(&diff);
+    let mut called = std::collections::BTreeSet::new();
+    let mut skipped = std::collections::BTreeSet::new();
+    for d in decided(&out.stdout) {
+        let function = d["function"].as_str().unwrap().to_string();
+        if d["verdict"] == "not-called" {
+            skipped.insert(function);
+        } else {
+            called.insert(function);
+        }
+    }
+    // The changed test calls run, is_even and double; nothing calls triple
+    // but core's own test, which did not change.
+    assert_eq!(
+        called,
+        ["double", "is_even", "run"].map(String::from).into()
+    );
+    assert_eq!(skipped, ["triple"].map(String::from).into());
+    let stderr = documents(&out.stdout)
+        .iter()
+        .filter(|d| d["event"] == "program.prepared")
+        .count();
+    assert_eq!(stderr, 1, "only app's program is prepared");
+}

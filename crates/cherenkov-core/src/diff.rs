@@ -74,6 +74,12 @@ impl AddedLines {
         self.touches(&below.join(relative), start, end)
     }
 
+    /// The files the diff adds lines to, with the line ranges (1-based,
+    /// inclusive) it adds, by the path the diff names.
+    pub fn files(&self) -> impl Iterator<Item = (&Path, &[(u32, u32)])> {
+        self.files.iter().map(|(f, r)| (f.as_path(), r.as_slice()))
+    }
+
     /// Whether the diff adds anything.
     pub fn is_empty(&self) -> bool {
         self.files.values().all(Vec::is_empty)
