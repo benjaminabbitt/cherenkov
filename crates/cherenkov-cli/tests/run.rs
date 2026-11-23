@@ -370,3 +370,99 @@ fn test_run_decides_mutants_no_test_executes_without_running_them() {
         "the unexecuted mutants are counted: {finished}"
     );
 }
+
+/// A diff that changes `double`'s body line (line 4) in the fixture
+/// workspace's `core` package and nothing else.
+fn core_diff() -> PathBuf {
+    let path = std::env::temp_dir().join(format!("cherenkov-core-{}.diff", std::process::id()));
+    std::fs::write(
+        &path,
+        "--- a/fixtures/rust-workspace/core/src/lib.rs\n\
+         +++ b/fixtures/rust-workspace/core/src/lib.rs\n\
+         @@ -3,3 +3,3 @@\n pub fn double(x: i32) -> i32 {\n-    x + x\n+    x * 2\n }\n",
+    )
+    .unwrap();
+    path
+}
+
+/// The test programs a text run prepared (stderr's `prepared in` lines),
+/// by the package they belong to (`ws_core`, `ws_util`, `ws_app`).
+fn prepared_packages(stderr: &[u8]) -> Vec<String> {
+    let mut found: Vec<String> = String::from_utf8_lossy(stderr)
+        .lines()
+        .filter(|l| l.contains(": prepared in "))
+        .flat_map(|l| {
+            ["ws_core", "ws_util", "ws_app"]
+                .into_iter()
+                .filter(|p| l.contains(p))
+        })
+        .map(String::from)
+        .collect();
+    found.sort();
+    found
+}
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_run_of_a_diff_in_one_package_prepares_only_that_package_s_programs() {
+    let diff = core_diff();
+    let out = run(
+        &fixtures().join("rust-workspace"),
+        &["--format", "text", "--in-diff", diff.to_str().unwrap()],
+    );
+    let _ = std::fs::remove_file(&diff);
+    assert_eq!(prepared_packages(&out.stderr), ["ws_core"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    for phase in [
+        "build",
+        "viability check",
+        "preparation and recording",
+        "mutants",
+    ] {
+        assert!(
+            stderr.contains(&format!("phase {phase}: ")),
+            "{phase}: {stderr}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_run_of_a_diff_with_test_workspace_prepares_every_package_s_programs() {
+    let diff = core_diff();
+    let out = run(
+        &fixtures().join("rust-workspace"),
+        &[
+            "--format",
+            "text",
+            "--in-diff",
+            diff.to_str().unwrap(),
+            "--test-workspace",
+            "true",
+        ],
+    );
+    let _ = std::fs::remove_file(&diff);
+    assert_eq!(
+        prepared_packages(&out.stderr),
+        ["ws_app", "ws_core", "ws_util"]
+    );
+}
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_run_of_a_diff_with_test_package_judges_by_that_package_s_tests_alone() {
+    let diff = core_diff();
+    let out = run(
+        &fixtures().join("rust-workspace"),
+        &[
+            "--format",
+            "text",
+            "--in-diff",
+            diff.to_str().unwrap(),
+            "--test-package",
+            "ws-app",
+        ],
+    );
+    let _ = std::fs::remove_file(&diff);
+    assert_eq!(prepared_packages(&out.stderr), ["ws_app"]);
+}
