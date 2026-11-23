@@ -18,6 +18,10 @@ pub enum Checked {
     Unsupported(String),
     /// The mutant has no source form to compile (an unknown default value).
     NoSourceForm,
+    /// No test reached the mutated code under the debugger, and the compiled
+    /// mutant leaves every test as at baseline too: they agree, and nothing
+    /// was exercised.
+    NotExercised(String),
 }
 
 /// What the debugger established for one mutant, across the test programs.
@@ -36,24 +40,52 @@ pub enum Observed {
 }
 
 impl Observed {
-    /// The run to judge, or why this mutant cannot be judged.
-    fn into_run(self, plan: &MutantPlan) -> Result<Result<Run, String>, String> {
+    /// What checking the mutant found, given the unmutated source's `baseline`
+    /// and `source`, which compiles and runs the mutant. A mutant the
+    /// debugger did not run while the compiled one is detected is the
+    /// false-survivor signature: an error, as is output that cannot be
+    /// judged.
+    fn settle(
+        self,
+        plan: &MutantPlan,
+        baseline: &Run,
+        source: impl FnOnce() -> Result<Run, String>,
+    ) -> Result<Checked, String> {
+        match &self {
+            Observed::Unsupported(reason) => Ok(Checked::Unsupported(reason.clone())),
+            Observed::Incomplete(_) => Err(self.failure(plan)),
+            Observed::Ran(run) => Ok(Checked::Judged(judge(run, &source()?))),
+            Observed::NotReached(_) | Observed::NotCalled => {
+                let compiled = source()?;
+                match compiled {
+                    Run::DoesNotCompile => Ok(Checked::Judged(Judgement::Unviable)),
+                    _ if compiled == *baseline => Ok(Checked::NotExercised(self.failure(plan))),
+                    _ => Err(format!(
+                        "{}; the compiled mutant ends differently from baseline: {compiled:?}",
+                        self.failure(plan)
+                    )),
+                }
+            }
+        }
+    }
+
+    /// Why this outcome cannot be judged, for the error naming the plan.
+    fn failure(&self, plan: &MutantPlan) -> String {
         let id = plan.id.to_string();
         match self {
-            Observed::Ran(run) => Ok(Ok(run)),
-            Observed::Unsupported(reason) => Ok(Err(reason)),
-            Observed::NotReached(reason) => Err(format!(
+            Observed::Ran(_) | Observed::Unsupported(_) => String::new(),
+            Observed::NotReached(reason) => format!(
                 "{id} {}: the debugger did not reach the mutated code: {reason}",
                 plan.site()
-            )),
-            Observed::NotCalled => Err(format!(
+            ),
+            Observed::NotCalled => format!(
                 "{id} {}: no test calls the mutated function, so the debugger run says nothing",
                 plan.site()
-            )),
-            Observed::Incomplete(why) => Err(format!(
+            ),
+            Observed::Incomplete(why) => format!(
                 "{id} {}: the debugger run cannot be judged, its output is incomplete: {why}",
                 plan.site()
-            )),
+            ),
         }
     }
 }
@@ -255,15 +287,14 @@ pub fn check(
         let original = source_of(plan).map_err(|e| format!("{}: {e}", plan.file.display()))?;
         let checked = match render_source(&original, plan, profile) {
             None => Checked::NoSourceForm,
-            Some(mutated) => match debugger.run(plan)?.into_run(plan)? {
-                Err(reason) => Checked::Unsupported(reason),
-                Ok(at_runtime) => {
-                    let compiled = scratch
+            Some(mutated) => {
+                let compile = || {
+                    scratch
                         .run_mutant(&plan.file, &mutated, test_args, source_budget)
-                        .map_err(|e| e.to_string())?;
-                    Checked::Judged(judge(&at_runtime, &compiled))
-                }
-            },
+                        .map_err(|e| e.to_string())
+                };
+                debugger.run(plan)?.settle(plan, &baseline, compile)?
+            }
         };
         report(plan, &checked);
     }
@@ -485,11 +516,71 @@ mod tests {
         assert_eq!(seen, Observed::Unsupported("no way".into()));
     }
 
+    fn baseline_run() -> Run {
+        tests_of(&[("a", TestOutcome::Ok), ("b", TestOutcome::Ok)])
+    }
+
+    fn killed_run() -> Run {
+        tests_of(&[("a", TestOutcome::Ok), ("b", TestOutcome::Failed)])
+    }
+
     #[test]
-    fn test_check_fails_loudly_naming_what_is_missing_for_an_unjudgeable_run() {
+    fn test_settle_judges_a_ran_mutant_against_the_compiled_one() {
+        let checked = Observed::Ran(baseline_run())
+            .settle(&a_plan(), &baseline_run(), || Ok(killed_run()))
+            .unwrap();
+        assert!(matches!(checked, Checked::Judged(Judgement::Unfaithful(_))));
+    }
+
+    #[test]
+    fn test_settle_reports_not_exercised_when_the_compiled_mutant_is_unaffected_too() {
+        for observed in [
+            Observed::NotCalled,
+            Observed::NotReached("elsewhere".into()),
+        ] {
+            let checked = observed
+                .settle(&a_plan(), &baseline_run(), || Ok(baseline_run()))
+                .unwrap();
+            assert!(matches!(checked, Checked::NotExercised(_)), "{checked:?}");
+        }
+    }
+
+    #[test]
+    fn test_settle_fails_loudly_when_the_debugger_ran_nothing_but_the_compiled_mutant_is_killed() {
+        for observed in [
+            Observed::NotCalled,
+            Observed::NotReached("elsewhere".into()),
+        ] {
+            let plan = a_plan();
+            let why = observed
+                .settle(&plan, &baseline_run(), || Ok(killed_run()))
+                .unwrap_err();
+            assert!(why.contains(&plan.id.to_string()), "{why}");
+        }
+    }
+
+    #[test]
+    fn test_settle_leaves_an_unviable_source_mutant_unviable_whatever_the_debugger_saw() {
+        let checked = Observed::NotCalled
+            .settle(&a_plan(), &baseline_run(), || Ok(Run::DoesNotCompile))
+            .unwrap();
+        assert_eq!(checked, Checked::Judged(Judgement::Unviable));
+    }
+
+    #[test]
+    fn test_settle_reports_a_refusal_as_unsupported_without_compiling() {
+        let checked = Observed::Unsupported("no way".into())
+            .settle(&a_plan(), &baseline_run(), || panic!("compiled"))
+            .unwrap();
+        assert_eq!(checked, Checked::Unsupported("no way".into()));
+    }
+
+    #[test]
+    fn test_settle_fails_loudly_for_incomplete_output_even_when_the_compiled_mutant_is_unaffected()
+    {
         let plan = a_plan();
         let why = Observed::Incomplete("test b missing".into())
-            .into_run(&plan)
+            .settle(&plan, &baseline_run(), || Ok(baseline_run()))
             .unwrap_err();
         assert!(why.contains("test b missing"), "{why}");
         assert!(why.contains(&plan.id.to_string()), "{why}");

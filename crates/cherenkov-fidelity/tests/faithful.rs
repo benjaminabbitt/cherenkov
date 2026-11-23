@@ -105,7 +105,30 @@ fn check_rust_tiers(root: &Path, set: &str) -> Vec<(MutantPlan, Checked, Option<
     for (plan, _, tier) in &mut out {
         *tier = debugger.tier(plan);
     }
+    print_counts(&out);
     out
+}
+
+/// What checking found, by kind, and each mutant no test exercised.
+fn print_counts(out: &[(MutantPlan, Checked, Option<Tier>)]) {
+    let count = |f: &dyn Fn(&Checked) -> bool| out.iter().filter(|(_, c, _)| f(c)).count();
+    eprintln!(
+        "fidelity: {} mutants: {} faithful, {} unviable, {} unsupported, {} not exercised, {} other",
+        out.len(),
+        count(&|c| matches!(c, Checked::Judged(Judgement::Faithful))),
+        count(&|c| matches!(c, Checked::Judged(Judgement::Unviable))),
+        count(&|c| matches!(c, Checked::Unsupported(_))),
+        count(&|c| matches!(c, Checked::NotExercised(_))),
+        count(&|c| matches!(
+            c,
+            Checked::Judged(Judgement::Unfaithful(_)) | Checked::NoSourceForm
+        )),
+    );
+    for (plan, c, _) in out {
+        if let Checked::NotExercised(why) = c {
+            eprintln!("fidelity: not exercised: {why} [{}]", plan.describe());
+        }
+    }
 }
 
 #[test]
@@ -271,7 +294,8 @@ fn test_every_cargo_mutants_mutant_of_rust_ops_is_faithful_unviable_or_an_accept
     let bad: Vec<String> = checked
         .iter()
         .filter(|(p, c)| match c {
-            Checked::Judged(Judgement::Faithful | Judgement::Unviable) => false,
+            Checked::Judged(Judgement::Faithful | Judgement::Unviable)
+            | Checked::NotExercised(_) => false,
             Checked::Unsupported(_) => !accepted(p),
             _ => true,
         })
