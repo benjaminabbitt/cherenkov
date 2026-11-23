@@ -1,10 +1,10 @@
 // Derived from cargo-mutants (https://github.com/sourcefrog/cargo-mutants),
-// src/fnvalue.rs, 26.2.0. Copyright (c) 2021 Martin Pool, MIT licence; the
+// src/fnvalue.rs, 27.1.0. Copyright (c) 2021 Martin Pool, MIT licence; the
 // notice is reproduced in THIRD-PARTY-NOTICES.md at the repository root and
 // must travel with copies of this file.
 
 //! Function-body replacement values for Rust result types, as cargo-mutants
-//! 26.2.0 generates them (`src/fnvalue.rs`): a small parser for the type's
+//! 27.1.0 generates them (`src/fnvalue.rs`): a small parser for the type's
 //! source text and the same recursive value table, branch for branch.
 
 /// The replacement values for a function whose result type is
@@ -166,7 +166,9 @@ fn generic_values(last: &Segment, errs: &[&str]) -> Option<Vec<String>> {
         values(inner, errs).iter().map(|r| f(r)).collect()
     };
     let name = &last.ident;
-    if last.ident == "Result" {
+    if let Some(t) = first_type_arg(last, "NonZero") {
+        Some(generic_nonzero_values(t))
+    } else if last.ident == "Result" {
         let ok = match first_type_arg(last, "Result") {
             Some(t) => map_each(t, &|r| format!("Ok({r})")),
             None => vec!["Ok(Default::default())".into()],
@@ -242,6 +244,17 @@ fn generic_values(last: &Segment, errs: &[&str]) -> Option<Vec<String>> {
                 .collect()
         })
     }
+}
+
+/// The values of `NonZero<T>` (cargo-mutants 27.1.0): only positive when `T`
+/// is a bare unsigned integer, either sign for a signed or unknown `T`.
+fn generic_nonzero_values(inner: &Ty) -> Vec<String> {
+    let unsigned = matches!(inner, Ty::Path(p) if UNSIGNED.iter().any(|u| is_ident(p, u)));
+    let mut values = vec!["1.try_into().unwrap()".to_string()];
+    if !unsigned {
+        values.push("(-1).try_into().unwrap()".into());
+    }
+    values
 }
 
 /// `path.is_ident(name)`: exactly one segment, with no arguments.

@@ -1897,7 +1897,7 @@ fn cargo_mutants() -> OperatorSet {
     OperatorSet {
         name: "cargo-mutants",
         summary: "what cargo-mutants generates, for a mutant-by-mutant comparison",
-        source: "cargo-mutants 26.2.0",
+        source: "cargo-mutants 27.1.0",
         mutations: &[
             "ror/eq->ne",
             "ror/ne->eq",
