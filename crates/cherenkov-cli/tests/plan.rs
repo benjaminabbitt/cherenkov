@@ -580,3 +580,24 @@ fn test_plan_with_a_bad_custom_set_is_declined_naming_the_problem() {
     assert_eq!(error["code"], "cherenkov-cli-bad-operator-set");
     assert_eq!(error["args"]["reason"], "no mutation named ror/zzz");
 }
+
+#[test]
+fn test_mutations_lists_no_alias_line_for_an_operator_nothing_else_calls_the_same() {
+    let text = String::from_utf8(cherenkov(&["mutations"]).stdout).unwrap();
+    let (_, from_lcr) = text.split_once("\nlcr: ").unwrap();
+    let heading = from_lcr.lines().nth(1).unwrap();
+    assert_eq!(heading, "lcr/and->or", "no operator-level alias for lcr");
+    let (_, from_ror) = text.split_once("\nror: ").unwrap();
+    assert_eq!(
+        from_ror.lines().nth(1).unwrap(),
+        "  also called: Mothra ROR"
+    );
+}
+
+#[test]
+fn test_plan_names_prints_no_operators_header() {
+    let out = plan(&fixtures().join("rust"), &["--names"]);
+    assert!(!String::from_utf8_lossy(&out.stderr).contains("operators:"));
+    let out = plan(&fixtures().join("rust"), &[]);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("operators:"));
+}
