@@ -203,9 +203,12 @@ cherenkov run . | jq 'select(.event == "mutant.decided" and .verdict == "survive
 ```
 
 An error is `{"code", "args", "message"}` on stderr under JSON (a line
-`cherenkov: message` under text), with exit code 10 when something broke
-and 20 when the request cannot be done (no project, no debugger, no such
-operator set).
+`cherenkov: message` under text), with exit code 32 when something broke
+and 48 when the request cannot be done (no project, no debugger, no such
+operator set). Every success exits 0, or 16 under the global
+`--detailed-exitcode` flag (failures and refusals keep 32 and 48, a usage
+error is 48); no success says more than "ok", so 17 ("would change") is
+never used.
 
 Development recipes (`justfile`):
 

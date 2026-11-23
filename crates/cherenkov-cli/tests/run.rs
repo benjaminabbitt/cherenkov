@@ -5,6 +5,8 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use cli_support::Exit;
+
 use serde_json::Value;
 
 fn fixtures() -> PathBuf {
@@ -153,7 +155,11 @@ fn test_run_without_a_go_or_cargo_project_fails_with_message() {
         .args(["--format", "text"])
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(20), "declined");
+    assert_eq!(
+        out.status.code(),
+        Some(i32::from(Exit::REFUSED.code(false))),
+        "declined"
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("no go.mod or Cargo.toml"), "{stderr}");
 }

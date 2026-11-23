@@ -4,6 +4,8 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use cli_support::Exit;
+
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures")
 }
@@ -221,7 +223,11 @@ fn error_document(out: &Output) -> serde_json::Value {
 #[test]
 fn test_an_error_under_json_is_its_code_args_and_message_on_stderr() {
     let out = cherenkov(&["plan", "/no/such/dir", "--format", "json"]);
-    assert_eq!(out.status.code(), Some(10), "it tried, and something broke");
+    assert_eq!(
+        out.status.code(),
+        Some(i32::from(Exit::FAILED.code(false))),
+        "it tried, and something broke"
+    );
     assert!(out.stdout.is_empty());
     let error = error_document(&out);
     assert_eq!(error["code"], "cherenkov-cli-unreadable");
@@ -245,7 +251,10 @@ fn test_a_request_the_state_forbids_is_declined() {
         "--format",
         "json",
     ]);
-    assert_eq!(out.status.code(), Some(20));
+    assert_eq!(
+        out.status.code(),
+        Some(i32::from(Exit::REFUSED.code(false)))
+    );
     let error = error_document(&out);
     assert_eq!(error["code"], "cherenkov-cli-unknown-operator-set");
     assert_eq!(error["args"]["name"], "nope");
@@ -575,7 +584,10 @@ fn test_plan_with_a_bad_custom_set_is_declined_naming_the_problem() {
         "json",
     ]);
     std::fs::remove_file(&file).unwrap();
-    assert_eq!(out.status.code(), Some(20));
+    assert_eq!(
+        out.status.code(),
+        Some(i32::from(Exit::REFUSED.code(false)))
+    );
     let error = error_document(&out);
     assert_eq!(error["code"], "cherenkov-cli-bad-operator-set");
     assert_eq!(error["args"]["reason"], "no mutation named ror/zzz");
@@ -600,4 +612,48 @@ fn test_plan_names_prints_no_operators_header() {
     assert!(!String::from_utf8_lossy(&out.stderr).contains("operators:"));
     let out = plan(&fixtures().join("rust"), &[]);
     assert!(String::from_utf8_lossy(&out.stderr).contains("operators:"));
+}
+
+#[test]
+fn test_a_usage_error_exits_with_the_published_refused_code_48() {
+    let out = cherenkov(&["plan", "--no-such-flag"]);
+    assert_eq!(out.status.code(), Some(48));
+}
+
+#[test]
+fn test_a_failed_plan_exits_with_the_published_failed_code_32() {
+    let out = cherenkov(&["plan", "/no/such/dir"]);
+    assert_eq!(out.status.code(), Some(32));
+}
+
+#[test]
+fn test_a_successful_plan_exits_zero_without_the_detailed_flag() {
+    let out = cherenkov(&["plan", fixtures().join("go").to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(0));
+}
+
+#[test]
+fn test_a_successful_plan_exits_16_under_detailed_exitcode() {
+    let dir = fixtures().join("go");
+    let out = cherenkov(&["plan", dir.to_str().unwrap(), "--detailed-exitcode"]);
+    assert_eq!(out.status.code(), Some(16));
+    let out = cherenkov(&["--detailed-exitcode", "plan", dir.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(16), "the flag is global");
+}
+
+#[test]
+fn test_failures_and_usage_errors_keep_their_codes_under_detailed_exitcode() {
+    let out = cherenkov(&["plan", "/no/such/dir", "--detailed-exitcode"]);
+    assert_eq!(out.status.code(), Some(32));
+    let out = cherenkov(&["plan", "--no-such-flag", "--detailed-exitcode"]);
+    assert_eq!(out.status.code(), Some(48));
+}
+
+#[test]
+fn test_help_exits_zero_and_sixteen_under_detailed_exitcode() {
+    assert_eq!(cherenkov(&["--help"]).status.code(), Some(0));
+    assert_eq!(
+        cherenkov(&["--help", "--detailed-exitcode"]).status.code(),
+        Some(16)
+    );
 }

@@ -277,7 +277,7 @@ fn test_the_run_s_finish_counts_the_mutants_it_could_not_run_by_reason() {
 
 #[test]
 fn test_the_finish_says_the_exit_code_its_status_maps_to() {
-    for (status, exit) in [(RunStatus::Complete, 0), (RunStatus::Failed, 10)] {
+    for (status, exit) in [(RunStatus::Complete, 0), (RunStatus::Failed, 32)] {
         let kept = Kept::default();
         let mut sink = Deficiencies::new(kept.clone(), None::<Log>);
         let mut done = finished(&[], &[]);
