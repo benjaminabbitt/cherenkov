@@ -19,7 +19,7 @@ pub type Evidence = BTreeMap<Shape, Vec<Verdict>>;
 
 /// Whether a shape passed: some case showed the patch right, and none
 /// showed it wrong.
-fn passed(verdicts: &[Verdict]) -> bool {
+pub fn passed(verdicts: &[Verdict]) -> bool {
     verdicts.contains(&Verdict::Passed)
         && verdicts
             .iter()

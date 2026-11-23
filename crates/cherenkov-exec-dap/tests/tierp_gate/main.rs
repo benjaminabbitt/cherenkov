@@ -327,3 +327,52 @@ fn value_evidence() -> table::StubEvidence {
         bytes: found.harvested,
     }
 }
+
+/// The verdicts of the cases of each shape.
+fn by_shape(
+    cases: &[values::ValueCase],
+    found: &value_gate::ValueFindings,
+) -> BTreeMap<String, Vec<Verdict>> {
+    let mut out: BTreeMap<String, Vec<Verdict>> = BTreeMap::new();
+    for c in cases {
+        if let Some(shape) = found.shapes.get(&c.id) {
+            out.entry(shape.to_string())
+                .or_default()
+                .push(found.verdicts[&c.id].clone());
+        }
+    }
+    out
+}
+
+/// The gate's stub check is not vacuous: a harvested body that returns the
+/// wrong value, or a `None` whose tag is not `None`'s, is a mismatch and
+/// the shape does not pass, while the shape beside it still does.
+#[test]
+fn test_a_wrong_harvested_stub_is_a_mismatch_and_its_shape_does_not_pass() {
+    const ONE: &str = "stub amd64 u32 1";
+    const NONE: &str = "stub amd64 enum8 None tag4=0";
+    const GOOD: &str = "stub amd64 i32 1";
+    let cases: Vec<values::ValueCase> = values::all()
+        .into_iter()
+        .filter(|c| ["u32", "i32", "Option<u32>"].contains(&c.result.ty))
+        .collect();
+    let isa = Isa::amd64_unfiltered().with_abi("sysv").expect("sysv");
+    let wrong = |shape: &str, bytes: Vec<u8>| match shape {
+        // `mov eax, 2; ret` for `1`; `mov eax, 1; ret` (Some's tag) for `None`.
+        ONE => vec![0xb8, 2, 0, 0, 0, 0xc3],
+        NONE => vec![0xb8, 1, 0, 0, 0, 0xc3],
+        _ => bytes,
+    };
+    let found = value_gate::gate_with(&cases, &isa, &wrong);
+    let verdicts = by_shape(&cases, &found);
+    for shape in [ONE, NONE] {
+        let got = &verdicts[shape];
+        assert!(got.contains(&Verdict::Mismatch), "{shape}: {got:?}");
+        assert!(!table::passed(got), "{shape} passed");
+    }
+    assert!(
+        table::passed(&verdicts[GOOD]),
+        "{GOOD}: {:?}",
+        verdicts[GOOD]
+    );
+}

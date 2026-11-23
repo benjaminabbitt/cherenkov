@@ -146,6 +146,16 @@ fn explain(mutant: &Path, patched: &Path, id: usize) {
 }
 
 pub fn gate(cases: &[ValueCase], isa: &Isa) -> ValueFindings {
+    gate_with(cases, isa, &|_, bytes| bytes)
+}
+
+/// [`gate`], with each shape's harvested bytes passed through `corrupt`
+/// before the stubs are patched in: the gate must then say so.
+pub fn gate_with(
+    cases: &[ValueCase],
+    isa: &Isa,
+    corrupt: &dyn Fn(&str, Vec<u8>) -> Vec<u8>,
+) -> ValueFindings {
     let work = Scratch::new("values");
     let main = value_driver::main_source(cases);
     let units = units(cases);
@@ -159,6 +169,13 @@ pub fn gate(cases: &[ValueCase], isa: &Isa) -> ValueFindings {
     let sampled = harvest(&patched_exe, cases);
     let layouts = layouts_of(&built.original, &patched_exe, cases);
     let (shapes, harvested) = stubs_of(cases, &layouts, &sampled);
+    let harvested: BTreeMap<String, Vec<u8>> = harvested
+        .into_iter()
+        .map(|(shape, bytes)| {
+            let bytes = corrupt(&shape, bytes);
+            (shape, bytes)
+        })
+        .collect();
     let isa = isa.with_shapes(Table::harvested(harvested.clone()));
     let (mut verdicts, patched_ids) = patch_all(&mut patched_exe, cases, &layouts, &isa);
     let patched_path = work.0.join("patched.exe");
