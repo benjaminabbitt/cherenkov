@@ -1329,14 +1329,15 @@ impl GdbSession {
         };
         // The run's budget covers its evaluations too, and a machine that
         // keeps the evaluation off the CPU does not make it late.
-        let seq = self.dap.send(
-            "evaluate",
-            json!({"expression": call, "context": "repl"}),
-        );
+        let seq = self
+            .dap
+            .send("evaluate", json!({"expression": call, "context": "repl"}));
         let seq = seq.map_err(|e| ExecError(format!("evaluate: {e}")))?;
         let answered = within(allowance, EVALUATION, |window| {
             match self.dap.response(seq, window) {
-                Ok(body) => Ok(Some(body["result"].as_str().unwrap_or_default().to_string())),
+                Ok(body) => Ok(Some(
+                    body["result"].as_str().unwrap_or_default().to_string(),
+                )),
                 Err(DapError::Timeout(_)) => Ok(None),
                 Err(e) => Err(ExecError(format!("evaluate: {e}"))),
             }

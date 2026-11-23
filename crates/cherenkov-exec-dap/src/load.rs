@@ -182,7 +182,11 @@ pub fn within<T, E>(
             return Ok(Within::Spent);
         }
         if more.is_zero() {
-            return Ok(if cut { Within::Spent } else { Within::Unanswered });
+            return Ok(if cut {
+                Within::Spent
+            } else {
+                Within::Unanswered
+            });
         }
         granted += more;
         cut |= left < more;
