@@ -1,7 +1,9 @@
 //! `.cargo/mutants.toml`, cargo-mutants' configuration file, and what of it
 //! applies here. Every key cargo-mutants has is accepted; those that only
-//! steer its own build and test runs (`gitignore`,
-//! `copy_target`, `cap_lints`, ...) are ignored. Re-derived from its
+//! steer its own build and test runs (`gitignore`, `copy_target`,
+//! `cap_lints`, ...) are ignored. `test_package` and `test_workspace` choose
+//! which packages' tests judge a mutant (`test_scope.rs`,
+//! `docs/test-scope.md`). Re-derived from its
 //! documented behaviour (MIT, Copyright (c) 2022-2025 Martin Pool; the
 //! book's `skip_files`, `filter_mutants` and `skip_calls` pages).
 
