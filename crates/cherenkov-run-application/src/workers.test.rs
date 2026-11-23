@@ -342,3 +342,89 @@ fn test_a_mutant_in_awaiting_code_runs_every_test_whatever_the_recording_saw() {
     widen_awaiting(&plans, &mut driven);
     assert_eq!(driven, [Driven::Every, Driven::NotCalled]);
 }
+
+/// Exits 101 (libtest's failure) with output that names no failing test:
+/// the report was lost or the failure was not a test's.
+struct FailsWithoutReport;
+
+impl MutantExecutor for FailsWithoutReport {
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+        Ok(exited(101))
+    }
+
+    fn run_with_output(
+        &mut self,
+        _: &MutantPlan,
+        _: Budget,
+    ) -> Result<(RawOutcome, String), ExecError> {
+        Ok((exited(101), "test a ... ok\n".to_string()))
+    }
+
+    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+        Ok(exited(0))
+    }
+}
+
+#[test]
+fn test_a_failing_exit_with_no_failed_test_in_the_output_is_killed_not_survived() {
+    let plan = plans().remove(0);
+    let mut executor = FailsWithoutReport;
+    let ran = run_one(
+        0,
+        &mut executor,
+        Budget::from_baseline(Duration::from_secs(1)),
+        Driven::Every,
+        &plan,
+        |_| Vec::new(),
+    );
+    let Seen::Observed { raw, killed_by } = ran.seen else {
+        panic!("{:?}", ran.seen);
+    };
+    assert_eq!(
+        classify(&raw).verdict,
+        cherenkov_core::verdict::Verdict::Killed
+    );
+    assert!(killed_by.is_empty(), "no failed test to name");
+}
+
+/// Exits 0 although its output names a failed test.
+struct PassesWithAFailure;
+
+impl MutantExecutor for PassesWithAFailure {
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+        Ok(exited(0))
+    }
+
+    fn run_with_output(
+        &mut self,
+        _: &MutantPlan,
+        _: Budget,
+    ) -> Result<(RawOutcome, String), ExecError> {
+        Ok((exited(0), "FAILED test_a".to_string()))
+    }
+
+    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+        Ok(exited(0))
+    }
+}
+
+#[test]
+fn test_a_passing_exit_whose_output_names_a_failed_test_is_a_failure_not_a_survivor() {
+    let plan = plans().remove(0);
+    let mut executor = PassesWithAFailure;
+    let ran = run_one(
+        0,
+        &mut executor,
+        Budget::from_baseline(Duration::from_secs(1)),
+        Driven::Every,
+        &plan,
+        explain,
+    );
+    let Seen::Failed { reason } = ran.seen else {
+        panic!("a contradictory run was judged: {:?}", ran.seen);
+    };
+    assert!(
+        reason.contains("exit code 0") && reason.contains("test_a"),
+        "{reason}"
+    );
+}

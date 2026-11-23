@@ -39,12 +39,31 @@ impl Check {
     }
 }
 
+/// What reads the flags of a comparison.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Consumer {
+    /// A conditional jump.
+    Jump,
+    /// A `setcc`, which makes the bool.
+    Set,
+}
+
+/// What a comparison compares: integers (`cmp`) or floats (`ucomis`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Domain {
+    Int,
+    Float,
+}
+
 /// The kind of operation and what it is checked by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Kind {
     Int(Check),
     Float,
     Bitwise,
+    /// A comparison operator swapped by the condition code of the
+    /// instruction that reads its flags.
+    Compare(Consumer, Domain),
 }
 
 /// One shape of arithmetic patch.
@@ -68,6 +87,23 @@ impl fmt::Display for Shape {
             Kind::Int(c) => ("int", c.name()),
             Kind::Float => ("float", "-"),
             Kind::Bitwise => ("bitwise", "-"),
+            Kind::Compare(consumer, domain) => {
+                let consumer = match consumer {
+                    Consumer::Jump => "jcc",
+                    Consumer::Set => "setcc",
+                };
+                let domain = match domain {
+                    Domain::Int => "int",
+                    Domain::Float => "float",
+                };
+                return write!(
+                    f,
+                    "cmp {consumer} {domain} {}->{} {}",
+                    self.from.name(),
+                    self.with.name(),
+                    self.encoding
+                );
+            }
         };
         write!(
             f,

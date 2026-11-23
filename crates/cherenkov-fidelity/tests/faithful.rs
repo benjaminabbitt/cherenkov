@@ -105,7 +105,30 @@ fn check_rust_tiers(root: &Path, set: &str) -> Vec<(MutantPlan, Checked, Option<
     for (plan, _, tier) in &mut out {
         *tier = debugger.tier(plan);
     }
+    print_counts(&out);
     out
+}
+
+/// What checking found, by kind, and each mutant no test exercised.
+fn print_counts(out: &[(MutantPlan, Checked, Option<Tier>)]) {
+    let count = |f: &dyn Fn(&Checked) -> bool| out.iter().filter(|(_, c, _)| f(c)).count();
+    eprintln!(
+        "fidelity: {} mutants: {} faithful, {} unviable, {} unsupported, {} not exercised, {} other",
+        out.len(),
+        count(&|c| matches!(c, Checked::Judged(Judgement::Faithful))),
+        count(&|c| matches!(c, Checked::Judged(Judgement::Unviable))),
+        count(&|c| matches!(c, Checked::Unsupported(_))),
+        count(&|c| matches!(c, Checked::NotExercised(_))),
+        count(&|c| matches!(
+            c,
+            Checked::Judged(Judgement::Unfaithful(_)) | Checked::NoSourceForm
+        )),
+    );
+    for (plan, c, _) in out {
+        if let Checked::NotExercised(why) = c {
+            eprintln!("fidelity: not exercised: {why} [{}]", plan.describe());
+        }
+    }
 }
 
 #[test]
@@ -235,6 +258,11 @@ const ACCEPTED_REFUSALS: &[(&str, &str, &str)] = &[
         "`+=` to `*=` on an integer has no tier P rule, and GDB cannot call the map's entry",
     ),
     (
+        "drained",
+        "unary/delete-not",
+        "`!f` of a bool stored then read by a jump has no patch, and GDB cannot call Vec::is_empty",
+    ),
+    (
         "named_later",
         "ror/gt->lt",
         "an async block's poll returns Poll<Option<String>>: GDB returns only scalars",
@@ -256,6 +284,20 @@ const ACCEPTED_REFUSALS: &[(&str, &str, &str)] = &[
 fn test_every_cargo_mutants_mutant_of_rust_ops_is_faithful_unviable_or_an_accepted_refusal() {
     // Unviable: the source mutant does not compile, as cargo-mutants finds.
     let checked = check_rust(&fixture("rust-ops"), "cargo-mutants");
+    let refused = checked
+        .iter()
+        .filter(|(_, c)| matches!(c, Checked::Unsupported(_)))
+        .count();
+    eprintln!("{} mutants, {refused} unsupported", checked.len());
+    for (p, c) in &checked {
+        if let Checked::Unsupported(why) = c {
+            eprintln!(
+                "unsupported {} [{}]: {why}",
+                p.describe(),
+                p.mutation.unwrap_or("?")
+            );
+        }
+    }
     let key = |p: &cherenkov_core::plan::MutantPlan| {
         (
             p.function.clone().unwrap_or_default(),
@@ -271,7 +313,8 @@ fn test_every_cargo_mutants_mutant_of_rust_ops_is_faithful_unviable_or_an_accept
     let bad: Vec<String> = checked
         .iter()
         .filter(|(p, c)| match c {
-            Checked::Judged(Judgement::Faithful | Judgement::Unviable) => false,
+            Checked::Judged(Judgement::Faithful | Judgement::Unviable)
+            | Checked::NotExercised(_) => false,
             Checked::Unsupported(_) => !accepted(p),
             _ => true,
         })
@@ -386,6 +429,50 @@ fn test_trivial_value_stubs_run_on_tier_p_and_are_faithful_to_their_source() {
             .collect();
         assert_eq!(found.len(), 1, "{function} {value}");
         for (plan, c, tier) in found {
+            assert_eq!(
+                (c, tier),
+                (&Checked::Judged(Judgement::Faithful), &Some(Tier::P)),
+                "{}",
+                plan.describe()
+            );
+        }
+    }
+}
+
+/// Comparisons whose flags are read by the instruction at their own
+/// operands (a jump out of an `&&`/`||` chain, a `setcc`, a closure's
+/// result), with calls among the operands: each must run on tier P and give
+/// the verdict of the source build.
+const CONDITIONS: &[(&str, &str)] = &[
+    ("pending", "ror/gt->ge"),
+    ("pending", "ror/gt->eq"),
+    ("busy", "ror/ge->lt"),
+    ("enough", "ror/ge->lt"),
+    ("fewer", "ror/lt->le"),
+    ("fewer", "ror/lt->eq"),
+    ("fewer", "ror/lt->gt"),
+    ("keyed", "ror/gt->ge"),
+    ("large", "ror/ge->lt"),
+    ("both", "ror/gt->ge"),
+    ("both", "ror/le->gt"),
+    ("either", "ror/gt->ge"),
+    ("above", "ror/gt->ge"),
+    ("same_len", "ror/eq->ne"),
+];
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_conditions_with_calls_run_on_tier_p_and_are_faithful_to_their_source() {
+    let checked = check_rust_tiers(&fixture("rust-ops"), "cargo-mutants");
+    for &(function, mutation) in CONDITIONS {
+        let mut found = checked.iter().filter(|(p, _, _)| {
+            p.function.as_deref() == Some(function) && p.mutation == Some(mutation)
+        });
+        assert!(
+            found.clone().next().is_some(),
+            "no {mutation} in {function}"
+        );
+        for (plan, c, tier) in found.by_ref() {
             assert_eq!(
                 (c, tier),
                 (&Checked::Judged(Judgement::Faithful), &Some(Tier::P)),

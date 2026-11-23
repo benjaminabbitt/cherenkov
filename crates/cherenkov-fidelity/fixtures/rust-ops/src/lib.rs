@@ -678,3 +678,65 @@ pub fn status(n: i64) -> Result<(), u8> {
 pub fn fits(n: i64) -> Result<(), std::num::TryFromIntError> {
     u8::try_from(n).map(|_| ())
 }
+
+// --- Conditions that contain calls, and comparisons that are values. Each
+// comparison's flags are read by the instruction positioned at its own
+// operands, whatever else its line holds.
+
+pub struct Feed {
+    pub cursor: usize,
+    pub out: Option<u32>,
+    pub handled: u64,
+}
+
+pub fn drained(v: &Vec<u32>, f: bool) -> i64 {
+    if v.is_empty() && !f { 1 } else { 2 }
+}
+
+pub fn pending(s: &Feed) -> i64 {
+    if s.cursor > 0 || s.out.is_some() {
+        10
+    } else {
+        20
+    }
+}
+
+pub fn busy(feeds: &[Feed]) -> usize {
+    feeds.iter().filter(|t| t.handled >= 12).count()
+}
+
+pub fn enough(v: &Vec<u32>) -> bool {
+    v.len() >= 3
+}
+
+pub fn fewer(v: &Vec<u32>, n: usize) -> i64 {
+    if v.len() < n { 1 } else { 2 }
+}
+
+pub fn keyed(m: &std::collections::BTreeMap<u32, u32>, k: u32) -> i64 {
+    if m.contains_key(&k) && m.len() > 1 { 1 } else { 2 }
+}
+
+pub fn large(o: Option<u64>) -> bool {
+    o.unwrap_or(0) >= 100
+}
+
+fn count_of(v: &[u32]) -> usize {
+    v.len()
+}
+
+pub fn both(v: &[u32], limit: usize) -> bool {
+    count_of(v) > 0 && count_of(v) <= limit
+}
+
+pub fn either(v: &[u32], w: &[u32]) -> bool {
+    count_of(v) > 2 || count_of(w) > 2
+}
+
+pub fn above(a: f64, b: f64) -> i64 {
+    if a > b { 1 } else { 2 }
+}
+
+pub fn same_len(v: &Vec<u32>, w: &Vec<u32>) -> i64 {
+    if v.len() == w.len() { 1 } else { 2 }
+}

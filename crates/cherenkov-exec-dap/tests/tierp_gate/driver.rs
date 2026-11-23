@@ -55,6 +55,11 @@ macro_rules! ints {
 }
 ints!(i8, i16, i32, i64, isize, u8, u16, u32, u64, usize);
 
+impl V for bool {
+    fn inputs() -> Vec<bool> { vec![false, true] }
+    fn digest(self) -> u64 { self as u64 }
+}
+
 macro_rules! floats {
     ($($t:ty),*) => {$(
         impl V for $t {
@@ -79,7 +84,7 @@ fn fold(h: u64, x: u64) -> u64 {
 }
 
 /// What one call did: its digest, or a panic.
-fn call<T: V>(f: impl FnOnce() -> T) -> Option<u64> {
+fn call<R: V>(f: impl FnOnce() -> R) -> Option<u64> {
     catch_unwind(AssertUnwindSafe(f)).ok().map(V::digest)
 }
 
@@ -93,7 +98,7 @@ fn tally(h: &mut u64, panics: &mut u64, out: Option<u64>) {
     }
 }
 
-fn sweep2<T: V>(f: fn(T, T) -> T) -> (u64, u64) {
+fn sweep2<T: V, R: V>(f: fn(T, T) -> R) -> (u64, u64) {
     let (mut h, mut panics) = (0u64, 0u64);
     let ins = T::inputs();
     for &a in &ins {
@@ -104,7 +109,7 @@ fn sweep2<T: V>(f: fn(T, T) -> T) -> (u64, u64) {
     (h, panics)
 }
 
-fn sweep1<T: V>(f: fn(T) -> T) -> (u64, u64) {
+fn sweep1<T: V, R: V>(f: fn(T) -> R) -> (u64, u64) {
     let (mut h, mut panics) = (0u64, 0u64);
     for &a in &T::inputs() {
         tally(&mut h, &mut panics, call(|| f(a)));
@@ -113,7 +118,7 @@ fn sweep1<T: V>(f: fn(T) -> T) -> (u64, u64) {
 }
 
 /// With `a`, `b` the inputs: the dump of one case, input by input.
-fn dump2<T: V + std::fmt::Debug>(f: fn(T, T) -> T) {
+fn dump2<T: V + std::fmt::Debug, R: V>(f: fn(T, T) -> R) {
     let ins = T::inputs();
     for &a in &ins {
         for &b in &ins {
@@ -122,7 +127,7 @@ fn dump2<T: V + std::fmt::Debug>(f: fn(T, T) -> T) {
     }
 }
 
-fn dump1<T: V + std::fmt::Debug>(f: fn(T) -> T) {
+fn dump1<T: V + std::fmt::Debug, R: V>(f: fn(T) -> R) {
     for &a in &T::inputs() {
         println!("{a:?} - {:?}", call(|| f(a)));
     }
@@ -131,32 +136,36 @@ fn dump1<T: V + std::fmt::Debug>(f: fn(T) -> T) {
 
 /// The shim that calls the case's function with inputs `a` and `b`.
 fn shim(case: &Case) -> String {
-    let (ty, n) = (case.snippet.ty, case.id);
-    let call = match (case.snippet.compound, case.snippet.form) {
-        (false, Form::Field) => format!("s_{n}::f(&S {{ x: a }}, b)"),
-        (true, Form::Field) => format!("let mut s = S {{ x: a }}; s_{n}::f(&mut s, b); s.x"),
-        (true, Form::MutRef) => format!("let mut m = a; s_{n}::f(&mut m, b); m"),
-        (true, Form::Entry) => {
+    let s = &case.snippet;
+    let (ty, ret, n) = (s.ty, s.ret, case.id);
+    let call = match (&s.shim, s.compound, s.form) {
+        (Some(body), _, _) => body.replace("@F", &format!("s_{n}::f")),
+        (None, false, Form::Field) => format!("s_{n}::f(&S {{ x: a }}, b)"),
+        (None, true, Form::Field) => {
+            format!("let mut s = S {{ x: a }}; s_{n}::f(&mut s, b); s.x")
+        }
+        (None, true, Form::MutRef) => format!("let mut m = a; s_{n}::f(&mut m, b); m"),
+        (None, true, Form::Entry) => {
             format!("let mut m = HashMap::new(); m.insert(7u32, a); s_{n}::f(&mut m, 7); m[&7]")
         }
-        (true, Form::Idx) => format!("let mut v = [a]; s_{n}::f(&mut v, 0, b); v[0]"),
-        (_, form) if form.unary() => format!("s_{n}::f(a)"),
+        (None, true, Form::Idx) => format!("let mut v = [a]; s_{n}::f(&mut v, 0, b); v[0]"),
+        (None, _, _) if s.one_input => format!("s_{n}::f(a)"),
         _ => format!("s_{n}::f(a, b)"),
     };
-    if case.snippet.form.unary() {
-        format!("fn c_{n}(a: {ty}) -> {ty} {{ {call} }}\n")
+    if s.one_input {
+        format!("fn c_{n}(a: {ty}) -> {ret} {{ {call} }}\n")
     } else {
-        format!("fn c_{n}(a: {ty}, b: {ty}) -> {ty} {{ {call} }}\n")
+        format!("fn c_{n}(a: {ty}, b: {ty}) -> {ret} {{ {call} }}\n")
     }
 }
 
 fn arms(cases: &[Case]) -> (String, String) {
     let (mut run, mut dump) = (String::new(), String::new());
     for c in cases {
-        let (n, ty) = (c.id, c.snippet.ty);
-        let k = if c.snippet.form.unary() { 1 } else { 2 };
-        run.push_str(&format!("        {n} => sweep{k}::<{ty}>(c_{n}),\n"));
-        dump.push_str(&format!("        {n} => dump{k}::<{ty}>(c_{n}),\n"));
+        let (n, ty, ret) = (c.id, c.snippet.ty, c.snippet.ret);
+        let k = if c.snippet.one_input { 1 } else { 2 };
+        run.push_str(&format!("        {n} => sweep{k}::<{ty}, {ret}>(c_{n}),\n"));
+        dump.push_str(&format!("        {n} => dump{k}::<{ty}, {ret}>(c_{n}),\n"));
     }
     (run, dump)
 }

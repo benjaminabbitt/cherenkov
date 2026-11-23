@@ -40,8 +40,34 @@ fn arithmetic(t: Token) -> bool {
     )
 }
 
+/// A comparison or a short-circuit operator.
+fn condition_operator(t: Token) -> bool {
+    matches!(
+        t,
+        Token::Lt
+            | Token::Le
+            | Token::Gt
+            | Token::Ge
+            | Token::Eq
+            | Token::Ne
+            | Token::And
+            | Token::Or
+    )
+}
+
+/// `&&` to `==` and `||` to `!=` (`lcr/and->eq`) are made with the
+/// operands as they are, `a < 3 == b > 3`: source that does not compile
+/// when the operands are comparisons, so they are not cases.
+fn compilable(from: Token, with: Token) -> bool {
+    !matches!(from, Token::And | Token::Or) || matches!(with, Token::And | Token::Or)
+}
+
 fn operator_replacement(plan: &MutantPlan) -> bool {
-    matches!(&plan.edit, Edit::ReplaceToken { from, .. } if arithmetic(*from))
+    matches!(
+        &plan.edit,
+        Edit::ReplaceToken { from, with, .. }
+            if arithmetic(*from) || (condition_operator(*from) && compilable(*from, *with))
+    )
 }
 
 fn rust_profile(syntax: &TreeSitterSyntax) -> Profile {

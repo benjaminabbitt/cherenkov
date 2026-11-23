@@ -640,3 +640,69 @@ fn test_verdict_index_of_status_and_fits() {
     assert!(fits(3).is_ok());
     assert!(fits(300).is_err());
 }
+
+#[test]
+fn test_drained_and_pending() {
+    assert_eq!(drained(&vec![], false), 1);
+    assert_eq!(drained(&vec![], true), 2);
+    assert_eq!(drained(&vec![1], false), 2);
+    let idle = Feed { cursor: 0, out: None, handled: 0 };
+    let moved = Feed { cursor: 3, out: None, handled: 0 };
+    let held = Feed { cursor: 0, out: Some(1), handled: 0 };
+    assert_eq!(pending(&idle), 20);
+    assert_eq!(pending(&moved), 10);
+    assert_eq!(pending(&held), 10);
+}
+
+#[test]
+fn test_busy_counts_feeds_that_handled_a_dozen() {
+    let feed = |handled| Feed { cursor: 0, out: None, handled };
+    assert_eq!(busy(&[feed(11), feed(12), feed(13)]), 2);
+}
+
+#[test]
+fn test_lengths_are_compared() {
+    assert!(!enough(&vec![1, 2]));
+    assert!(enough(&vec![1, 2, 3]));
+    assert!(enough(&vec![1, 2, 3, 4]));
+    assert_eq!(fewer(&vec![1, 2], 2), 2);
+    assert_eq!(fewer(&vec![1, 2], 3), 1);
+    assert_eq!(fewer(&vec![1, 2], 1), 2);
+    assert_eq!(same_len(&vec![1], &vec![2]), 1);
+    assert_eq!(same_len(&vec![1], &vec![]), 2);
+}
+
+#[test]
+fn test_keyed_needs_the_key_and_a_second_entry() {
+    let mut m = std::collections::BTreeMap::new();
+    m.insert(1, 1);
+    assert_eq!(keyed(&m, 1), 2);
+    m.insert(2, 2);
+    assert_eq!(keyed(&m, 1), 1);
+    assert_eq!(keyed(&m, 9), 2);
+}
+
+#[test]
+fn test_large_reads_the_payload() {
+    assert!(!large(None));
+    assert!(!large(Some(99)));
+    assert!(large(Some(100)));
+    assert!(large(Some(101)));
+}
+
+#[test]
+fn test_both_and_either_connect_counts() {
+    assert!(!both(&[], 3));
+    assert!(both(&[1, 2], 2));
+    assert!(!both(&[1, 2, 3], 2));
+    assert!(!either(&[1, 2], &[1, 2]));
+    assert!(either(&[1, 2, 3], &[]));
+    assert!(either(&[], &[1, 2, 3]));
+}
+
+#[test]
+fn test_above_compares_floats() {
+    assert_eq!(above(2.0, 1.0), 1);
+    assert_eq!(above(1.0, 1.0), 2);
+    assert_eq!(above(0.0, 1.0), 2);
+}
