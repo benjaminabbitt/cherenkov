@@ -90,9 +90,30 @@ pub fn build_rust_test_programs_with(
     manifest_dir: &Path,
     cargo_args: &[String],
 ) -> Result<Vec<TestProgram>, ExecError> {
+    build_rust_test_programs_of(cargo, manifest_dir, cargo_args, &[])
+}
+
+/// `--package NAME` for each of `packages`: cargo's selection of the
+/// packages a command is for (none given, the command's default).
+pub fn package_args(packages: &[String]) -> Vec<String> {
+    packages
+        .iter()
+        .flat_map(|p| ["--package".to_string(), p.clone()])
+        .collect()
+}
+
+/// [`build_rust_test_programs_with`], for the tests of `packages` only (the
+/// whole workspace's when there are none).
+pub fn build_rust_test_programs_of(
+    cargo: &Path,
+    manifest_dir: &Path,
+    cargo_args: &[String],
+    packages: &[String],
+) -> Result<Vec<TestProgram>, ExecError> {
     let output = Command::new(cargo)
         .args(["test", "--no-run", "--message-format=json"])
         .args(cargo_args)
+        .args(package_args(packages))
         .envs(debug_profile_env(|name| std::env::var_os(name).is_some()))
         .current_dir(manifest_dir)
         .output()
@@ -391,4 +412,56 @@ pub fn workspace_from_metadata(meta: &Value) -> (PathBuf, Vec<String>) {
     crates.sort();
     crates.dedup();
     (root, crates)
+}
+
+/// A workspace member: its name and the directory of its manifest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Package {
+    pub name: String,
+    pub dir: PathBuf,
+}
+
+/// The members of `dir`'s Cargo workspace, from `cargo metadata`.
+pub fn workspace_packages(cargo: &Path, dir: &Path) -> Result<Vec<Package>, ExecError> {
+    let output = Command::new(cargo)
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .current_dir(dir)
+        .output()
+        .map_err(|e| ExecError(format!("running {}: {e}", cargo.display())))?;
+    if !output.status.success() {
+        return Err(ExecError(format!(
+            "cargo metadata failed in {}: {}",
+            dir.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    let meta: Value = serde_json::from_slice(&output.stdout)
+        .map_err(|e| ExecError(format!("cargo metadata output: {e}")))?;
+    Ok(packages_from_metadata(&meta))
+}
+
+/// [`workspace_packages`] from `cargo metadata`'s output.
+pub fn packages_from_metadata(meta: &Value) -> Vec<Package> {
+    meta["packages"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|p| {
+            let manifest = PathBuf::from(p["manifest_path"].as_str()?);
+            Some(Package {
+                name: p["name"].as_str()?.to_string(),
+                dir: manifest.parent()?.to_path_buf(),
+            })
+        })
+        .collect()
+}
+
+/// The package a file belongs to: the one whose directory is the deepest
+/// above it (a package may sit inside another's directory).
+pub fn package_of<'a>(packages: &'a [Package], file: &Path) -> Option<&'a str> {
+    packages
+        .iter()
+        .filter(|p| file.starts_with(&p.dir))
+        .max_by_key(|p| p.dir.components().count())
+        .map(|p| p.name.as_str())
 }

@@ -136,3 +136,59 @@ fn test_a_profile_setting_the_caller_made_is_kept() {
     assert!(!env.iter().any(|(k, _)| k == "CARGO_PROFILE_TEST_OPT_LEVEL"));
     assert!(env.iter().any(|(k, _)| k == "CARGO_PROFILE_TEST_DEBUG"));
 }
+
+#[test]
+fn test_a_workspace_s_packages_are_its_members_names_and_directories() {
+    use cherenkov_exec_dap::toolchain::{Package, packages_from_metadata};
+    let meta: serde_json::Value = serde_json::json!({"packages": [
+        {"name": "calc-core", "manifest_path": "/w/crates/core/Cargo.toml"},
+        {"name": "calc", "manifest_path": "/w/Cargo.toml"}
+    ]});
+    assert_eq!(
+        packages_from_metadata(&meta),
+        [
+            Package {
+                name: "calc-core".into(),
+                dir: PathBuf::from("/w/crates/core")
+            },
+            Package {
+                name: "calc".into(),
+                dir: PathBuf::from("/w")
+            },
+        ]
+    );
+}
+
+#[test]
+fn test_a_file_belongs_to_the_package_with_the_deepest_directory_above_it() {
+    use cherenkov_exec_dap::toolchain::{Package, package_of};
+    let packages = [
+        Package {
+            name: "calc".into(),
+            dir: PathBuf::from("/w"),
+        },
+        Package {
+            name: "calc-core".into(),
+            dir: PathBuf::from("/w/crates/core"),
+        },
+    ];
+    let of = |f: &str| package_of(&packages, std::path::Path::new(f));
+    assert_eq!(of("/w/crates/core/src/lib.rs"), Some("calc-core"));
+    assert_eq!(of("/w/src/main.rs"), Some("calc"));
+    assert_eq!(
+        of("/w/crates/corex/src/lib.rs"),
+        Some("calc"),
+        "a sibling's prefix is not its parent"
+    );
+    assert_eq!(of("/elsewhere/lib.rs"), None);
+}
+
+#[test]
+fn test_cargo_is_told_to_build_only_the_named_packages_tests() {
+    use cherenkov_exec_dap::toolchain::package_args;
+    assert_eq!(
+        package_args(&["a".to_string(), "b".to_string()]),
+        ["--package", "a", "--package", "b"]
+    );
+    assert!(package_args(&[]).is_empty());
+}
