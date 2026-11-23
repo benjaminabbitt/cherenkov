@@ -371,14 +371,20 @@ fn test_run_decides_mutants_no_test_executes_without_running_them() {
     );
 }
 
+/// The multi-package fixture workspace (a standalone one, apart from
+/// `fixtures/`, which the plan tests walk as a mixed tree).
+fn workspace_fixture() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/rust-workspace")
+}
+
 /// A diff that changes `double`'s body line (line 4) in the fixture
 /// workspace's `core` package and nothing else.
 fn core_diff() -> PathBuf {
     let path = std::env::temp_dir().join(format!("cherenkov-core-{}.diff", std::process::id()));
     std::fs::write(
         &path,
-        "--- a/fixtures/rust-workspace/core/src/lib.rs\n\
-         +++ b/fixtures/rust-workspace/core/src/lib.rs\n\
+        "--- a/crates/cherenkov-cli/fixtures/rust-workspace/core/src/lib.rs\n\
+         +++ b/crates/cherenkov-cli/fixtures/rust-workspace/core/src/lib.rs\n\
          @@ -3,3 +3,3 @@\n pub fn double(x: i32) -> i32 {\n-    x + x\n+    x * 2\n }\n",
     )
     .unwrap();
@@ -407,7 +413,7 @@ fn prepared_packages(stderr: &[u8]) -> Vec<String> {
 fn test_run_of_a_diff_in_one_package_prepares_only_that_package_s_programs() {
     let diff = core_diff();
     let out = run(
-        &fixtures().join("rust-workspace"),
+        &workspace_fixture(),
         &["--format", "text", "--in-diff", diff.to_str().unwrap()],
     );
     let _ = std::fs::remove_file(&diff);
@@ -431,7 +437,7 @@ fn test_run_of_a_diff_in_one_package_prepares_only_that_package_s_programs() {
 fn test_run_of_a_diff_with_test_workspace_prepares_every_package_s_programs() {
     let diff = core_diff();
     let out = run(
-        &fixtures().join("rust-workspace"),
+        &workspace_fixture(),
         &[
             "--format",
             "text",
@@ -453,7 +459,7 @@ fn test_run_of_a_diff_with_test_workspace_prepares_every_package_s_programs() {
 fn test_run_of_a_diff_with_test_package_judges_by_that_package_s_tests_alone() {
     let diff = core_diff();
     let out = run(
-        &fixtures().join("rust-workspace"),
+        &workspace_fixture(),
         &[
             "--format",
             "text",
@@ -473,8 +479,8 @@ fn app_test_diff() -> PathBuf {
     let path = std::env::temp_dir().join(format!("cherenkov-app-{}.diff", std::process::id()));
     std::fs::write(
         &path,
-        "--- a/fixtures/rust-workspace/app/src/lib.rs\n\
-         +++ b/fixtures/rust-workspace/app/src/lib.rs\n\
+        "--- a/crates/cherenkov-cli/fixtures/rust-workspace/app/src/lib.rs\n\
+         +++ b/crates/cherenkov-cli/fixtures/rust-workspace/app/src/lib.rs\n\
          @@ -12,3 +12,3 @@\n fn test_run_doubles_an_even_number() {\n-        assert_eq!(run(4), 7);\n+        assert_eq!(run(4), 8);\n     }\n",
     )
     .unwrap();
@@ -486,7 +492,7 @@ fn app_test_diff() -> PathBuf {
 fn test_run_of_a_changed_test_runs_the_mutants_it_calls_with_that_test_alone() {
     let diff = app_test_diff();
     let out = run(
-        &fixtures().join("rust-workspace"),
+        &workspace_fixture(),
         &["--format", "json", "--in-diff", diff.to_str().unwrap()],
     );
     let _ = std::fs::remove_file(&diff);
