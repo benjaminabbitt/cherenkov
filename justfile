@@ -20,6 +20,11 @@ test:
 test-slow:
     cargo test --workspace -- --ignored
 
+# The same corpus run twice must decide every mutant the same way: run it
+# on a loaded machine to mean something. Outside `just check`.
+test-determinism:
+    cargo test -p cherenkov-cli --test run -- --ignored test_run_twice_decides
+
 # List planned mutants for a directory, e.g. `just plan fixtures/go`.
 plan dir *args:
     cargo run -q -p cherenkov-cli -- plan {{dir}} {{args}}
