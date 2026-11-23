@@ -15,6 +15,7 @@ pub mod load;
 pub mod native;
 pub mod rpc;
 pub mod shapes;
+pub mod stubs;
 pub mod support_lib;
 pub mod tierp;
 pub mod toolchain;

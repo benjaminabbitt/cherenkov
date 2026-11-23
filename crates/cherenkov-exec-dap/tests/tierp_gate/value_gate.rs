@@ -7,7 +7,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use cherenkov_exec_dap::isa::Isa;
-use cherenkov_exec_dap::tierp::{Patch, derive_shaped};
+use cherenkov_exec_dap::layouts::{Layout, Layouts};
+use cherenkov_exec_dap::shapes::Table;
+use cherenkov_exec_dap::stubs::{StubShape, shape_of};
+use cherenkov_exec_dap::tierp::{Patch, derive_returning};
 
 use crate::compile::{self, Unit};
 use crate::exe::Exe;
@@ -19,8 +22,11 @@ use crate::{Scratch, Verdict, judge, write_patched};
 /// What the gate found for the function-value cases.
 pub struct ValueFindings {
     pub verdicts: BTreeMap<usize, Verdict>,
-    /// The bytes rustc makes of each value alone, where they can be a stub.
-    pub harvested: BTreeMap<usize, Result<Vec<u8>, String>>,
+    /// The shape of each case that has one.
+    pub shapes: BTreeMap<usize, StubShape>,
+    /// The bytes rustc makes of each shape, where every sample agrees and
+    /// they can be a stub.
+    pub harvested: BTreeMap<String, Vec<u8>>,
 }
 
 fn units(cases: &[ValueCase]) -> Vec<Unit> {
@@ -40,6 +46,7 @@ fn units(cases: &[ValueCase]) -> Vec<Unit> {
     out
 }
 
+/// The bytes of each case's value alone.
 fn harvest(exe: &Exe, cases: &[ValueCase]) -> BTreeMap<usize, Result<Vec<u8>, String>> {
     cases
         .iter()
@@ -53,25 +60,72 @@ fn harvest(exe: &Exe, cases: &[ValueCase]) -> BTreeMap<usize, Result<Vec<u8>, St
         .collect()
 }
 
+/// The layout of the result of each case's function, from the original's
+/// DWARF, as the executor reads it.
+fn layouts_of(original: &Path, exe: &Exe, cases: &[ValueCase]) -> BTreeMap<usize, Layout> {
+    let layouts = Layouts::read(original).expect("the DWARF of the gate executable");
+    cases
+        .iter()
+        .filter_map(|c| {
+            let function = exe.function(&format!("s_{}.rs", c.id))?;
+            let entry = function.insns.iter().map(|i| i.pc).min()?;
+            Some((c.id, layouts.result_of(entry)?))
+        })
+        .collect()
+}
+
+/// The shape of each case, and the bytes of each shape whose samples all
+/// gave the same ones.
+fn stubs_of(
+    cases: &[ValueCase],
+    layouts: &BTreeMap<usize, Layout>,
+    harvested: &BTreeMap<usize, Result<Vec<u8>, String>>,
+) -> (BTreeMap<usize, StubShape>, BTreeMap<String, Vec<u8>>) {
+    let mut shapes = BTreeMap::new();
+    let mut samples: BTreeMap<String, Vec<&Result<Vec<u8>, String>>> = BTreeMap::new();
+    for c in cases {
+        let Some(shape) = layouts.get(&c.id).and_then(|l| shape_of(l, &c.value)) else {
+            continue;
+        };
+        samples
+            .entry(shape.to_string())
+            .or_default()
+            .push(&harvested[&c.id]);
+        shapes.insert(c.id, shape);
+    }
+    let agreed = samples.into_iter().filter_map(|(shape, got)| {
+        let first = got.first()?.as_ref().ok()?;
+        got.iter()
+            .all(|g| g.as_ref().ok() == Some(first))
+            .then(|| (shape, first.clone()))
+    });
+    (shapes, agreed.collect())
+}
+
 /// The patch the executor would derive for `case` from the original's code.
-fn derived(exe: &Exe, case: &ValueCase, isa: &Isa) -> Result<Patch, String> {
+fn derived(
+    exe: &Exe,
+    case: &ValueCase,
+    layout: Option<&Layout>,
+    isa: &Isa,
+) -> Result<Patch, String> {
     let function = exe
         .function(&format!("s_{}.rs", case.id))
         .ok_or("no code in the line table")?;
-    derive_shaped(&case.plan, &function.file, &function.insns, isa)
-        .map(|(patch, _)| patch)
+    derive_returning(&case.plan, &function.file, &function.insns, isa, layout)
         .map_err(|e| e.to_string())
 }
 
 fn patch_all(
     exe: &mut Exe,
     cases: &[ValueCase],
+    layouts: &BTreeMap<usize, Layout>,
     isa: &Isa,
 ) -> (BTreeMap<usize, Verdict>, Vec<usize>) {
     let mut verdicts = BTreeMap::new();
     let mut patched = Vec::new();
     for case in cases {
-        match derived(exe, case, isa) {
+        match derived(exe, case, layouts.get(&case.id), isa) {
             Err(why) => {
                 verdicts.insert(case.id, Verdict::Declined(why));
             }
@@ -102,8 +156,11 @@ pub fn gate(cases: &[ValueCase], isa: &Isa) -> ValueFindings {
     };
     let built = compile::build(&work.0, &krate);
     let mut patched_exe = Exe::read(&built.original);
-    let harvested = harvest(&patched_exe, cases);
-    let (mut verdicts, patched_ids) = patch_all(&mut patched_exe, cases, isa);
+    let sampled = harvest(&patched_exe, cases);
+    let layouts = layouts_of(&built.original, &patched_exe, cases);
+    let (shapes, harvested) = stubs_of(cases, &layouts, &sampled);
+    let isa = isa.with_shapes(Table::harvested(harvested.clone()));
+    let (mut verdicts, patched_ids) = patch_all(&mut patched_exe, cases, &layouts, &isa);
     let patched_path = work.0.join("patched.exe");
     write_patched(&built.original, &patched_exe, &patched_path);
     let all: Vec<usize> = cases.iter().map(|c| c.id).collect();
@@ -119,6 +176,7 @@ pub fn gate(cases: &[ValueCase], isa: &Isa) -> ValueFindings {
     }
     ValueFindings {
         verdicts,
+        shapes,
         harvested,
     }
 }

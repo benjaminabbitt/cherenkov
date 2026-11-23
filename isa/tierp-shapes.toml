@@ -517,3 +517,42 @@ declined = [
     "int w8 of sub->add fe/1 mem",
     "int w8 of sub->add fe/1 reg",
 ]
+
+# Function-value stubs: the bytes rustc makes of a trivial value, written
+# over a function's entry, per result layout class (`src/stubs.rs`).
+stubs = [
+    "stub amd64 enum1 None tag1=2 = b0 02 c3",
+    "stub amd64 enum1 None tag1=3 = b0 03 c3",
+    "stub amd64 enum1 Ok(()) tag1=0 = 31 c0 24 01 c3",
+    "stub amd64 enum1 Ok(()) tag1=2 = b0 02 c3",
+    "stub amd64 enum1 Ok(()) tag1=3 = b0 03 c3",
+    "stub amd64 enum16 None tag8=0 = 31 c0 c3",
+    "stub amd64 enum16 Ok(()) tag8=0 = 31 c0 c3",
+    "stub amd64 enum2 None tag1=0 = 31 c0 c3",
+    "stub amd64 enum2 Ok(()) tag1=0 = 31 c0 c3",
+    "stub amd64 enum4 None tag2=0 = 31 c0 c3",
+    "stub amd64 enum4 None tag4=0 = 31 c0 c3",
+    "stub amd64 enum4 None tag4=1114112 = b8 00 00 11 00 c3",
+    "stub amd64 enum8 None tag4=0 = 31 c0 c3",
+    "stub amd64 enum8 None tag8=0 = 31 c0 c3",
+    "stub amd64 enum8 Ok(()) tag4=0 = 31 c0 c3",
+    "stub amd64 enum8 Ok(()) tag8=0 = 31 c0 c3",
+    "stub amd64 i16 -1 = 66 b8 ff ff c3",
+    "stub amd64 i16 1 = 66 b8 01 00 c3",
+    "stub amd64 i32 -1 = b8 ff ff ff ff c3",
+    "stub amd64 i32 1 = b8 01 00 00 00 c3",
+    "stub amd64 i64 -1 = 48 c7 c0 ff ff ff ff c3",
+    "stub amd64 i64 1 = b8 01 00 00 00 c3",
+    "stub amd64 i8 -1 = b0 ff c3",
+    "stub amd64 i8 1 = b0 01 c3",
+    "stub amd64 u16 1 = 66 b8 01 00 c3",
+    "stub amd64 u32 1 = b8 01 00 00 00 c3",
+    "stub amd64 u64 1 = b8 01 00 00 00 c3",
+    "stub amd64 u8 1 = b0 01 c3",
+    "stub amd64 u8 true = b0 01 24 01 c3",
+]
+
+stubs_declined = [
+    "stub amd64 enum12 None tag4=0",
+    "stub amd64 enum4 None tag1=0",
+]

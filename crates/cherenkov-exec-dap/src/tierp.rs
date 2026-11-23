@@ -9,7 +9,9 @@ use cherenkov_core::syntax::{Pos, Span};
 use cherenkov_core::token::Token;
 
 use crate::isa::{Isa, Jcc, Matched, Signedness};
+use crate::layouts::Layout;
 use crate::shapes::{Check, Kind, Shape};
+use crate::stubs;
 use crate::x86;
 
 mod column;
@@ -225,6 +227,47 @@ fn arithmetic_route(
         }
         _ => None,
     }
+}
+
+/// [`derive`], for a body replaced by a value, knowing the layout of the
+/// function's result (from its DWARF): a trivial non-zero value is a stub
+/// of the shapes table (`src/stubs.rs`) where the table has its shape.
+pub fn derive_returning(
+    plan: &MutantPlan,
+    file: &str,
+    insns: &[Insn],
+    isa: &Isa,
+    result: Option<&Layout>,
+) -> Result<Patch, Unpatchable> {
+    match (&plan.action, result) {
+        (
+            Action::ReturnDefault {
+                value_text: Some(value),
+                zero_bits: false,
+                async_fn: false,
+            },
+            Some(layout),
+        ) if is_rust(plan) => {
+            let mut ours: Vec<&Insn> = insns.iter().filter(|i| i.file == file).collect();
+            ours.sort_by_key(|i| i.pc);
+            value_stub(value, layout, &ours, isa)
+        }
+        _ => derive(plan, file, insns, isa),
+    }
+}
+
+/// A body replaced by `value`: the entry becomes the shape's bytes.
+fn value_stub(
+    value: &str,
+    layout: &Layout,
+    ours: &[&Insn],
+    isa: &Isa,
+) -> Result<Patch, Unpatchable> {
+    isa.return_stub().ok_or(Unpatchable::NoReturnStub)?;
+    let stub = stubs::shape_of(layout, value)
+        .and_then(|shape| isa.stub(&shape))
+        .ok_or_else(|| Unpatchable::NonZeroValue(value.to_string()))?;
+    entry_stub(stub, ours, isa)
 }
 
 fn derive_other(

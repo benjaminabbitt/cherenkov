@@ -26,9 +26,33 @@ fn passed(verdicts: &[Verdict]) -> bool {
             .all(|v| matches!(v, Verdict::Passed | Verdict::Vacuous))
 }
 
+/// What the gate found for the cases of each function-value stub shape,
+/// and the bytes rustc makes of the shapes it could harvest.
+pub struct StubEvidence {
+    pub verdicts: BTreeMap<String, Vec<Verdict>>,
+    pub bytes: BTreeMap<String, Vec<u8>>,
+}
+
+/// The stub shapes that passed with their bytes, and the others seen.
+fn stub_split(stubs: &StubEvidence) -> (BTreeMap<String, Vec<u8>>, BTreeSet<String>) {
+    let mut pass = BTreeMap::new();
+    let mut declined = BTreeSet::new();
+    for (shape, verdicts) in &stubs.verdicts {
+        match stubs.bytes.get(shape) {
+            Some(bytes) if passed(verdicts) => {
+                pass.insert(shape.clone(), bytes.clone());
+            }
+            _ => {
+                declined.insert(shape.clone());
+            }
+        }
+    }
+    (pass, declined)
+}
+
 /// The table's text for `evidence`: the shapes that passed, and every
-/// other shape the rules can make.
-pub fn render(rustc: &str, evidence: &Evidence) -> String {
+/// other shape the rules can make; and the stubs.
+pub fn render(rustc: &str, evidence: &Evidence, stubs: &StubEvidence) -> String {
     let pass: BTreeSet<String> = evidence
         .iter()
         .filter(|(_, v)| passed(v))
@@ -40,7 +64,8 @@ pub fn render(rustc: &str, evidence: &Evidence) -> String {
         .map(Shape::to_string)
         .collect();
     let declined: BTreeSet<String> = universe.difference(&pass).cloned().collect();
-    Table::render(rustc, &pass, &declined)
+    let (stub_pass, stub_declined) = stub_split(stubs);
+    Table::render(rustc, &pass, &declined, &stub_pass, &stub_declined)
 }
 
 /// The shapes the gate saw that the rules' universe does not list.

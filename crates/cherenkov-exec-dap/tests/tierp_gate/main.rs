@@ -218,7 +218,8 @@ fn test_tier_p_patches_behave_like_the_rustc_mutants_they_stand_for() {
         "patches that do not behave like their mutants"
     );
     assert_eq!(table::unlisted(&by_shape), Vec::<String>::new());
-    let text = table::render(&compile::rustc_identity(), &by_shape);
+    let stubs = value_evidence();
+    let text = table::render(&compile::rustc_identity(), &by_shape, &stubs);
     if std::env::var("TIERP_HARVEST").is_ok_and(|v| v == "write") {
         std::fs::write(table::path(), text).expect("write the shapes table");
     } else {
@@ -230,41 +231,31 @@ fn test_tier_p_patches_behave_like_the_rustc_mutants_they_stand_for() {
     }
 }
 
-/// The stubs a mutant that returns a trivial value needs.
-#[test]
-fn test_non_zero_scalar_stubs_are_patched_like_their_rustc_mutants() {
+/// The function-value half of the gate: its cases must all behave like
+/// their mutants, and what it found of each stub shape is the evidence.
+fn value_evidence() -> table::StubEvidence {
     let cases = values::all();
     let isa = Isa::amd64_unfiltered().with_abi("sysv").expect("sysv");
     let found = value_gate::gate(&cases, &isa);
-    let scalar = |c: &&values::ValueCase| {
-        [
-            "bool", "i8", "i16", "i32", "i64", "isize", "u8", "u16", "u32", "u64", "usize",
-        ]
-        .contains(&c.result.ty)
-            && ["true", "1", "-1"].contains(&c.value.as_str())
-    };
-    let unpatched: Vec<String> = cases
+    let wrong: Vec<String> = cases
         .iter()
-        .filter(scalar)
-        .filter(|c| matches!(found.verdicts[&c.id], Verdict::Declined(_)))
-        .map(|c| format!("{} {}", c.result.ty, c.value))
+        .filter(|c| found.verdicts[&c.id].wrong())
+        .map(|c| format!("{} {} {:?}", c.result.ty, c.value, found.verdicts[&c.id]))
         .collect();
-    assert!(
-        found.verdicts.values().all(|v| !v.wrong()),
-        "patches that do not behave like their mutants"
+    assert_eq!(
+        wrong,
+        Vec::<String>::new(),
+        "stubs that do not behave like their mutants"
     );
-    let unharvested: Vec<String> = cases
-        .iter()
-        .filter(scalar)
-        .filter_map(|c| {
-            Some(format!(
-                "{} {}: {}",
-                c.result.ty,
-                c.value,
-                found.harvested[&c.id].clone().err()?
-            ))
-        })
-        .collect();
-    assert_eq!(unharvested, Vec::<String>::new());
-    assert_eq!(unpatched, Vec::<String>::new());
+    let mut verdicts: BTreeMap<String, Vec<Verdict>> = BTreeMap::new();
+    for (id, shape) in &found.shapes {
+        verdicts
+            .entry(shape.to_string())
+            .or_default()
+            .push(found.verdicts[id].clone());
+    }
+    table::StubEvidence {
+        verdicts,
+        bytes: found.harvested,
+    }
 }

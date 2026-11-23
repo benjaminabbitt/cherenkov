@@ -9,13 +9,14 @@
 //! the ones that did not; tier P patches arithmetic of Rust code only for
 //! the first.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use cherenkov_core::token::Token;
 use serde::Deserialize;
 
 use crate::isa::IsaError;
+use crate::stubs::StubShape;
 
 /// How the overflow of an integer operation is checked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -87,6 +88,10 @@ struct TableToml {
     panic_call: String,
     pass: Vec<String>,
     declined: Vec<String>,
+    #[serde(default)]
+    stubs: Vec<String>,
+    #[serde(default)]
+    stubs_declined: Vec<String>,
 }
 
 /// The committed table: the shapes that passed the gate and the ones that
@@ -101,6 +106,26 @@ pub struct Table {
     pub panic_call: String,
     pass: BTreeSet<String>,
     declined: BTreeSet<String>,
+    /// The bytes of each function-value stub shape that passed.
+    stubs: BTreeMap<String, Vec<u8>>,
+    stubs_declined: BTreeSet<String>,
+}
+
+/// A stub's line in the table: its shape, `=`, its bytes in hex.
+fn stub_line(shape: &str, bytes: &[u8]) -> String {
+    let hex: Vec<String> = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    format!("{shape} = {}", hex.join(" "))
+}
+
+fn parse_stub(line: &str) -> Result<(String, Vec<u8>), IsaError> {
+    let bad = || IsaError(format!("stub line {line:?} is not `shape = hex bytes`"));
+    let (shape, hex) = line.split_once(" = ").ok_or_else(bad)?;
+    let bytes = hex
+        .split(' ')
+        .map(|b| u8::from_str_radix(b, 16))
+        .collect::<Result<Vec<u8>, _>>()
+        .map_err(|_| bad())?;
+    Ok((shape.to_string(), bytes))
 }
 
 impl Table {
@@ -111,11 +136,40 @@ impl Table {
             panic_call: t.panic_call,
             pass: t.pass.into_iter().collect(),
             declined: t.declined.into_iter().collect(),
+            stubs: t
+                .stubs
+                .iter()
+                .map(|l| parse_stub(l))
+                .collect::<Result<_, _>>()?,
+            stubs_declined: t.stubs_declined.into_iter().collect(),
         })
     }
 
+    /// A table of nothing but the stubs a gate harvested.
+    pub fn harvested(stubs: BTreeMap<String, Vec<u8>>) -> Table {
+        Table {
+            rustc: String::new(),
+            panic_call: "kept".into(),
+            pass: BTreeSet::new(),
+            declined: BTreeSet::new(),
+            stubs,
+            stubs_declined: BTreeSet::new(),
+        }
+    }
+
+    /// The bytes that return the value of `shape`, when it passed the gate.
+    pub fn stub(&self, shape: &StubShape) -> Option<&[u8]> {
+        self.stubs.get(&shape.to_string()).map(Vec::as_slice)
+    }
+
     /// The table as a file's text: sorted, one shape per line.
-    pub fn render(rustc: &str, pass: &BTreeSet<String>, declined: &BTreeSet<String>) -> String {
+    pub fn render(
+        rustc: &str,
+        pass: &BTreeSet<String>,
+        declined: &BTreeSet<String>,
+        stubs: &BTreeMap<String, Vec<u8>>,
+        stubs_declined: &BTreeSet<String>,
+    ) -> String {
         let list = |name: &str, items: &BTreeSet<String>| {
             let mut s = format!("{name} = [\n");
             for i in items {
@@ -124,6 +178,7 @@ impl Table {
             s.push_str("]\n");
             s
         };
+        let lines: BTreeSet<String> = stubs.iter().map(|(s, b)| stub_line(s, b)).collect();
         format!(
             "# Written by `just tierp-harvest` (tests/tierp_gate): do not edit.\n\
              # The shapes of arithmetic patches that passed, and those that did not,\n\
@@ -133,9 +188,14 @@ impl Table {
              # The panic of an overflow check keeps calling the original operation's\n\
              # function (\"attempt to add with overflow\" after an add -> sub patch):\n\
              # the test's verdict is the compiled mutant's, its message may differ.\n\
-             panic_call = \"kept\"\n\n{}\n{}",
+             panic_call = \"kept\"\n\n{}\n{}\n\
+             # Function-value stubs: the bytes rustc makes of a trivial value, written\n\
+             # over a function's entry, per result layout class (`src/stubs.rs`).\n\
+             {}\n{}",
             list("pass", pass),
-            list("declined", declined)
+            list("declined", declined),
+            list("stubs", &lines),
+            list("stubs_declined", stubs_declined)
         )
     }
 

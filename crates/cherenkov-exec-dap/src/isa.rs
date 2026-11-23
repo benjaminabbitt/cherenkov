@@ -331,6 +331,17 @@ impl Isa {
         self.shapes.as_ref()
     }
 
+    /// The bytes that return the trivial value of `shape`, when the shapes
+    /// table says they are right (none without a table).
+    pub fn stub(&self, shape: &crate::stubs::StubShape) -> Option<&[u8]> {
+        self.shapes.as_ref()?.stub(shape)
+    }
+
+    /// The calling convention chosen with [`Isa::with_abi`].
+    pub fn abi(&self) -> Option<&str> {
+        self.abi.as_deref()
+    }
+
     /// Whether arithmetic of `shape` may be patched (any shape, without a
     /// table).
     pub fn admits(&self, shape: &Shape) -> bool {
