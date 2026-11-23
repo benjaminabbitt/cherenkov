@@ -706,3 +706,8 @@ fn test_above_compares_floats() {
     assert_eq!(above(1.0, 1.0), 2);
     assert_eq!(above(0.0, 1.0), 2);
 }
+
+#[test]
+fn test_guarded_true_applies_the_assignment() {
+    assert_eq!(guarded(true), 3);
+}
