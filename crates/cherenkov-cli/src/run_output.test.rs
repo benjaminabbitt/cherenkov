@@ -16,7 +16,7 @@ use cherenkov_run_application::error::RunLayerError;
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::{Settings, Workers};
 use cherenkov_run_application::workers::Killer;
-use cherenkov_run_domain::RunStatus;
+use cherenkov_run_domain::{OperatorSet, RunStatus};
 use cherenkov_syntax::TreeSitterSyntax;
 use serde_json::Value;
 
@@ -129,8 +129,10 @@ fn explain(_: &str) -> Vec<Killer> {
 fn settings() -> Settings {
     Settings {
         root: "/project".to_string(),
-        language: "rust".to_string(),
-        operators: "breadth".to_string(),
+        operators: vec![OperatorSet {
+            language: "rust".to_string(),
+            set: "breadth".to_string(),
+        }],
         jobs: 2,
     }
 }

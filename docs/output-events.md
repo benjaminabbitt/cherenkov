@@ -37,8 +37,11 @@ written by the JSON generated from its options; durations (`baseline_ms`,
 `prepared_ms`, `took_ms`) are milliseconds in 32 bits.
 
 ### `run.started`
-`root`, `language`, `operators` (set name), `jobs`, `fast` (bool),
-`mutants` (planned count).
+`root`, `jobs`, `fast` (bool), `mutants` (planned count), and `operators`:
+the operator set each language was planned with, a list of
+`{"language": "go", "set": "breadth"}` entries, one for each language and set
+(a run with several sets for one language has one entry for each). It
+replaces the earlier `language` and the packed `operators` string.
 
 ### `mutant.planned`
 One per mutant, in plan order, right after `run.started`: the mutant's

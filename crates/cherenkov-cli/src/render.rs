@@ -11,8 +11,8 @@ use cherenkov_run_domain::{
     MutantDecided, Outcome, PlannedMutant, ProgramPrepared, RunFinished, Selection, Verdict,
 };
 use cherenkov_run_wire::output::{
-    Decided, Document, Executors, Failed, FailedTests, Finished, Killers, Planned, Prepared,
-    Started, document::Event,
+    Decided, Document, Executors, Failed, FailedTests, Finished, Killers, OperatorSet, Planned,
+    Prepared, Started, document::Event,
 };
 use cherenkov_run_wire::{self as wire, names};
 
@@ -30,8 +30,14 @@ pub fn documents(run: &Uuid, page: &EventPage) -> Vec<Document> {
             run: Some(run.clone()),
             at: Some(at),
             root: s.root,
-            language: s.language,
-            operators: s.operators,
+            operators: s
+                .operators
+                .into_iter()
+                .map(|o| OperatorSet {
+                    language: o.language,
+                    set: o.set,
+                })
+                .collect(),
             jobs: s.jobs,
             fast: s.fast,
             mutants: s.mutants,

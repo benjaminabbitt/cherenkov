@@ -159,7 +159,7 @@ fn test_plan_json_is_the_dry_run_s_events_the_run_started_then_each_mutant_plann
     let docs = documents(&out);
     assert_eq!(docs[0]["event"], "run.started");
     assert_eq!(docs[0]["mutants"], expected("go").len());
-    assert_eq!(docs[0]["language"], "go");
+    assert_eq!(docs[0]["operators"][0]["language"], "go");
     let planned = &docs[1..];
     assert_eq!(planned.len(), expected("go").len());
     assert!(planned.iter().all(|d| d["event"] == "mutant.planned"));
@@ -373,6 +373,52 @@ fn test_plan_of_a_project_with_two_languages_uses_each_languages_default() {
             .iter()
             .any(|l| l.contains("lib.rs") && l.contains("fn-value")),
         "{lines:?}"
+    );
+}
+
+/// The `operators` of the first document of `plan dir --format json`.
+fn started_operators(dir: &Path, extra: &[&str]) -> (serde_json::Value, serde_json::Value) {
+    let mut args = vec!["--format", "json"];
+    args.extend_from_slice(extra);
+    let out = plan(dir, &args);
+    let text = String::from_utf8(out.stdout).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+    assert_eq!(doc["event"], "run.started");
+    (doc["operators"].clone(), doc)
+}
+
+#[test]
+fn test_plan_json_of_two_languages_names_each_languages_set_in_run_started() {
+    let dir = std::env::temp_dir().join(format!("cherenkov-twoset-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        "pub fn f(a: i32) -> i32 { a + 1 }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("a.go"),
+        "package a\nfunc F(a int) int { return a + 1 }\n",
+    )
+    .unwrap();
+    let (operators, doc) = started_operators(&dir, &[]);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(
+        operators,
+        serde_json::json!([
+            {"language": "go", "set": "breadth"},
+            {"language": "rust", "set": "cargo-mutants"}
+        ])
+    );
+    assert!(doc.get("language").is_none(), "{doc}");
+}
+
+#[test]
+fn test_plan_json_of_one_language_has_one_operator_entry() {
+    let (operators, _) = started_operators(&fixtures().join("go"), &[]);
+    assert_eq!(
+        operators,
+        serde_json::json!([{"language": "go", "set": "breadth"}])
     );
 }
 

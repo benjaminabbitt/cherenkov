@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use cherenkov_run_wire::output::{Executors, FailedTests, Killers};
+use cherenkov_run_wire::output::{Executors, FailedTests, Killers, OperatorSet};
 use cherenkov_run_wire::{RunStatus, Tier};
 
 use super::*;
@@ -133,8 +133,10 @@ fn started(language: &str, mutants: u32) -> Started {
         run: None,
         at: None,
         root: "/p".to_string(),
-        language: language.to_string(),
-        operators: "breadth".to_string(),
+        operators: vec![OperatorSet {
+            language: language.to_string(),
+            set: "breadth".to_string(),
+        }],
         jobs: 1,
         fast: false,
         mutants,

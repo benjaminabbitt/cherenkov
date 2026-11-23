@@ -308,8 +308,7 @@ fn on_run_layer(
 ) -> Result<(), CliError> {
     let settings = Settings {
         root: asked.root.display().to_string(),
-        language: lang.to_string(),
-        operators: crate::set_names(asked.sets),
+        operators: crate::language_sets([lang], asked.sets),
         jobs: workers.jobs,
     };
     let log = match &asked.tools.deficiency_log {

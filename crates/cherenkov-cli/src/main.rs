@@ -34,6 +34,7 @@ use cherenkov_core::profile::Profile;
 use cherenkov_core::session::{FileProblem, ProjectPlan};
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::Settings;
+use cherenkov_run_domain::OperatorSet as LanguageSet;
 use cherenkov_syntax::TreeSitterSyntax;
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use cli_support::{Exit, Failure, detailed_exitcode, detailed_exitcode_arg, usage_exit};
@@ -376,6 +377,22 @@ pub(crate) fn set_names(sets: &[OperatorSet]) -> String {
     names.join(",")
 }
 
+/// Each of `sets`, for each of `languages`: what `run.started` names.
+pub(crate) fn language_sets<'a>(
+    languages: impl IntoIterator<Item = &'a str>,
+    sets: &[OperatorSet],
+) -> Vec<LanguageSet> {
+    languages
+        .into_iter()
+        .flat_map(|language| {
+            sets.iter().map(move |s| LanguageSet {
+                language: language.to_string(),
+                set: s.name.to_string(),
+            })
+        })
+        .collect()
+}
+
 /// With several sets, how many mutants each produced and how many more than
 /// one did: the provenance of the plan, summarized. Nothing for one set.
 pub(crate) fn provenance_line(
@@ -538,21 +555,24 @@ fn plan_with(
     profiles: &[Profile],
     operators: Option<&str>,
     selection: &Selection,
-) -> Result<(ProjectPlan, Vec<OperatorSet>, String), CliError> {
+) -> Result<Planned, CliError> {
     if let Some(spec) = operators {
         let sets = operator_sets(spec)?;
         let project = plan_selected(dir, syntax, profiles, &sets, selection)?;
         let label = set_names(&sets);
-        return Ok((project, sets, label));
+        let languages = language_sets(project.diagnostics.keys().map(|l| l.as_str()), &sets);
+        return Ok((project, sets, label, languages));
     }
     let mut project = ProjectPlan::default();
     let mut used: Vec<(String, String)> = Vec::new();
+    let mut languages: Vec<LanguageSet> = Vec::new();
     for profile in profiles {
         let lang = profile.lang.as_str();
         let sets = operator_sets_for(None, lang)?;
         let part = plan_selected(dir, syntax, std::slice::from_ref(profile), &sets, selection)?;
         if !part.diagnostics.is_empty() {
             used.push((lang.to_string(), set_names(&sets)));
+            languages.extend(language_sets([lang], &sets));
         }
         project.plans.extend(part.plans);
         project.diagnostics.extend(part.diagnostics);
@@ -560,8 +580,12 @@ fn plan_with(
         project.provenance.extend(part.provenance);
     }
     project.plans.sort_by(|a, b| a.file.cmp(&b.file));
-    Ok((project, Vec::new(), default_label(&used)))
+    Ok((project, Vec::new(), default_label(&used), languages))
 }
+
+/// A planned project, the sets used when one list was asked for, the label
+/// that names what was used, and the set of each language.
+type Planned = (ProjectPlan, Vec<OperatorSet>, String, Vec<LanguageSet>);
 
 /// The default sets in use, named by language unless one set serves all.
 fn default_label(used: &[(String, String)]) -> String {
@@ -588,7 +612,8 @@ fn plan(
         })?
         .with_skip_calls(selection.skip_calls.clone());
     let profiles = with_excludes(syntax.profiles(), &selection.exclude_globs);
-    let (project, sets, label) = plan_with(dir, &syntax, &profiles, operators, selection)?;
+    let (project, sets, label, languages) =
+        plan_with(dir, &syntax, &profiles, operators, selection)?;
     // Under JSON, run.started names the set.
     if format == Format::Text && !names {
         eprintln!("operators: {label}");
@@ -604,11 +629,9 @@ fn plan(
         summarize(&project);
         return Ok(());
     }
-    let languages: Vec<&str> = project.diagnostics.keys().map(|l| l.as_str()).collect();
     let settings = Settings {
         root: dir.display().to_string(),
-        language: languages.join(","),
-        operators: label,
+        operators: languages,
         jobs: 0,
     };
     let sink = output::sink(format, Listed::Planned, None);
