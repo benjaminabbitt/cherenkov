@@ -518,3 +518,57 @@ fn test_run_of_a_changed_test_runs_the_mutants_it_calls_with_that_test_alone() {
         .count();
     assert_eq!(stderr, 1, "only app's program is prepared");
 }
+
+/// A diff that changes `id_of`'s body (line 16 of core).
+fn id_diff() -> PathBuf {
+    let path = std::env::temp_dir().join(format!("cherenkov-id-{}.diff", std::process::id()));
+    std::fs::write(
+        &path,
+        "--- a/crates/cherenkov-cli/fixtures/rust-workspace/core/src/lib.rs\n\
+         +++ b/crates/cherenkov-cli/fixtures/rust-workspace/core/src/lib.rs\n\
+         @@ -15,3 +15,3 @@\n pub fn id_of(x: i32) -> Id {\n-    Id(x + 0)\n+    Id(x)\n }\n",
+    )
+    .unwrap();
+    path
+}
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_run_of_a_diff_has_rustc_reject_the_mutant_it_cannot_compile_and_writes_a_verdict_file() {
+    let diff = id_diff();
+    let verdicts =
+        std::env::temp_dir().join(format!("cherenkov-verdicts-{}.jsonl", std::process::id()));
+    let out = run(
+        &workspace_fixture(),
+        &[
+            "--format",
+            "text",
+            "--in-diff",
+            diff.to_str().unwrap(),
+            "--verdicts",
+            verdicts.to_str().unwrap(),
+        ],
+    );
+    let _ = std::fs::remove_file(&diff);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains(" id_of "), "{stdout}");
+    assert!(
+        stdout.contains("unviable"),
+        "rustc rejects `Default::default()` of Id: {stdout}"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("1 of "),
+        "the viability check found it: {stderr}"
+    );
+    assert!(
+        stderr.contains("changed-test mutants are judged by the changed tests alone"),
+        "{stderr}"
+    );
+    let written = std::fs::read_to_string(&verdicts).unwrap();
+    let _ = std::fs::remove_file(&verdicts);
+    assert!(
+        written.contains("\"id_of\"") || written.contains("id_of"),
+        "{written}"
+    );
+}
