@@ -113,7 +113,7 @@ fn decided(stdout: &[u8]) -> Vec<Value> {
 #[test]
 #[ignore = "slow: needs gdb and cargo"]
 fn test_run_gives_the_rust_fixture_s_hand_labelled_verdicts_as_json_lines() {
-    let out = run(&fixtures().join("rust"), &[]);
+    let out = run(&fixtures().join("rust"), &["--operators", "breadth"]);
     assert_eq!(
         decided_lines(&out.stdout),
         sorted_lines(fixtures().join("rust/expected-verdicts.txt"))
@@ -131,7 +131,10 @@ fn test_run_gives_the_rust_fixture_s_hand_labelled_verdicts_as_json_lines() {
 #[test]
 #[ignore = "slow: needs gdb and cargo"]
 fn test_run_as_text_gives_the_rust_fixture_s_hand_labelled_verdicts() {
-    let out = run(&fixtures().join("rust"), &["--format", "text"]);
+    let out = run(
+        &fixtures().join("rust"),
+        &["--operators", "breadth", "--format", "text"],
+    );
     assert_eq!(
         text_lines(&out.stdout),
         sorted_lines(fixtures().join("rust/expected-verdicts.txt"))
@@ -170,7 +173,10 @@ fn test_run_with_a_selected_test_runs_only_that_test() {
     // Only test_total runs: total's mutants are killed as before; every
     // other function's mutants are not called (the selected test never
     // calls them), never "survived", which would blame the test.
-    let out = run(&fixtures().join("rust"), &["--test", "test_total"]);
+    let out = run(
+        &fixtures().join("rust"),
+        &["--operators", "breadth", "--test", "test_total"],
+    );
     let called: Vec<(String, String)> = decided(&out.stdout)
         .iter()
         .filter(|d| d["verdict"] != "not-called")
