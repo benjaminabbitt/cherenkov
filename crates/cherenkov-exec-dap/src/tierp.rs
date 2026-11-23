@@ -11,6 +11,9 @@ use cherenkov_core::token::Token;
 use crate::isa::{Isa, Jcc, Signedness};
 use crate::x86;
 
+mod column;
+use column::arithmetic_at;
+
 /// One instruction of the function under mutation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Insn {
@@ -389,6 +392,10 @@ fn derive_in_context(
             },
             _,
         ) => return_default(value_text.as_deref(), *zero_bits, &ours, isa),
+        // An operator inside a call argument, a field or a method chain.
+        (Action::InPlace { .. }, Edit::ReplaceToken { from, with, .. }) if is_arithmetic(*from) => {
+            arithmetic_at(plan, *from, *with, &ours, isa)
+        }
         // A comparison whose result is a value: the `setcc` that makes the
         // bool, its condition code swapped as a branch's would be.
         (_, Edit::ReplaceToken { from, with, .. })
@@ -404,6 +411,21 @@ fn derive_in_context(
             action.kind()
         ))),
     }
+}
+
+/// An arithmetic or bitwise operator, plain or compound.
+fn is_arithmetic(t: Token) -> bool {
+    let base = t.compound_base().unwrap_or(t);
+    matches!(
+        base,
+        Token::Add
+            | Token::Sub
+            | Token::Mul
+            | Token::Div
+            | Token::BitAnd
+            | Token::BitOr
+            | Token::BitXor
+    )
 }
 
 /// A deleted match arm: its body's first instructions become a jump to the
@@ -495,7 +517,9 @@ fn branch_token_swap(
     Ok(site.patch(isa, cc))
 }
 
-/// `+` swapped with `-` in a statement spanning up to `stmt`'s last line.
+/// `+` swapped with `-` in a statement spanning up to `stmt`'s last line;
+/// where its line has no single such instruction, the one at the
+/// operator's column.
 fn arithmetic_swap(
     plan: &MutantPlan,
     stmt: &Span,
@@ -504,19 +528,17 @@ fn arithmetic_swap(
     ours: &[&Insn],
     isa: &Isa,
 ) -> Result<Patch, Unpatchable> {
-    let to_add = match (from, with) {
-        (Token::Add, Token::Sub) => false,
-        (Token::Sub, Token::Add) => true,
-        _ => {
-            return Err(Unpatchable::UnsupportedEdit(format!(
-                "{} {} -> {}",
-                plan.operator,
-                from.name(),
-                with.name()
-            )));
-        }
+    let by_line = match (from, with) {
+        (Token::Add, Token::Sub) => arithmetic(plan.stop_at.line, stmt.end.line, false, ours, isa),
+        (Token::Sub, Token::Add) => arithmetic(plan.stop_at.line, stmt.end.line, true, ours, isa),
+        _ => Err(Unpatchable::UnsupportedEdit(format!(
+            "{} {} -> {}",
+            plan.operator,
+            from.name(),
+            with.name()
+        ))),
     };
-    arithmetic(plan.stop_at.line, stmt.end.line, to_add, ours, isa)
+    by_line.or_else(|refused| arithmetic_at(plan, from, with, ours, isa).map_err(|_| refused))
 }
 
 /// A body replaced by a default value: the function's entry becomes a stub

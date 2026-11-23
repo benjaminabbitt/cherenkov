@@ -130,6 +130,65 @@ sub = { opcode = 0xff, modrm_reg = 1 }
 add = { opcode = 0xfe, modrm_reg = 0 }
 sub = { opcode = 0xfe, modrm_reg = 1 }
 
+# Bitwise operator replacement (compound assignments): and, or and xor
+# encodings of one shape, differing in the opcode byte or the ModRM reg
+# field. `modrm = false` marks the `al/eax, imm` forms, which have none.
+[[bitwise]] # op r/m, r
+and = { opcode = 0x21 }
+or = { opcode = 0x09 }
+xor = { opcode = 0x31 }
+
+[[bitwise]] # 8-bit
+and = { opcode = 0x20 }
+or = { opcode = 0x08 }
+xor = { opcode = 0x30 }
+
+[[bitwise]] # op r, r/m
+and = { opcode = 0x23 }
+or = { opcode = 0x0b }
+xor = { opcode = 0x33 }
+
+[[bitwise]] # 8-bit
+and = { opcode = 0x22 }
+or = { opcode = 0x0a }
+xor = { opcode = 0x32 }
+
+[[bitwise]] # op eax, imm32
+and = { opcode = 0x25, modrm = false }
+or = { opcode = 0x0d, modrm = false }
+xor = { opcode = 0x35, modrm = false }
+
+[[bitwise]] # op al, imm8
+and = { opcode = 0x24, modrm = false }
+or = { opcode = 0x0c, modrm = false }
+xor = { opcode = 0x34, modrm = false }
+
+[[bitwise]] # op r/m, imm8
+and = { opcode = 0x83, modrm_reg = 4 }
+or = { opcode = 0x83, modrm_reg = 1 }
+xor = { opcode = 0x83, modrm_reg = 6 }
+
+[[bitwise]] # op r/m, imm32
+and = { opcode = 0x81, modrm_reg = 4 }
+or = { opcode = 0x81, modrm_reg = 1 }
+xor = { opcode = 0x81, modrm_reg = 6 }
+
+[[bitwise]] # 8-bit immediate forms
+and = { opcode = 0x80, modrm_reg = 4 }
+or = { opcode = 0x80, modrm_reg = 1 }
+xor = { opcode = 0x80, modrm_reg = 6 }
+
+# Scalar floating-point arithmetic (SSE): `<prefix> [REX] 0F <opcode>
+# ModRM`, prefix F2 for a double, F3 for a single. The four operations
+# differ in the opcode alone.
+[float_arith]
+prefixes = [0xf2, 0xf3]
+escape = 0x0f
+add = 0x58
+mul = 0x59
+sub = 0x5c
+div = 0x5e
+
 # Stores of a boolean constant (`return true`/`return false`): the trailing
 # `imm` bytes hold 0 or 1. `reg_in_opcode` means the low three opcode bits
 # name the register (B0+r, B8+r). All may follow one REX prefix.

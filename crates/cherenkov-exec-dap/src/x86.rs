@@ -102,6 +102,16 @@ impl Instr {
         self.tests_low_bit() && self.inner.op0_kind() == OpKind::Memory
     }
 
+    /// A `cmp`: it only sets flags, for the jump that follows.
+    pub fn is_compare(&self) -> bool {
+        self.inner.mnemonic() == Mnemonic::Cmp
+    }
+
+    /// A `mov`, which leaves the flags as they were.
+    pub fn is_move(&self) -> bool {
+        self.inner.mnemonic() == Mnemonic::Mov
+    }
+
     /// Loads an address (`lea`): how rustc passes a panic's location.
     pub fn is_lea(&self) -> bool {
         self.inner.mnemonic() == Mnemonic::Lea

@@ -43,6 +43,8 @@ pub struct Isa {
     /// (opcode, exact length, ModRM reg field)
     call: Vec<(u8, Option<usize>, Option<u8>)>,
     arith: Vec<(Form, Form)>,
+    bitwise: Vec<BitwiseToml>,
+    float: FloatToml,
     bool_store: Vec<BoolStoreToml>,
     bool_zero: Vec<BoolZeroToml>,
     return_stubs: BTreeMap<String, Vec<u8>>,
@@ -59,6 +61,8 @@ struct IsaToml {
     rex: [u8; 2],
     call: Vec<CallToml>,
     arith: Vec<ArithToml>,
+    bitwise: Vec<BitwiseToml>,
+    float_arith: FloatToml,
     bool_store: Vec<BoolStoreToml>,
     bool_zero: Vec<BoolZeroToml>,
     return_stub: BTreeMap<String, Vec<u8>>,
@@ -89,6 +93,35 @@ struct CallToml {
 struct Form {
     opcode: u8,
     modrm_reg: Option<u8>,
+    /// The opcode is followed by a ModRM byte (not the `al/eax, imm` forms).
+    #[serde(default = "yes")]
+    modrm: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// The bitwise operations' encodings of one shape.
+#[derive(Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(deny_unknown_fields)]
+struct BitwiseToml {
+    and: Form,
+    or: Form,
+    xor: Form,
+}
+
+/// Scalar floating-point arithmetic: `<prefix> [REX] 0F <opcode> ModRM`,
+/// the operations differing in the opcode alone.
+#[derive(Deserialize, Clone, PartialEq, Eq, Debug)]
+#[serde(deny_unknown_fields)]
+struct FloatToml {
+    prefixes: Vec<u8>,
+    escape: u8,
+    add: u8,
+    sub: u8,
+    mul: u8,
+    div: u8,
 }
 
 #[derive(Deserialize)]
@@ -185,6 +218,8 @@ impl Isa {
                 .map(|c| (c.opcode, c.length, c.modrm_reg))
                 .collect(),
             arith: t.arith.into_iter().map(|a| (a.add, a.sub)).collect(),
+            bitwise: t.bitwise,
+            float: t.float_arith,
             bool_store: t.bool_store,
             bool_zero: t.bool_zero,
             return_stubs: t.return_stub,
@@ -280,6 +315,74 @@ impl Isa {
             out[m] = (out[m] & !0x38) | (r << 3);
         }
         Some(out)
+    }
+
+    /// `bytes`, a bitwise instruction (`and`, `or` or `xor`, any shape of
+    /// the table) of the operation `from`, as the one of `with`; `None` if
+    /// it is not of `from`'s. The registers-only forms that name one
+    /// register twice are skipped: `xor r, r` zeroes, `and r, r` tests.
+    pub fn bitwise_swap(&self, bytes: &[u8], from: Token, with: Token) -> Option<Vec<u8>> {
+        let (rex, body) = self.rex_split(bytes);
+        let (&opcode, rest) = body.split_first()?;
+        let modrm = rest.first().copied();
+        let pick = |row: &BitwiseToml, t: Token| match t {
+            Token::BitAnd => Some(row.and),
+            Token::BitOr => Some(row.or),
+            Token::BitXor => Some(row.xor),
+            _ => None,
+        };
+        let (source, target) = self.bitwise.iter().find_map(|row| {
+            let source = pick(row, from)?;
+            let hit = source.opcode == opcode
+                && source
+                    .modrm_reg
+                    .is_none_or(|r| modrm.map(|m| (m >> 3) & 0x7) == Some(r));
+            if !hit {
+                return None;
+            }
+            Some((source, pick(row, with)?))
+        })?;
+        if source.modrm
+            && source.modrm_reg.is_none()
+            && modrm.is_some_and(|m| m >> 6 == 3 && (m >> 3) & 0x7 == m & 0x7)
+        {
+            return None;
+        }
+        let mut out = rex.to_vec();
+        out.push(target.opcode);
+        out.extend_from_slice(rest);
+        if let (Some(r), Some(_)) = (target.modrm_reg, source.modrm_reg) {
+            let m = rex.len() + 1;
+            out[m] = (out[m] & !0x38) | (r << 3);
+        }
+        Some(out)
+    }
+
+    /// `bytes`, a scalar floating-point `from` (`+`, `-`, `*`, `/`), as the
+    /// instruction of `with`; `None` if it is not one of `from`'s.
+    pub fn float_swap(&self, bytes: &[u8], from: Token, with: Token) -> Option<Vec<u8>> {
+        let opcode = |t: Token| match t {
+            Token::Add => Some(self.float.add),
+            Token::Sub => Some(self.float.sub),
+            Token::Mul => Some(self.float.mul),
+            Token::Div => Some(self.float.div),
+            _ => None,
+        };
+        let (&prefix, after) = bytes.split_first()?;
+        if !self.float.prefixes.contains(&prefix) {
+            return None;
+        }
+        let (rex, body) = self.rex_split(after);
+        // The opcode byte: after the prefix, the REX and the escape.
+        let at = 1 + rex.len() + 1;
+        match body {
+            [escape, op, _, ..] if *escape == self.float.escape && *op == opcode(from)? => {
+                let mut out = bytes.to_vec();
+                out[at] = opcode(with)?;
+                Some(out)
+            }
+            _ => None,
+        }
     }
 
     /// `bytes` storing the other boolean, if it stores the constant `value`.
