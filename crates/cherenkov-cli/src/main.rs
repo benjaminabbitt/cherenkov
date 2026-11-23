@@ -69,6 +69,31 @@ enum Command {
     /// List every named mutation, where its definition came from, and peers
     /// that have the same or a similar mutation.
     Mutations,
+    /// Dump the operator inventory (operators, their replacements,
+    /// definitions, sources, other tools' names, per-language spellings)
+    /// as Markdown or JSON, for documentation.
+    Operators(OperatorsArgs),
+}
+
+/// What `cherenkov operators` is asked.
+#[derive(Args)]
+struct OperatorsArgs {
+    /// markdown (default) or json (schema 1: the keys are documented in
+    /// docs/mutation-operators.md).
+    #[arg(long, value_enum, default_value = "markdown")]
+    format: DumpFormat,
+    /// Only this registered set's operators, each with its table.
+    #[arg(long, value_name = "SET")]
+    set: Option<String>,
+    /// Leave out each language's spellings of the replacements.
+    #[arg(long = "no-spellings")]
+    no_spellings: bool,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum DumpFormat {
+    Markdown,
+    Json,
 }
 
 /// What `cherenkov plan` is asked.
@@ -276,6 +301,7 @@ fn main() -> ExitCode {
             mutations();
             (Format::Text, Ok(()))
         }
+        Command::Operators(args) => (Format::Text, operators(&args)),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -369,6 +395,39 @@ fn detail(m: &cherenkov_core::operator_set::Mutation) -> &str {
         .strip_prefix(m.family)
         .and_then(|rest| rest.strip_prefix('/'))
         .unwrap_or(m.name)
+}
+
+/// The inventory as the options ask, printed.
+fn operators(args: &OperatorsArgs) -> Result<(), CliError> {
+    use cherenkov_core::inventory::{Inventory, Spellings};
+    let syntax = TreeSitterSyntax::builtin().map_err(|e| CliError::Syntax {
+        reason: e.to_string(),
+    })?;
+    let profiles = syntax.profiles();
+    let tables: Vec<(&str, &cherenkov_core::token::TokenTable)> = if args.no_spellings {
+        Vec::new()
+    } else {
+        profiles
+            .iter()
+            .map(|p| (p.lang.as_str(), &p.tokens))
+            .collect()
+    };
+    let spellings = Spellings::of(&tables);
+    let inventory = match &args.set {
+        None => Inventory::of_all(&spellings),
+        Some(name) => {
+            let set = operator_sets(name)?.remove(0);
+            Inventory::of_set(&set, &spellings)
+        }
+    };
+    match args.format {
+        DumpFormat::Markdown => print!("{}", inventory.markdown()),
+        DumpFormat::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(&inventory).unwrap_or_default()
+        ),
+    }
+    Ok(())
 }
 
 /// The operators and, under each, its replacements with their origins.
