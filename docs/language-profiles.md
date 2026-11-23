@@ -629,12 +629,15 @@ write unless memory still holds every `original` (`native.rs:191`), and
 | An arithmetic `ReplaceToken` (plain or compound) in any other action | The operation's instruction, found by the line-table column of its expression (an argument, a field, a returned value, a condition, a compound assignment): add/sub with its overflow check, scalar float `+ - * /`, and the bitwise compound assignments. See "Tier P arithmetic: the shapes gate". |
 | `EvalReturn` with a bool flip | The immediate of the store of the returned constant, or `xor eax,eax` to `mov al,1`. |
 | `ReturnDefault` with `zero_bits` | An entry stub written over the function's first bytes: zero the result registers, `RET`. The stub is per calling convention (`sysv`, `go`). |
+| `ReturnDefault` with a trivial non-zero value (Rust) | An entry stub of the bytes rustc makes of the value (`true`, `1`, `-1`, `None`, `Ok(())`), chosen by the result type's layout from the DWARF, for a shape in the table. See "Tier P function-value stubs". |
 | `Redirect` | A `JMP` over the first instructions of the deleted arm's body to the catch-all body, found by exact line and column. |
 | `==` to `!=` or back, `!` deletion (`negatable`) | Negate the bool where the program consumes it: invert the consuming jump, `and`/`xor` on `al`, or `setcc`. |
 
 Everything else in the tier P column is `UnsupportedEdit`. In particular:
 integer `*`, `/`, `%` swaps, shifts, plain (non-compound) bitwise operators,
-`+`/`-` to `*`/`/` on integers, and non-zero body values have no patch.
+`+`/`-` to `*`/`/` on integers, and non-zero body values other than the
+trivial ones of "Tier P function-value stubs" have no patch (tier B returns
+them).
 
 ### Tier P arithmetic: the shapes gate
 
@@ -682,6 +685,39 @@ source instruction's encoding and whether its second operand is in memory
 - **Not covered:** arm64 has no arithmetic rules; optimised builds were not
   harvested; the operands the gate runs are scalars, so a shape is shown
   right on straight-line snippets, not in every enclosing function.
+
+### Tier P function-value stubs
+
+A body replaced by `true`, `1`, `-1`, `None` or `Ok(())` (cargo-mutants'
+trivial values) is patched, in Rust code, by writing the bytes rustc makes of
+that value over the function's entry, with no stop per hit. Which bytes
+depends on the result type's layout, so a stub is a *shape* of the same
+table (`isa/tierp-shapes.toml`, `stubs` and `stubs_declined`): the class and
+the value (`stub amd64 u32 1`, `stub amd64 enum1 None tag1=2` for
+`Option<bool>`, whose niche is 2). `src/stubs.rs` names the shape from
+the result's `Layout` (the executor reads it from the DWARF, as for tier B):
+an integer of 1 to 8 bytes, or an enum of at most 16 bytes whose tag is at
+offset 0 and whose `None`/`Ok` variant has an explicit tag and no payload.
+
+- **The gate** (same test, `tests/tierp_gate/value_gate.rs`): for each result
+  type (bool, integers, `u128`, `f64`, `Option` and `Result<(), E>` of
+  scalars, niche types, pairs, `String`) and each way of taking parameters
+  (none, by value, by reference, two, `&mut` the original changes) it plans
+  the cargo-mutants mutants, compiles original and mutant with rustc, applies
+  the real patch (`tierp::derive_returning`) and runs both: same result, and
+  same `&mut` side effects. The bytes of a shape are those of
+  `fn f() -> T { value }`, kept only if they are register moves and the return
+  (no memory operand, relocation or jump; so no float constant, no sret) and
+  every sample of the shape agrees. A shape passes when some case shows the
+  patch right and none shows it wrong.
+- **Declined at run time:** a shape not in `stubs` (floats, `String`,
+  results wider than two registers or returned through memory, `u128`, a tag
+  not at offset 0), an async fn (its body is the future's `poll`), Go code, and
+  an ISA/ABI other than amd64 `sysv`. They fall back to tier B as before.
+- **Fidelity:** `rust-ops` has a function per stub kind
+  (`test_trivial_value_stubs_run_on_tier_p_and_are_faithful_to_their_source`),
+  and one per declined kind that must still be faithful on tier B.
+- The zero stub (`zero_bits`) is unchanged and needs no table entry.
 
 ### Tier B: stop, evaluate, set the PC or return
 

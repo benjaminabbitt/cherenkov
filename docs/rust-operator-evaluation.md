@@ -39,7 +39,7 @@ corresponds to.
 | `shift` | cargo-mutants (visit.rs) | `shl r, cl` after a shift-amount check that is the same for both | P: ModRM reg swap (`shr` or `sar` by signedness) | easy |
 | `unary` | cargo-mutants UnaryOperator (visit.rs). Same as cosmic-ray, Dextool UOI (reduced to deletion) | `!`: folded into branch polarity (`test al,1; jne`), as a value `xor al, 0xff` (or `1`) then `and al, 1`. `-`: `xor eax,eax; sub rax,rcx`, after a `== MIN` overflow check | P: `!` as negation, as a value the `xor` becomes `and al, 1`. `-`: `mov rax,rcx` + NOP; the `MIN` check stays, so the mutant still panics for `MIN` | `!` done; `-` easy (one edge case differs) |
 | `delete-statement` | Cherenkov design; Just et al. 2014. Similar to PIT VOID_METHOD_CALLS; similar to Mothra SDL (call statements only) | the call, drops of its result, next-statement loads on the same line | P: path walk, resume after the last call | done |
-| `fn-value` | cargo-mutants FnValue (fnvalue.rs) | see the table below | P: entry stub per result type | partial |
+| `fn-value` | cargo-mutants FnValue (fnvalue.rs) | see the table below | P: entry stub per result type; non-zero `true`, `1`, `-1`, `None`, `Ok(())` from the shapes table (docs/language-profiles.md "Tier P function-value stubs") | zero and trivial values done |
 | `body-default` | Cherenkov design. Similar to cargo-mutants FnValue (only the zero value) | the zero-value row of the table below | as `fn-value` | zero done |
 | `match-arm` | cargo-mutants MatchArm (visit.rs) | compare chain (`test`/`sub`; `je arm`) or jump table | P: NOP the arm's `je` so it falls to the wildcard; or rewrite the table entry | moderate |
 | `match-guard` | cargo-mutants MatchArmGuard (visit.rs) | the guard's `jcc` | P: as `negate-condition` | easy |
