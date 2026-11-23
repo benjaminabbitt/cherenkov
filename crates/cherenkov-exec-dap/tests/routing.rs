@@ -184,3 +184,68 @@ fn test_a_mutant_only_the_changed_tests_judge_runs_the_changed_tests_that_call_i
         "the mutant of changed application code keeps every test that calls it"
     );
 }
+
+/// A program that notes what it is asked.
+#[derive(Default, Clone)]
+struct Calls(Arc<Mutex<Vec<String>>>);
+
+struct Noting(Calls);
+
+impl MutantExecutor for Noting {
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+        unreachable!()
+    }
+    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+        unreachable!()
+    }
+    fn driven(
+        &mut self,
+        plans: &[MutantPlan],
+        _: Budget,
+    ) -> Result<Option<Vec<Driven>>, ExecError> {
+        let ids: Vec<String> = plans.iter().map(|p| p.id.0.clone()).collect();
+        self.0
+            .0
+            .lock()
+            .unwrap()
+            .push(format!("driven {}", ids.join(",")));
+        Ok(Some(plans.iter().map(|_| Driven::Every).collect()))
+    }
+    fn select_tests(&mut self, tests: Option<&[String]>) {
+        self.0.0.lock().unwrap().push(format!("select {tests:?}"));
+    }
+    fn describe(&self) -> Option<String> {
+        Some("the program".to_string())
+    }
+    fn close_session(&mut self) {
+        self.0.0.lock().unwrap().push("close".to_string());
+    }
+}
+
+fn noting() -> (OnlyJudged<Noting>, Calls) {
+    let calls = Calls::default();
+    let judged = Arc::new(BTreeSet::from([MutantId("mine".into())]));
+    (OnlyJudged::new(Noting(calls.clone()), judged), calls)
+}
+
+#[test]
+fn test_driven_asks_the_program_about_its_mutants_alone_and_answers_for_all() {
+    let (mut program, calls) = noting();
+    let plans = [plan_of("other"), plan_of("mine")];
+    let driven = program.driven(&plans, BUDGET).unwrap();
+    assert_eq!(driven, Some(vec![Driven::NotCalled, Driven::Every]));
+    assert_eq!(*calls.0.lock().unwrap(), ["driven mine"]);
+}
+
+#[test]
+fn test_a_program_s_test_selection_description_and_session_are_its_own() {
+    let (mut program, calls) = noting();
+    program.select_tests(Some(&["t".to_string()]));
+    program.select_tests(None);
+    program.close_session();
+    assert_eq!(program.describe().as_deref(), Some("the program"));
+    assert_eq!(
+        *calls.0.lock().unwrap(),
+        ["select Some([\"t\"])", "select None", "close"]
+    );
+}

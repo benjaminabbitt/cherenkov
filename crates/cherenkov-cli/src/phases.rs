@@ -15,17 +15,28 @@ use crate::output::Sink;
 pub struct Phases {
     inner: Box<dyn Sink>,
     to: Box<dyn Write + Send>,
-    started: Instant,
+    /// Time since the run layer started.
+    clock: Box<dyn FnMut() -> Duration + Send>,
     last_prepared: Option<Duration>,
 }
 
 impl Phases {
     /// Time from now; the phases are written to `to`.
     pub fn new(inner: Box<dyn Sink>, to: Box<dyn Write + Send>) -> Self {
+        let started = Instant::now();
+        Self::with_clock(inner, to, Box::new(move || started.elapsed()))
+    }
+
+    /// [`Phases::new`], timed by `clock`.
+    pub fn with_clock(
+        inner: Box<dyn Sink>,
+        to: Box<dyn Write + Send>,
+        clock: Box<dyn FnMut() -> Duration + Send>,
+    ) -> Self {
         Phases {
             inner,
             to,
-            started: Instant::now(),
+            clock,
             last_prepared: None,
         }
     }
@@ -35,9 +46,9 @@ impl Sink for Phases {
     fn document(&mut self, doc: &Document) {
         self.inner.document(doc);
         match &doc.event {
-            Some(Event::Prepared(_)) => self.last_prepared = Some(self.started.elapsed()),
+            Some(Event::Prepared(_)) => self.last_prepared = Some((self.clock)()),
             Some(Event::Finished(_)) => {
-                let line = summary(self.last_prepared, self.started.elapsed());
+                let line = summary(self.last_prepared, (self.clock)());
                 let _ = writeln!(self.to, "{line}");
             }
             _ => {}

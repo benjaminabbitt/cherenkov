@@ -199,3 +199,110 @@ fn test_cargo_is_told_to_build_only_the_named_packages_tests() {
     );
     assert!(package_args(&[]).is_empty());
 }
+
+/// A stand-in for cargo that answers `metadata` and `test` with canned
+/// output (or fails, when `ok` is false) and logs its arguments.
+struct FakeCargo {
+    dir: PathBuf,
+    /// One fake at a time: a script being written must not be inherited
+    /// open by another test's child process ("text file busy").
+    _serial: std::sync::MutexGuard<'static, ()>,
+}
+
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+impl FakeCargo {
+    fn new(tag: &str, ok: bool) -> FakeCargo {
+        use std::os::unix::fs::PermissionsExt;
+        let serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("cherenkov-fake-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let metadata = r#"{"workspace_root":"/w","packages":[{"name":"a","manifest_path":"/w/a/Cargo.toml","dependencies":[]}]}"#;
+        let test = r#"{"reason":"compiler-artifact","manifest_path":"/w/a/Cargo.toml","profile":{"test":true},"executable":"/t/a-1"}"#;
+        let exit = if ok { 0 } else { 1 };
+        let script = format!(
+            "#!/bin/sh\necho \"$@\" >> '{log}'\ncase \"$1\" in\n metadata) echo '{metadata}';;\n test) echo '{test}';;\nesac\nexit {exit}\n",
+            log = dir.join("log").display()
+        );
+        let path = dir.join("cargo");
+        std::fs::write(&path, script).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        FakeCargo {
+            dir,
+            _serial: serial,
+        }
+    }
+
+    fn path(&self) -> PathBuf {
+        self.dir.join("cargo")
+    }
+
+    fn log(&self) -> Vec<String> {
+        std::fs::read_to_string(self.dir.join("log"))
+            .unwrap_or_default()
+            .lines()
+            .map(String::from)
+            .collect()
+    }
+}
+
+impl Drop for FakeCargo {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+#[test]
+fn test_the_workspace_s_packages_are_what_cargo_metadata_says() {
+    use cherenkov_exec_dap::toolchain::workspace_packages;
+    let cargo = FakeCargo::new("meta", true);
+    let found = workspace_packages(&cargo.path(), std::path::Path::new("/")).unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].name, "a");
+    assert_eq!(found[0].dir, PathBuf::from("/w/a"));
+}
+
+#[test]
+fn test_a_cargo_metadata_that_fails_is_an_error() {
+    use cherenkov_exec_dap::toolchain::workspace_packages;
+    let cargo = FakeCargo::new("metafail", false);
+    let error = workspace_packages(&cargo.path(), std::path::Path::new("/")).unwrap_err();
+    assert!(error.0.contains("cargo metadata failed"), "{error}");
+}
+
+#[test]
+fn test_test_programs_are_built_for_the_named_packages_and_the_workspace_without() {
+    use cherenkov_exec_dap::toolchain::{
+        build_rust_test_programs_of, build_rust_test_programs_with,
+    };
+    let cargo = FakeCargo::new("build", true);
+    let here = std::path::Path::new("/");
+    let named = build_rust_test_programs_of(
+        &cargo.path(),
+        here,
+        &["--locked".to_string()],
+        &["a".to_string(), "b".to_string()],
+    )
+    .unwrap();
+    assert_eq!(named.len(), 1);
+    assert_eq!(named[0].binary, PathBuf::from("/t/a-1"));
+    let all =
+        build_rust_test_programs_with(&cargo.path(), here, &["--locked".to_string()]).unwrap();
+    assert_eq!(all, named);
+    assert_eq!(
+        cargo.log(),
+        [
+            "test --no-run --message-format=json --locked --package a --package b",
+            "test --no-run --message-format=json --locked"
+        ]
+    );
+}
+
+#[test]
+fn test_a_cargo_test_build_that_fails_is_an_error() {
+    use cherenkov_exec_dap::toolchain::build_rust_test_programs_of;
+    let cargo = FakeCargo::new("buildfail", false);
+    let error = build_rust_test_programs_of(&cargo.path(), std::path::Path::new("/"), &[], &[])
+        .unwrap_err();
+    assert!(error.0.contains("cargo test --no-run failed"), "{error}");
+}

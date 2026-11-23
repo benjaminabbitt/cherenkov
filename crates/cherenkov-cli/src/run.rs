@@ -37,7 +37,7 @@ use crate::error::CliError;
 use crate::output::{self, Listed};
 use crate::phases::Phases;
 use crate::selection::{Selection, plan_selected};
-use crate::test_scope::Scope;
+use crate::test_scope::{Scope, records_changed_tests_only};
 
 pub struct Tools {
     pub dlv: Option<PathBuf>,
@@ -213,7 +213,7 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     // Changed tests: the mutants of what they can reach, judged by them.
     let changed_tests = diff_tests(asked)?;
     let scope = scope.with_changed_tests(&changed_tests, &every, &packages, &canonical);
-    let plans = with_changed_tests_plans(changed_code, &every, &scope);
+    let plans = scope.plans_to_run(changed_code, &every);
     let mut programs = timed("build", || build_programs(&cargo, root, tools, &scope))?;
     programs.sort();
     let prefix = cargo_workspace_prefix(&cargo, root).map_err(toolchain)?;
@@ -287,11 +287,7 @@ fn routed(asked: &Asked, packages: &[Package], scope: &Scope, program: &TestProg
     let (judged, only_changed) = (scope.judged_by(package), scope.only_changed(package));
     let listed = list_tests(&program.binary).unwrap_or_default();
     let changed = libtest_names(&listed, &scope.changed_in(package));
-    let only_those = !only_changed.is_empty()
-        && judged.iter().all(|id| only_changed.contains(id))
-        && !changed.is_empty()
-        && asked.tests.is_empty();
-    let test_args = if only_those {
+    let test_args = if records_changed_tests_only(&judged, &only_changed, &changed, asked.tests) {
         rust_test_args(&changed)
     } else {
         rust_test_args(asked.tests)
@@ -304,34 +300,20 @@ fn routed(asked: &Asked, packages: &[Package], scope: &Scope, program: &TestProg
     }
 }
 
-/// The plans to run: those of the changed application code and those of
-/// what the changed tests reach.
-fn with_changed_tests_plans(
-    changed_code: Vec<MutantPlan>,
-    every: &[MutantPlan],
-    scope: &Scope,
-) -> Vec<MutantPlan> {
-    let mut plans = changed_code;
-    let kept: BTreeSet<MutantId> = plans.iter().map(|p| p.id.clone()).collect();
-    let reached = scope.judged_for_changed_tests();
-    plans.extend(
-        every
-            .iter()
-            .filter(|p| !kept.contains(&p.id) && reached.contains(&p.id))
-            .cloned(),
-    );
-    plans
-}
-
 /// The tests the `--in-diff` diff changes (none without one).
 fn diff_tests(asked: &Asked) -> Result<Vec<ChangedTest>, CliError> {
     let Some(file) = &asked.tools.in_diff else {
         return Ok(Vec::new());
     };
     let text = std::fs::read_to_string(file).map_err(|e| unreadable(file, &e))?;
-    let below = repository_prefix(asked.root);
-    let read = |relative: &Path| std::fs::read_to_string(asked.root.join(relative)).ok();
-    Ok(changed_tests(&AddedLines::parse(&text), &below, &read))
+    Ok(tests_changed_by(&text, asked.root))
+}
+
+/// The tests the unified diff `text` changes in the project at `root`.
+fn tests_changed_by(text: &str, root: &Path) -> Vec<ChangedTest> {
+    let below = repository_prefix(root);
+    let read = |relative: &Path| std::fs::read_to_string(root.join(relative)).ok();
+    changed_tests(&AddedLines::parse(text), &below, &read)
 }
 
 /// The test programs of the packages that judge the planned mutants: the
@@ -586,6 +568,8 @@ fn find_tool(explicit: Option<&Path>, name: &str) -> Result<PathBuf, CliError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_scope::TestPackages;
+    use crate::test_scope::tests::plan_in;
 
     #[test]
     fn test_the_viability_diagnostic_says_what_was_rejected_and_what_it_cost() {
@@ -606,5 +590,102 @@ mod tests {
         assert_eq!(auto_jobs(20, 22 * GIB, 2 * GIB), 11, "memory-bound");
         assert_eq!(auto_jobs(4, 100 * GIB, GIB), 4, "core-bound");
         assert_eq!(auto_jobs(20, GIB, 8 * GIB), 1, "never none");
+    }
+
+    /// A stand-in for cargo: logs its arguments, answers `test` with one
+    /// test program.
+    fn fake_cargo(tag: &str) -> (PathBuf, PathBuf) {
+        use std::os::unix::fs::PermissionsExt;
+        static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _one = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let dir =
+            std::env::temp_dir().join(format!("cherenkov-run-fake-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("log");
+        let test = r#"{"reason":"compiler-artifact","manifest_path":"/w/a/Cargo.toml","profile":{"test":true},"executable":"/t/a-1"}"#;
+        let script = format!(
+            "#!/bin/sh\necho \"$@\" >> '{}'\necho '{test}'\n",
+            log.display()
+        );
+        let cargo = dir.join("cargo");
+        std::fs::write(&cargo, script).unwrap();
+        std::fs::set_permissions(&cargo, std::fs::Permissions::from_mode(0o755)).unwrap();
+        (cargo, log)
+    }
+
+    fn tools() -> Tools {
+        Tools {
+            dlv: None,
+            go: None,
+            gdb: None,
+            cargo: None,
+            jobs: None,
+            cargo_args: vec!["--locked".to_string()],
+            in_diff: None,
+            deficiency_log: None,
+            verdict_file: None,
+            viability: true,
+            selection: Selection::default(),
+        }
+    }
+
+    fn package(name: &str) -> cherenkov_exec_dap::toolchain::Package {
+        cherenkov_exec_dap::toolchain::Package {
+            name: name.to_string(),
+            dir: PathBuf::from(format!("/w/{name}")),
+            deps: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn test_the_build_is_of_the_packages_that_judge_and_of_nothing_when_none_does() {
+        let (cargo, log) = fake_cargo("build");
+        let packages = [package("a"), package("b")];
+        let plans = [plan_in("m1", "a/src/lib.rs")];
+        let root = Path::new("/w");
+        let scope = Scope::of(&TestPackages::Mutated, &plans, &packages, root);
+        let built = build_programs(&cargo, Path::new("/"), &tools(), &scope).unwrap();
+        assert_eq!(built.len(), 1);
+        assert_eq!(built[0].binary, PathBuf::from("/t/a-1"));
+        let nothing = Scope::of(&TestPackages::Mutated, &[], &packages, root);
+        assert!(
+            build_programs(&cargo, Path::new("/"), &tools(), &nothing)
+                .unwrap()
+                .is_empty()
+        );
+        let everything = Scope::of(&TestPackages::Workspace, &plans, &packages, root);
+        assert_eq!(
+            build_programs(&cargo, Path::new("/"), &tools(), &everything)
+                .unwrap()
+                .len(),
+            1
+        );
+        let logged = std::fs::read_to_string(&log).unwrap();
+        // The second build never ran cargo: two runs, the package build and the whole.
+        assert_eq!(
+            logged.lines().collect::<Vec<_>>(),
+            [
+                "test --no-run --message-format=json --locked --package a",
+                "test --no-run --message-format=json --locked"
+            ]
+        );
+        let _ = std::fs::remove_dir_all(cargo.parent().unwrap());
+    }
+
+    #[test]
+    fn test_the_tests_a_diff_changes_are_found_in_the_project_s_files() {
+        let root = std::env::temp_dir().join(format!("cherenkov-diff-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(
+            root.join("src/lib.rs"),
+            "pub fn f() {}\n\n#[test]\nfn test_f() {\n    f();\n}\n",
+        )
+        .unwrap();
+        let diff = "--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -5,1 +5,1 @@\n-    g();\n+    f();\n";
+        let found = tests_changed_by(diff, &root);
+        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].path, "test_f");
+        assert_eq!(found[0].file, Path::new("src/lib.rs"));
     }
 }

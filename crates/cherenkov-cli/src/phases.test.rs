@@ -68,3 +68,22 @@ fn test_the_phases_are_written_when_the_run_finishes_and_every_document_passes_t
     );
     assert!(text.contains("; phase mutants: "), "{text}");
 }
+
+#[test]
+fn test_the_preparation_phase_ends_when_the_last_program_is_prepared() {
+    let written = Written::default();
+    let mut ticks = [3, 5, 10].map(Duration::from_secs).into_iter();
+    let mut sink = Phases::with_clock(
+        Box::new(Passed::default()),
+        Box::new(written.clone()),
+        Box::new(move || ticks.next().unwrap()),
+    );
+    sink.document(&doc(Event::Prepared(Prepared::default())));
+    sink.document(&doc(Event::Prepared(Prepared::default())));
+    sink.document(&doc(Event::Finished(Finished::default())));
+    let text = String::from_utf8(written.0.lock().unwrap().clone()).unwrap();
+    assert_eq!(
+        text.trim(),
+        "cherenkov: phase preparation and recording: 5.0 s; phase mutants: 5.0 s"
+    );
+}

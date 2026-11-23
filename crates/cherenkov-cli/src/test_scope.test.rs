@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::selection::{SelectArgs, Selection};
 
-fn plan_in(id: &str, file: &str) -> MutantPlan {
+pub(crate) fn plan_in(id: &str, file: &str) -> MutantPlan {
     use cherenkov_core::ports::SyntaxPort;
     let syntax = cherenkov_syntax::TreeSitterSyntax::builtin().unwrap();
     let rust = cherenkov_core::syntax::LanguageId::new("rust");
@@ -298,5 +298,103 @@ fn test_a_mutant_changed_application_code_and_reached_by_a_changed_test_runs_eve
     assert!(
         scope.only_changed("core").is_empty(),
         "not only the changed tests"
+    );
+}
+
+#[test]
+fn test_a_changed_test_judges_alone_a_mutant_of_changed_code_in_a_package_it_reaches() {
+    // m1 is changed code in core; util's tests do not judge it by default,
+    // so util's changed test does, and alone.
+    let plans = [
+        plan_in("m1", "core/src/lib.rs"),
+        plan_in("m2", "util/src/lib.rs"),
+    ];
+    let app = [plan_in("m1", "core/src/lib.rs")];
+    let scope = Scope::of(&TestPackages::Mutated, &app, &packages(), Path::new("/w"))
+        .with_changed_tests(
+            &[changed("util/src/lib.rs", "tests::t")],
+            &plans,
+            &packages(),
+            Path::new("/w"),
+        );
+    assert_eq!(ids(&scope, "core"), ["m1"]);
+    assert!(scope.only_changed("core").is_empty());
+    let only: Vec<_> = scope
+        .only_changed("util")
+        .iter()
+        .map(|i| i.0.clone())
+        .collect();
+    assert_eq!(only, ["m1", "m2"]);
+    let all: Vec<_> = scope
+        .judged_for_changed_tests()
+        .into_iter()
+        .map(|i| i.0)
+        .collect();
+    assert_eq!(all, ["m1", "m2"]);
+}
+
+#[test]
+fn test_without_changed_tests_nothing_is_judged_for_them() {
+    let plans = [plan_in("m1", "core/src/lib.rs")];
+    let scope = Scope::of(&TestPackages::Mutated, &plans, &packages(), Path::new("/w"));
+    assert!(scope.judged_for_changed_tests().is_empty());
+}
+
+fn set(list: &[&str]) -> BTreeSet<MutantId> {
+    list.iter().map(|i| MutantId((*i).into())).collect()
+}
+
+#[test]
+fn test_the_plans_to_run_are_changed_code_s_and_what_changed_tests_reach_once_each() {
+    let every = [
+        plan_in("m1", "core/src/lib.rs"),
+        plan_in("m2", "util/src/lib.rs"),
+        plan_in("m3", "app/src/lib.rs"),
+    ];
+    let code = [every[0].clone()];
+    let scope = Scope::of(&TestPackages::Mutated, &code, &packages(), Path::new("/w"))
+        .with_changed_tests(
+            &[changed("util/src/lib.rs", "tests::t")],
+            &every[..2],
+            &packages(),
+            Path::new("/w"),
+        );
+    let run: Vec<_> = scope
+        .plans_to_run(code.to_vec(), &every)
+        .into_iter()
+        .map(|p| p.id.0)
+        .collect();
+    assert_eq!(run, ["m1", "m2"], "m3 is reached by no changed test");
+}
+
+fn yes(
+    judged: &BTreeSet<MutantId>,
+    only: &BTreeSet<MutantId>,
+    tests: &[String],
+    user: &[String],
+) -> bool {
+    records_changed_tests_only(judged, only, tests, user)
+}
+
+#[test]
+fn test_a_program_records_the_changed_tests_alone_only_when_nothing_else_is_judged_there() {
+    let only = set(&["m2"]);
+    let tests = vec!["t".to_string()];
+    assert!(yes(&set(&["m2"]), &only, &tests, &[]));
+    assert!(
+        !yes(&set(&["m1", "m2"]), &only, &tests, &[]),
+        "changed code is judged here too"
+    );
+    assert!(
+        !yes(&set(&[]), &set(&[]), &tests, &[]),
+        "no changed-test mutant"
+    );
+    assert!(
+        !yes(&set(&["m2"]), &only, &[], &[]),
+        "no changed test in this program"
+    );
+    assert!(
+        !yes(&set(&["m2"]), &only, &tests, &["u".to_string()]),
+        "the user chose the tests"
     );
 }

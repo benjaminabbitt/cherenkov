@@ -89,9 +89,6 @@ pub struct Scope {
     mutated: BTreeSet<String>,
     /// A mutant is in no package: nothing can be scoped to packages.
     unplaced: bool,
-    /// The mutants of the changed application code (every plan given to
-    /// [`Scope::of`]).
-    app: BTreeSet<MutantId>,
     /// For each package with changed tests, the mutants only those tests
     /// judge, and the tests.
     only_changed: BTreeMap<String, Arc<BTreeSet<MutantId>>>,
@@ -143,7 +140,6 @@ impl Scope {
             unplaced,
             judges: judges.into_iter().map(|(k, v)| (k, Arc::new(v))).collect(),
             mutated,
-            app,
             only_changed: BTreeMap::new(),
             changed: BTreeMap::new(),
         }
@@ -158,8 +154,9 @@ impl Scope {
     /// `changed` tests, found in the diff, also judge: for each package
     /// that has one, the mutants of every function in the packages it
     /// reaches (itself and its workspace dependencies), among `plans`
-    /// (all the mutants of the code). Those not already judged for changed
-    /// application code are judged by the changed tests alone.
+    /// (all the mutants of the code). Those the package's program was not judging already are judged by the
+    /// changed tests alone (so too a mutant of changed code in another
+    /// package).
     pub fn with_changed_tests(
         mut self,
         changed: &[ChangedTest],
@@ -191,7 +188,7 @@ impl Scope {
                     continue;
                 }
                 self.mutated.insert(package.to_string());
-                if judged.insert(plan.id.clone()) && !self.app.contains(&plan.id) {
+                if judged.insert(plan.id.clone()) {
                     only.insert(plan.id.clone());
                 }
             }
@@ -201,7 +198,26 @@ impl Scope {
         self
     }
 
-    /// The mutants some changed test judges that are not of changed code.
+    /// The plans to run: `changed_code`'s, and those of `every` plan that a
+    /// changed test judges, once each.
+    pub fn plans_to_run(
+        &self,
+        changed_code: Vec<MutantPlan>,
+        every: &[MutantPlan],
+    ) -> Vec<MutantPlan> {
+        let kept: BTreeSet<MutantId> = changed_code.iter().map(|p| p.id.clone()).collect();
+        let reached = self.judged_for_changed_tests();
+        let mut plans = changed_code;
+        plans.extend(
+            every
+                .iter()
+                .filter(|p| !kept.contains(&p.id) && reached.contains(&p.id))
+                .cloned(),
+        );
+        plans
+    }
+
+    /// The mutants some changed test judges.
     pub fn judged_for_changed_tests(&self) -> BTreeSet<MutantId> {
         self.only_changed
             .values()
@@ -235,6 +251,21 @@ impl Scope {
     }
 }
 
+/// Whether a test program is baselined and recorded with the changed tests
+/// alone: it judges only mutants that the changed tests alone judge, it has
+/// changed tests, and the user did not choose the tests (`--test`).
+pub fn records_changed_tests_only(
+    judged: &BTreeSet<MutantId>,
+    only_changed: &BTreeSet<MutantId>,
+    changed: &[String],
+    user_tests: &[String],
+) -> bool {
+    !only_changed.is_empty()
+        && judged.iter().all(|id| only_changed.contains(id))
+        && !changed.is_empty()
+        && user_tests.is_empty()
+}
+
 #[cfg(test)]
 #[path = "test_scope.test.rs"]
-mod tests;
+pub(crate) mod tests;
