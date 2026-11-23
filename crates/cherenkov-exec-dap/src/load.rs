@@ -143,6 +143,53 @@ fn remember(seen: &mut Duration, read: Option<Duration>) -> Duration {
     *seen
 }
 
+/// How a bounded wait for an answer ended without one.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Within<T> {
+    /// The answer came.
+    Done(T),
+    /// The run's own budget ran out first.
+    Spent,
+    /// The wait had its whole time, net of what the scheduler took from it.
+    Unanswered,
+}
+
+/// Waits for an answer `attempt` gives within windows of time: `own` at
+/// first, and then, each time a window passes unanswered, as much as the
+/// scheduler kept the run waiting for a CPU meanwhile (the answer was not
+/// late, the machine was busy), never past what the allowance has left.
+/// `attempt` returns `Ok(None)` when its window passed without an answer.
+pub fn within<T, E>(
+    allowance: &mut Allowance,
+    own: Duration,
+    mut attempt: impl FnMut(Duration) -> Result<Option<T>, E>,
+) -> Result<Within<T>, E> {
+    let before = allowance.finish();
+    let mut granted = Duration::ZERO;
+    let mut cut = allowance.left() < own;
+    let mut window = own.min(allowance.left());
+    loop {
+        if window.is_zero() {
+            return Ok(Within::Spent);
+        }
+        if let Some(answer) = attempt(window)? {
+            return Ok(Within::Done(answer));
+        }
+        let lost = allowance.finish().saturating_sub(before);
+        let more = lost.saturating_sub(granted);
+        let left = allowance.left();
+        if left.is_zero() {
+            return Ok(Within::Spent);
+        }
+        if more.is_zero() {
+            return Ok(if cut { Within::Spent } else { Within::Unanswered });
+        }
+        granted += more;
+        cut |= left < more;
+        window = more.min(left);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,5 +382,53 @@ mod tests {
         assert_eq!(remember(&mut seen, None), secs(3));
         assert_eq!(remember(&mut seen, Some(secs(2))), secs(3));
         assert_eq!(remember(&mut seen, Some(secs(5))), secs(5));
+    }
+
+    #[test]
+    fn test_a_window_the_scheduler_ate_is_given_again_before_the_answer_is_late() {
+        let fake = Fake::default();
+        let mut a = Allowance::new(secs(60), Box::new(fake.clone()));
+        let mut windows = Vec::new();
+        let got = within(&mut a, secs(5), |w| -> Result<Option<u8>, ()> {
+            windows.push(w);
+            if windows.len() == 1 {
+                // The first window passed with three seconds spent waiting.
+                fake.set(secs(3));
+                Ok(None)
+            } else {
+                Ok(Some(7))
+            }
+        });
+        assert_eq!(got, Ok(Within::Done(7)));
+        assert_eq!(windows, vec![secs(5), secs(3)]);
+    }
+
+    #[test]
+    fn test_an_unanswered_window_on_an_idle_machine_is_unanswered() {
+        let mut a = Allowance::new(secs(60), Box::new(Fake::default()));
+        let got = within(&mut a, secs(5), |_| -> Result<Option<u8>, ()> { Ok(None) });
+        assert_eq!(got, Ok(Within::Unanswered));
+    }
+
+    #[test]
+    fn test_a_window_cut_short_by_the_budget_is_spent_not_unanswered() {
+        let mut a = Allowance::new(secs(2), Box::new(Fake::default()));
+        let got = within(&mut a, secs(5), |_| -> Result<Option<u8>, ()> { Ok(None) });
+        assert_eq!(got, Ok(Within::Spent));
+    }
+
+    #[test]
+    fn test_waiting_keeps_being_given_until_the_machine_stops_taking_it() {
+        let fake = Fake::default();
+        let mut a = Allowance::new(secs(60), Box::new(fake.clone()));
+        let mut n = 0;
+        let got = within(&mut a, secs(5), |_| -> Result<Option<u8>, ()> {
+            n += 1;
+            // Two windows lose time, the third loses none and stays silent.
+            fake.set(secs(if n == 1 { 2 } else { 3 }));
+            Ok(None)
+        });
+        assert_eq!(got, Ok(Within::Unanswered));
+        assert_eq!(n, 3);
     }
 }
