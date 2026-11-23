@@ -776,7 +776,7 @@ fn table(pass: &[&str]) -> Table {
         .collect::<Vec<_>>()
         .join(", ");
     Table::parse(&format!(
-        "rustc = \"test\"\npass = [{list}]\ndeclined = []\n"
+        "rustc = \"test\"\npanic_call = \"kept\"\npass = [{list}]\ndeclined = []\n"
     ))
     .unwrap()
 }
@@ -810,4 +810,31 @@ fn test_a_statements_line_swap_is_declined_for_a_shape_the_table_lacks() {
     let p = arith_plan(Token::Add, Token::Sub, 605, 8, "s", statement(605));
     let isa = Isa::amd64_unfiltered().with_shapes(table(&[]));
     assert!(derive(&p, FILE, &seq(), &isa).is_err());
+}
+
+// --- inc <-> dec under the unsigned check.
+
+#[test]
+fn test_an_unsigned_increment_is_not_swapped_for_a_decrement_because_dec_leaves_the_carry() {
+    // `x += 1` on u64: `inc rax; mov; cmp; jb`. Without the compare the
+    // `jb` would read the carry flag, which `inc` and `dec` do not write.
+    let unsigned = insns(&[
+        (0x100, "48ffc0", 9, 5),
+        (0x103, "4889442408", 9, 5),
+        (0x108, "4839c8", 9, 5),
+        (0x10b, "720f", 9, 5),
+    ]);
+    let p = arith_plan(Token::Add, Token::Sub, 9, 5, "x", in_place());
+    assert!(derive(&p, FILE, &unsigned, &isa()).is_err());
+    // The signed check reads the overflow flag, which both write.
+    let signed = insns(&[
+        (0x100, "48ffc0", 9, 5),
+        (0x103, "4889442408", 9, 5),
+        (0x108, "0f90c1", 9, 5),
+        (0x10b, "700f", 9, 5),
+    ]);
+    assert_eq!(
+        derive(&p, FILE, &signed, &isa()),
+        Ok(patch(vec![region(0x100, "48ffc0", "48ffc8")]))
+    );
 }

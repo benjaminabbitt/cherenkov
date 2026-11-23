@@ -240,6 +240,11 @@ fn candidate(swap: Swap, ours: &[&Insn], k: usize, isa: &Isa) -> Option<Candidat
             None,
         ),
     };
+    // `inc` and `dec` leave the carry flag alone, which is what the check
+    // of an unsigned operation reads once its compare is dropped.
+    if kind == Kind::Int(Check::Carry) && is_inc_dec(&matched) {
+        return None;
+    }
     let (from, with) = swap.tokens();
     let shape = shape_of(&matched, kind, from, with);
     let mut regions = vec![Region {
@@ -259,6 +264,11 @@ fn candidate(swap: Swap, ours: &[&Insn], k: usize, isa: &Isa) -> Option<Candidat
         regions,
         shape,
     })
+}
+
+/// `inc` or `dec` (`FF /0`, `FF /1`, and the byte forms).
+fn is_inc_dec(matched: &Matched) -> bool {
+    ["ff/0", "ff/1", "fe/0", "fe/1"].contains(&matched.encoding.as_str())
 }
 
 /// The shape of a swapped instruction.

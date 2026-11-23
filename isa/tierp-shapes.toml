@@ -3,6 +3,10 @@
 # against the mutants rustc compiles. Tier P patches arithmetic of Rust
 # code for a shape in `pass` only.
 rustc = "1.96.1 (31fca3adb283cc9dfd56b49cdee9a96eb9c96ffd)"
+# The panic of an overflow check keeps calling the original operation's
+# function ("attempt to add with overflow" after an add -> sub patch):
+# the test's verdict is the compiled mutant's, its message may differ.
+panic_call = "kept"
 
 pass = [
     "bitwise w16 - bit_and->bit_or 23 mem",

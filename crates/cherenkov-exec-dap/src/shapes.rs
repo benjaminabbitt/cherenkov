@@ -84,6 +84,7 @@ impl fmt::Display for Shape {
 #[serde(deny_unknown_fields)]
 struct TableToml {
     rustc: String,
+    panic_call: String,
     pass: Vec<String>,
     declined: Vec<String>,
 }
@@ -94,6 +95,10 @@ struct TableToml {
 pub struct Table {
     /// The `rustc -vV` release and commit the table was harvested with.
     pub rustc: String,
+    /// What a patched overflow check does with the panic it calls:
+    /// `kept` (the original operation's panic function), or `retargeted`
+    /// (the mutated operation's, where the binary has it).
+    pub panic_call: String,
     pass: BTreeSet<String>,
     declined: BTreeSet<String>,
 }
@@ -103,6 +108,7 @@ impl Table {
         let t: TableToml = toml::from_str(src).map_err(|e| IsaError(e.to_string()))?;
         Ok(Table {
             rustc: t.rustc,
+            panic_call: t.panic_call,
             pass: t.pass.into_iter().collect(),
             declined: t.declined.into_iter().collect(),
         })
@@ -123,7 +129,11 @@ impl Table {
              # The shapes of arithmetic patches that passed, and those that did not,\n\
              # against the mutants rustc compiles. Tier P patches arithmetic of Rust\n\
              # code for a shape in `pass` only.\n\
-             rustc = {rustc:?}\n\n{}\n{}",
+             rustc = {rustc:?}\n\
+             # The panic of an overflow check keeps calling the original operation's\n\
+             # function (\"attempt to add with overflow\" after an add -> sub patch):\n\
+             # the test's verdict is the compiled mutant's, its message may differ.\n\
+             panic_call = \"kept\"\n\n{}\n{}",
             list("pass", pass),
             list("declined", declined)
         )
