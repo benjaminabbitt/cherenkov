@@ -6,13 +6,14 @@
 //! name = "mine"                     # shown in provenance
 //! summary = "what it is for"        # optional
 //! source = "where it comes from"    # optional
-//! mutations = ["ror/lt->le"]        # names from `cherenkov mutations`
+//! mutations = ["ror/lt->le", "lcr"] # names from `cherenkov operators`: a
+//!                                   # replacement, or an operator's whole table
 //! skips = ["test", "annotated"]     # optional region kinds to plan nothing in
 //! ```
 
 use serde::Deserialize;
 
-use crate::operator_set::{OperatorSet, mutation_named, named};
+use crate::operator_set::{OperatorSet, mutation_named, mutations, named};
 use crate::syntax::SkipKind;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,15 +93,14 @@ fn one_set(
 /// The set a file defines. Its strings live as long as the process: a set
 /// is made once per run.
 pub fn custom_set(c: CustomSet) -> Result<OperatorSet, SetError> {
-    let mutations = c
-        .mutations
-        .iter()
-        .map(|m| {
-            mutation_named(m)
-                .map(|found| found.name)
-                .ok_or_else(|| SetError::UnknownMutation(m.clone()))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut mutations: Vec<&'static str> = Vec::new();
+    for m in &c.mutations {
+        for name in expand(m)? {
+            if !mutations.contains(&name) {
+                mutations.push(name);
+            }
+        }
+    }
     let skips = c
         .skips
         .iter()
@@ -114,6 +114,24 @@ pub fn custom_set(c: CustomSet) -> Result<OperatorSet, SetError> {
         pending: &[],
         skips: Box::leak(skips.into_boxed_slice()),
     })
+}
+
+/// The mutations a set file's entry names: a replacement's name is itself,
+/// an operator's (family) name is its whole table.
+fn expand(entry: &str) -> Result<Vec<&'static str>, SetError> {
+    if let Some(found) = mutation_named(entry) {
+        return Ok(vec![found.name]);
+    }
+    let table: Vec<&'static str> = mutations()
+        .iter()
+        .filter(|m| m.family == entry)
+        .map(|m| m.name)
+        .collect();
+    if table.is_empty() {
+        Err(SetError::UnknownMutation(entry.to_string()))
+    } else {
+        Ok(table)
+    }
 }
 
 fn leak(text: String) -> &'static str {

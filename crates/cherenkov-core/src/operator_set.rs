@@ -1589,6 +1589,11 @@ static FAMILIES: &[FamilyDef] = &[
     ),
 ];
 
+/// The language-neutral definition of the family called `id`.
+pub fn family_definition(id: &str) -> Option<&'static str> {
+    FAMILIES.iter().find(|f| f.id == id).map(|f| f.definition)
+}
+
 /// An operator with every replacement any set gives it.
 #[derive(Debug, Clone)]
 pub struct Family {
