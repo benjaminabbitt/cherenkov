@@ -309,3 +309,110 @@ fn test_the_shapes_table_is_the_one_of_the_rustc_in_use() {
         "the toolchain changed: run `just tierp-harvest`"
     );
 }
+
+#[test]
+fn test_arith_swap_turns_add_into_sub_and_back_and_refuses_the_other_family() {
+    let isa = Isa::amd64_unfiltered();
+    assert_eq!(
+        isa.arith_swap(&[0x01, 0xc8], false),
+        Some(vec![0x29, 0xc8]),
+        "add eax, ecx -> sub eax, ecx"
+    );
+    assert_eq!(
+        isa.arith_swap(&[0x48, 0x29, 0xc8], true),
+        Some(vec![0x48, 0x01, 0xc8]),
+        "sub rax, rcx -> add rax, rcx"
+    );
+    assert_eq!(
+        isa.arith_swap(&[0x01, 0xc8], true),
+        None,
+        "an add is not a sub"
+    );
+    assert_eq!(isa.arith_swap(&[0x90], false), None);
+    assert_eq!(isa.arith_swap(&[], false), None);
+}
+
+#[test]
+fn test_arith_match_width_is_32_for_a_rex_without_w_64_with_it_and_16_after_66() {
+    let isa = Isa::amd64_unfiltered();
+    let width = |bytes: &[u8]| isa.arith_match(bytes, false).expect("an add").width;
+    assert_eq!(width(&[0x01, 0xc8]), 32, "no prefix");
+    assert_eq!(width(&[0x40, 0x01, 0xc8]), 32, "REX without W");
+    assert_eq!(width(&[0x41, 0x01, 0xc8]), 32, "REX.B without W");
+    assert_eq!(width(&[0x48, 0x01, 0xc8]), 64, "REX.W");
+    assert_eq!(width(&[0x66, 0x01, 0xc8]), 16, "operand-size prefix");
+    assert_eq!(width(&[0x00, 0xc8]), 8, "the byte form");
+}
+
+#[test]
+fn test_bitwise_match_replaces_the_modrm_reg_field_and_keeps_the_other_bits() {
+    let isa = Isa::amd64_unfiltered();
+    // or dword [rsp+8], 4 (83 /1) -> and (83 /4): only bits 3..5 of ModRM change.
+    let m = isa
+        .bitwise_match(&[0x83, 0x4c, 0x24, 0x08, 0x04], Token::BitOr, Token::BitAnd)
+        .expect("an or");
+    assert_eq!(m.replacement, vec![0x83, 0x64, 0x24, 0x08, 0x04]);
+}
+
+#[test]
+fn test_float_match_width_is_32_for_single_and_64_for_double_precision() {
+    let isa = Isa::amd64_unfiltered();
+    let width = |bytes: &[u8]| {
+        isa.float_match(bytes, Token::Add, Token::Sub)
+            .expect("a scalar add")
+            .width
+    };
+    assert_eq!(width(&[0xf3, 0x0f, 0x58, 0xc1]), 32, "addss");
+    assert_eq!(width(&[0xf2, 0x0f, 0x58, 0xc1]), 64, "addsd");
+}
+
+use cherenkov_exec_dap::shapes::{Check, Kind, Shape, Table};
+
+fn shape(encoding: &str) -> Shape {
+    Shape {
+        kind: Kind::Int(Check::Overflow),
+        width: 32,
+        from: Token::Add,
+        with: Token::Sub,
+        encoding: encoding.into(),
+        memory: false,
+    }
+}
+
+fn table() -> Table {
+    Table::parse(
+        "rustc = \"x\"\npanic_call = \"kept\"\n\
+         pass = [\"int w32 of add->sub 01 reg\"]\n\
+         declined = [\"int w32 of add->sub 03 reg\"]\n",
+    )
+    .expect("a table")
+}
+
+#[test]
+fn test_table_knows_a_shape_it_passed_or_declined_and_not_one_it_never_saw() {
+    let t = table();
+    assert!(t.knows(&shape("01")), "passed");
+    assert!(t.knows(&shape("03")), "declined");
+    assert!(!t.knows(&shape("05")), "never seen");
+}
+
+#[test]
+fn test_table_admits_only_the_shapes_that_passed() {
+    let t = table();
+    assert!(t.admits(&shape("01")));
+    assert!(!t.admits(&shape("03")), "declined is not admitted");
+    assert!(!t.admits(&shape("05")));
+}
+
+#[test]
+fn test_table_lists_its_passed_and_declined_shapes_apart() {
+    let t = table();
+    assert_eq!(
+        t.passed().iter().collect::<Vec<_>>(),
+        ["int w32 of add->sub 01 reg"]
+    );
+    assert_eq!(
+        t.declined().iter().collect::<Vec<_>>(),
+        ["int w32 of add->sub 03 reg"]
+    );
+}
