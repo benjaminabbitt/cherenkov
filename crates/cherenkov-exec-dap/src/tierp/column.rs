@@ -118,10 +118,32 @@ pub(super) fn arithmetic_at(
             col: at.1,
         });
     }
-    let mut found: Vec<Vec<Region>> = here
+    // A commutative source swapped to an operation that does not commute
+    // is exact only where the operands are in the source's order: not
+    // where rustc folded the left one from memory.
+    let reorders = matches!(base(from).0, Token::Add | Token::Mul)
+        && matches!(base(with).0, Token::Sub | Token::Div);
+    let candidates: Vec<(usize, Vec<Region>)> = here
         .iter()
-        .flat_map(|&k| swaps.iter().filter_map(move |s| regions(*s, ours, k, isa)))
+        .flat_map(|&k| {
+            swaps
+                .iter()
+                .filter_map(move |s| regions(*s, ours, k, isa).map(|r| (k, r)))
+        })
         .collect();
+    let mut found: Vec<Vec<Region>> = candidates
+        .iter()
+        .filter(|(k, _)| !(reorders && memory_source(ours[*k])))
+        .map(|(_, r)| r.clone())
+        .collect();
+    if found.is_empty() && !candidates.is_empty() {
+        return Err(Unpatchable::UnsupportedEdit(format!(
+            "{} {} -> {}: the left operand is loaded from memory, so the swap would reverse them",
+            plan.operator,
+            from.name(),
+            with.name()
+        )));
+    }
     match found.len() {
         1 => Ok(Patch {
             regions: found.remove(0),
@@ -131,6 +153,11 @@ pub(super) fn arithmetic_at(
             found: n,
         }),
     }
+}
+
+/// Whether the instruction reads its second operand from memory.
+pub(super) fn memory_source(insn: &Insn) -> bool {
+    x86::decode(insn.pc, &insn.bytes).is_some_and(|d| d.reads_memory_source())
 }
 
 /// The bytes that make instruction `k` do the swapped operation, with the

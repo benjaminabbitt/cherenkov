@@ -662,3 +662,99 @@ fn test_a_returned_value_and_a_condition_find_their_operator_by_column_too() {
         Ok(patch(vec![region(0xbb279, "48ffc7", "48ffcf")]))
     );
 }
+
+// --- Commutative sources whose left operand rustc loaded from memory.
+//
+// rustc folds the memory operand into the commutative operation and puts the
+// other operand in the register: `a += b` is `addsd mem(a), xmm1(b)` with the
+// result in `xmm1`. Swapping the opcode to `subsd` computes `b - a`, where the
+// compiled `a -= b` computes `a - b`. Such a swap is refused (it is exact
+// for a non-commutative source, for a commutative target, and where the
+// operand order is known).
+
+/// `let mut a = a; a += b; a` on f64, as rustc (debug) compiles it.
+fn float_assign(opcode: &str) -> Vec<Insn> {
+    let op = format!("f20f{opcode}4c24e8");
+    let rows: Vec<Row> = vec![
+        (0x9d060, "f20f114424f0", 3, 0),
+        (0x9d066, "f20f114c24f8", 3, 0),
+        (0x9d06c, "f20f114424e8", 3, 47),
+        (0x9d072, Box::leak(op.into_boxed_str()), 3, 50),
+        (0x9d078, "f20f114c24e8", 3, 50),
+        (0x9d07e, "f20f104424e8", 3, 58),
+        (0x9d084, "c3", 3, 61),
+    ];
+    insns(&rows)
+}
+
+/// `*m += k` on isize: `add rsi, [rdi]` with the result in `rsi`.
+fn int_through_a_reference(opcode: &str) -> Vec<Insn> {
+    let op = format!("48{opcode}37");
+    let rows: Vec<Row> = vec![
+        (0x89a90, "4883ec28", 3, 0),
+        (0x89a99, "48897c2418", 3, 0),
+        (0x89aa3, Box::leak(op.into_boxed_str()), 3, 37),
+        (0x89aa6, "4889742410", 3, 37),
+        (0x89aab, "0f90c0", 3, 37),
+        (0x89aae, "7012", 3, 37),
+        (0x89ab0, "488b442408", 0, 37),
+        (0x89ab5, "488b4c2410", 0, 37),
+        (0x89aba, "488908", 3, 37),
+        (0x89abd, "4883c428", 3, 47),
+        (0x89ac1, "c3", 3, 47),
+        (0x89ac2, "488d3ddf0e0800", 3, 37),
+        (0x89ac9, "ff15f9780800", 3, 37),
+    ];
+    insns(&rows)
+}
+
+fn compound_plan(from: Token, with: Token, col: u32) -> MutantPlan {
+    let mut p = arith_plan(from, with, 3, col, "a", statement(3));
+    p.operands.clear();
+    p
+}
+
+#[test]
+fn test_float_assign_that_commutes_in_source_is_refused_for_a_swap_that_does_not() {
+    for (from, with, opcode) in [
+        (Token::AddAssign, Token::SubAssign, "58"),
+        (Token::AddAssign, Token::DivAssign, "58"),
+        (Token::MulAssign, Token::SubAssign, "59"),
+        (Token::MulAssign, Token::DivAssign, "59"),
+    ] {
+        let p = compound_plan(from, with, 50);
+        assert!(
+            derive(&p, FILE, &float_assign(opcode), &isa()).is_err(),
+            "{from:?} -> {with:?}"
+        );
+    }
+}
+
+#[test]
+fn test_float_assign_that_commutes_in_source_is_swapped_for_a_swap_that_commutes() {
+    let p = compound_plan(Token::AddAssign, Token::MulAssign, 50);
+    assert_eq!(
+        derive(&p, FILE, &float_assign("58"), &isa()),
+        Ok(patch(vec![region(0x9d072, "f20f584c24e8", "f20f594c24e8")]))
+    );
+    let p = compound_plan(Token::SubAssign, Token::AddAssign, 50);
+    assert_eq!(
+        derive(&p, FILE, &float_assign("5c"), &isa()),
+        Ok(patch(vec![region(0x9d072, "f20f5c4c24e8", "f20f584c24e8")]))
+    );
+}
+
+#[test]
+fn test_signed_assign_through_a_reference_is_refused_for_add_to_sub() {
+    let p = compound_plan(Token::AddAssign, Token::SubAssign, 37);
+    assert!(derive(&p, FILE, &int_through_a_reference("03"), &isa()).is_err());
+}
+
+#[test]
+fn test_signed_assign_through_a_reference_is_swapped_for_sub_to_add() {
+    let p = compound_plan(Token::SubAssign, Token::AddAssign, 37);
+    assert_eq!(
+        derive(&p, FILE, &int_through_a_reference("2b"), &isa()),
+        Ok(patch(vec![region(0x89aa3, "482b37", "480337")]))
+    );
+}

@@ -107,6 +107,13 @@ impl Instr {
         self.inner.mnemonic() == Mnemonic::Cmp
     }
 
+    /// Reads its second operand from memory (`add r, [m]`, `addsd x, [m]`):
+    /// rustc puts the left operand of a commutative operation there when it
+    /// has it in memory, and the right one in the register.
+    pub fn reads_memory_source(&self) -> bool {
+        self.inner.op_count() >= 2 && self.inner.op1_kind() == OpKind::Memory
+    }
+
     /// A `mov`, which leaves the flags as they were.
     pub fn is_move(&self) -> bool {
         self.inner.mnemonic() == Mnemonic::Mov

@@ -12,7 +12,7 @@ use crate::isa::{Isa, Jcc, Signedness};
 use crate::x86;
 
 mod column;
-use column::arithmetic_at;
+use column::{arithmetic_at, memory_source};
 
 /// One instruction of the function under mutation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -839,6 +839,13 @@ fn arithmetic(
             found: swaps.len(),
         });
     };
+    // `a + b` with `a` loaded from memory is `add b, [a]`: a `sub` there
+    // computes `b - a`.
+    if !to_add && memory_source(insn) {
+        return Err(Unpatchable::UnsupportedEdit(
+            "an addition whose left operand is loaded from memory".into(),
+        ));
+    }
     // The overflow check after the operation must hold for the swapped one
     // too: only the overflow flag's (`jo`, signed) does. rustc checks
     // unsigned arithmetic by comparing the result (`cmp; jb`), which a
