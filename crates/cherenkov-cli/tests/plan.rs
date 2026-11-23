@@ -291,6 +291,20 @@ fn test_sets_lists_every_named_set_with_its_pending_rules() {
 }
 
 #[test]
+fn test_sets_lists_each_sets_operators_with_their_tables() {
+    let out = cherenkov(&["sets"]);
+    let text = String::from_utf8(out.stdout).unwrap();
+    // The cargo-mutants set's `lcr` table is its own; `sufficient`'s differs.
+    assert!(text.contains("  operators (11):\n"), "{text}");
+    assert!(text.contains("    lcr: and->or or->and\n"), "{text}");
+    assert!(text.contains("    lcr: and->eq or->ne\n"), "{text}");
+    assert!(
+        text.contains("    compound-assign: add->sub add->mul"),
+        "{text}"
+    );
+}
+
+#[test]
 fn test_plan_with_cargo_mutants_set_generates_its_relational_replacements() {
     let lines: Vec<String> = listing(&plan(
         &fixtures().join("rust"),
@@ -340,6 +354,11 @@ fn test_mutations_lists_each_mutation_with_where_it_came_from_and_its_peers() {
     assert!(out.status.success());
     let text = String::from_utf8(out.stdout).unwrap();
     assert!(text.contains("ror/lt->le"), "{text}");
+    assert!(
+        text.contains("\nror: Replace a relational operator"),
+        "{text}"
+    );
+    assert!(text.contains("operators: 15"), "{text}");
     assert!(text.contains("derived from cargo-mutants\n"), "{text}");
     assert!(text.contains("same as PIT CONDITIONALS_BOUNDARY"), "{text}");
 }

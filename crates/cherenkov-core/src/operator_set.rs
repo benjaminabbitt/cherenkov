@@ -1993,7 +1993,7 @@ fn sufficient() -> OperatorSet {
         pending: &[
             "ror: predicate -> true/false",
             "ror: type-specific limits (bool, floats)",
-            "cor: lhs, rhs, true/false",
+            "lcr: lhs, rhs, true/false (Just & Schweiggert 2014 COR)",
             "unary operator deletion",
             "statement deletion beyond call statements (assignments, return, break, continue)",
             "break <-> continue",

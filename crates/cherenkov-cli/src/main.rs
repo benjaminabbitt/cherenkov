@@ -351,25 +351,43 @@ fn sets() {
         let default = if i == 0 { " (default)" } else { "" };
         println!("{}{default}: {}", s.name, s.summary);
         println!("  source: {}", s.source);
-        let ids: Vec<&str> = s.operators().iter().map(|o| o.id()).collect();
-        println!("  operators: {}", ids.join(", "));
+        let tables = s.tables();
+        println!("  operators ({}):", tables.len());
+        for table in &tables {
+            let details: Vec<&str> = table.replacements.iter().map(|m| detail(m)).collect();
+            println!("    {}: {}", table.family, details.join(" "));
+        }
         for p in s.pending {
             println!("  pending: {p}");
         }
     }
 }
 
+/// A replacement's name without its family: `lt->le` for `ror/lt->le`.
+fn detail(m: &cherenkov_core::operator_set::Mutation) -> &str {
+    m.name
+        .strip_prefix(m.family)
+        .and_then(|rest| rest.strip_prefix('/'))
+        .unwrap_or(m.name)
+}
+
+/// The operators and, under each, its replacements with their origins.
 fn mutations() {
-    use cherenkov_core::operator_set::{Relation, mutations};
-    for m in mutations() {
-        println!("{}", m.name);
-        for o in m.origins {
-            let name = o.name.map(|n| format!(" {n}")).unwrap_or_default();
-            match o.relation {
-                Relation::Derived => println!("  derived from {}{name}", o.source),
-                Relation::Same => println!("  same as {}{name}", o.source),
-                Relation::Similar(note) => {
-                    println!("  similar to {}{name}: {note}", o.source)
+    use cherenkov_core::operator_set::{Relation, families};
+    let all = families();
+    println!("operators: {}", all.len());
+    for family in &all {
+        println!("\n{}: {}", family.id, family.definition);
+        for m in &family.replacements {
+            println!("{}", m.name);
+            for o in m.origins {
+                let name = o.name.map(|n| format!(" {n}")).unwrap_or_default();
+                match o.relation {
+                    Relation::Derived => println!("  derived from {}{name}", o.source),
+                    Relation::Same => println!("  same as {}{name}", o.source),
+                    Relation::Similar(note) => {
+                        println!("  similar to {}{name}: {note}", o.source)
+                    }
                 }
             }
         }
