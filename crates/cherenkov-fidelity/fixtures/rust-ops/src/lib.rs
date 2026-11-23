@@ -656,7 +656,7 @@ pub fn sign(n: i64) -> i64 {
 }
 
 pub fn narrow(n: i64) -> i32 {
-    n.clamp(-5, 5) as i32
+    n.clamp(0, 5) as i32
 }
 
 pub fn small(n: i64) -> u16 {
@@ -664,7 +664,7 @@ pub fn small(n: i64) -> u16 {
 }
 
 pub fn verdict(n: i64) -> Option<bool> {
-    if n < 0 { None } else { Some(n > 3) }
+    if n < 0 { None } else { Some(n.is_positive()) }
 }
 
 pub fn index_of(n: i64) -> Option<u32> {

@@ -623,7 +623,7 @@ fn test_sign_narrow_and_small() {
     assert_eq!(sign(-9), -1);
     assert_eq!(sign(9), 1);
     assert_eq!(sign(0), 0);
-    assert_eq!(narrow(-100), -5);
+    assert_eq!(narrow(-100), 0);
     assert_eq!(narrow(100), 5);
     assert_eq!(small(100), 9);
 }
@@ -632,7 +632,7 @@ fn test_sign_narrow_and_small() {
 fn test_verdict_index_of_status_and_fits() {
     assert_eq!(verdict(-1), None);
     assert_eq!(verdict(5), Some(true));
-    assert_eq!(verdict(2), Some(false));
+    assert_eq!(verdict(0), Some(false));
     assert_eq!(index_of(-1), None);
     assert_eq!(index_of(4), Some(4));
     assert_eq!(status(-1), Err(7));
