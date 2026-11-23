@@ -109,147 +109,147 @@ Names: an operator is its family id (`ror`); a replacement is `family/detail` (`
 
 ### `ror`
 
-| Replacement | Definition | Sources | Sets | Spelling |
-|---|---|---|---|---|
-| `ror/lt->le` | Replace less-than with less-or-equal. | derived cargo-mutants; derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; derived Cherenkov design; same PIT CONDITIONALS_BOUNDARY; same mutmut; same go-mutesting; same Stryker; same Gremlins; same Mull; same Mothra ROR | breadth, cargo-mutants, sufficient | `<` -> `<=` (go, python, rust) |
-| `ror/lt->eq` | Replace less-than with equal. | derived cargo-mutants; same Mothra ROR | cargo-mutants | `<` -> `==` (go, python, rust) |
-| `ror/lt->gt` | Replace less-than with greater-than. | derived cargo-mutants; same Mothra ROR | cargo-mutants | `<` -> `>` (go, python, rust) |
-| `ror/lt->ne` | Replace less-than with not-equal. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR | sufficient | `<` -> `!=` (go, python, rust) |
-| `ror/le->lt` | Replace less-or-equal with less-than. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; derived Cherenkov design; same PIT CONDITIONALS_BOUNDARY; same mutmut; same go-mutesting; same Stryker; same Gremlins; same Mull; same Mothra ROR | breadth, sufficient | `<=` -> `<` (go, python, rust) |
-| `ror/le->gt` | Replace less-or-equal with greater-than. | derived cargo-mutants; same Mothra ROR | cargo-mutants | `<=` -> `>` (go, python, rust) |
-| `ror/le->eq` | Replace less-or-equal with equal. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR | sufficient | `<=` -> `==` (go, python, rust) |
-| `ror/gt->ge` | Replace greater-than with greater-or-equal. | derived cargo-mutants; derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; derived Cherenkov design; same PIT CONDITIONALS_BOUNDARY; same mutmut; same go-mutesting; same Stryker; same Gremlins; same Mull; same Mothra ROR | breadth, cargo-mutants, sufficient | `>` -> `>=` (go, python, rust) |
-| `ror/gt->eq` | Replace greater-than with equal. | derived cargo-mutants; same Mothra ROR | cargo-mutants | `>` -> `==` (go, python, rust) |
-| `ror/gt->lt` | Replace greater-than with less-than. | derived cargo-mutants; same Mothra ROR | cargo-mutants | `>` -> `<` (go, python, rust) |
-| `ror/gt->ne` | Replace greater-than with not-equal. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR | sufficient | `>` -> `!=` (go, python, rust) |
-| `ror/ge->gt` | Replace greater-or-equal with greater-than. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; derived Cherenkov design; same PIT CONDITIONALS_BOUNDARY; same mutmut; same go-mutesting; same Stryker; same Gremlins; same Mull; same Mothra ROR | breadth, sufficient | `>=` -> `>` (go, python, rust) |
-| `ror/ge->lt` | Replace greater-or-equal with less-than. | derived cargo-mutants; same Mothra ROR | cargo-mutants | `>=` -> `<` (go, python, rust) |
-| `ror/ge->eq` | Replace greater-or-equal with equal. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR | sufficient | `>=` -> `==` (go, python, rust) |
-| `ror/eq->ne` | Replace equal with not-equal. | derived cargo-mutants; same PIT NEGATE_CONDITIONALS; same Stryker; same Gremlins; same Mull; same Mothra ROR | cargo-mutants | `==` -> `!=` (go, python, rust) |
-| `ror/eq->le` | Replace equal with less-or-equal. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR | sufficient | `==` -> `<=` (go, python, rust) |
-| `ror/eq->ge` | Replace equal with greater-or-equal. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR | sufficient | `==` -> `>=` (go, python, rust) |
-| `ror/ne->eq` | Replace not-equal with equal. | derived cargo-mutants; same PIT NEGATE_CONDITIONALS; same Stryker; same Gremlins; same Mull; same Mothra ROR | cargo-mutants | `!=` -> `==` (go, python, rust) |
-| `ror/ne->lt` | Replace not-equal with less-than. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR | sufficient | `!=` -> `<` (go, python, rust) |
-| `ror/ne->gt` | Replace not-equal with greater-than. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR | sufficient | `!=` -> `>` (go, python, rust) |
+| Replacement | Definition | Sources | Also called | Sets | Spelling |
+|---|---|---|---|---|---|
+| `ror/lt->le` | Replace less-than with less-or-equal. | derived cargo-mutants; derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; derived Cherenkov design; same PIT CONDITIONALS_BOUNDARY; same mutmut; same go-mutesting; same Stryker; same Gremlins; same Mull; same Mothra ROR | PIT CONDITIONALS_BOUNDARY | breadth, cargo-mutants, sufficient | `<` -> `<=` (go, python, rust) |
+| `ror/lt->eq` | Replace less-than with equal. | derived cargo-mutants; same Mothra ROR |  | cargo-mutants | `<` -> `==` (go, python, rust) |
+| `ror/lt->gt` | Replace less-than with greater-than. | derived cargo-mutants; same Mothra ROR |  | cargo-mutants | `<` -> `>` (go, python, rust) |
+| `ror/lt->ne` | Replace less-than with not-equal. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR |  | sufficient | `<` -> `!=` (go, python, rust) |
+| `ror/le->lt` | Replace less-or-equal with less-than. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; derived Cherenkov design; same PIT CONDITIONALS_BOUNDARY; same mutmut; same go-mutesting; same Stryker; same Gremlins; same Mull; same Mothra ROR | PIT CONDITIONALS_BOUNDARY | breadth, sufficient | `<=` -> `<` (go, python, rust) |
+| `ror/le->gt` | Replace less-or-equal with greater-than. | derived cargo-mutants; same Mothra ROR |  | cargo-mutants | `<=` -> `>` (go, python, rust) |
+| `ror/le->eq` | Replace less-or-equal with equal. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR |  | sufficient | `<=` -> `==` (go, python, rust) |
+| `ror/gt->ge` | Replace greater-than with greater-or-equal. | derived cargo-mutants; derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; derived Cherenkov design; same PIT CONDITIONALS_BOUNDARY; same mutmut; same go-mutesting; same Stryker; same Gremlins; same Mull; same Mothra ROR | PIT CONDITIONALS_BOUNDARY | breadth, cargo-mutants, sufficient | `>` -> `>=` (go, python, rust) |
+| `ror/gt->eq` | Replace greater-than with equal. | derived cargo-mutants; same Mothra ROR |  | cargo-mutants | `>` -> `==` (go, python, rust) |
+| `ror/gt->lt` | Replace greater-than with less-than. | derived cargo-mutants; same Mothra ROR |  | cargo-mutants | `>` -> `<` (go, python, rust) |
+| `ror/gt->ne` | Replace greater-than with not-equal. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR |  | sufficient | `>` -> `!=` (go, python, rust) |
+| `ror/ge->gt` | Replace greater-or-equal with greater-than. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; derived Cherenkov design; same PIT CONDITIONALS_BOUNDARY; same mutmut; same go-mutesting; same Stryker; same Gremlins; same Mull; same Mothra ROR | PIT CONDITIONALS_BOUNDARY | breadth, sufficient | `>=` -> `>` (go, python, rust) |
+| `ror/ge->lt` | Replace greater-or-equal with less-than. | derived cargo-mutants; same Mothra ROR |  | cargo-mutants | `>=` -> `<` (go, python, rust) |
+| `ror/ge->eq` | Replace greater-or-equal with equal. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR |  | sufficient | `>=` -> `==` (go, python, rust) |
+| `ror/eq->ne` | Replace equal with not-equal. | derived cargo-mutants; same PIT NEGATE_CONDITIONALS; same Stryker; same Gremlins; same Mull; same Mothra ROR | PIT NEGATE_CONDITIONALS | cargo-mutants | `==` -> `!=` (go, python, rust) |
+| `ror/eq->le` | Replace equal with less-or-equal. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR |  | sufficient | `==` -> `<=` (go, python, rust) |
+| `ror/eq->ge` | Replace equal with greater-or-equal. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR |  | sufficient | `==` -> `>=` (go, python, rust) |
+| `ror/ne->eq` | Replace not-equal with equal. | derived cargo-mutants; same PIT NEGATE_CONDITIONALS; same Stryker; same Gremlins; same Mull; same Mothra ROR | PIT NEGATE_CONDITIONALS | cargo-mutants | `!=` -> `==` (go, python, rust) |
+| `ror/ne->lt` | Replace not-equal with less-than. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR |  | sufficient | `!=` -> `<` (go, python, rust) |
+| `ror/ne->gt` | Replace not-equal with greater-than. | derived Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same Mothra ROR |  | sufficient | `!=` -> `>` (go, python, rust) |
 
 ### `aor`
 
-| Replacement | Definition | Sources | Sets | Spelling |
-|---|---|---|---|---|
-| `aor/add->sub` | Replace addition with subtraction. | derived cargo-mutants; derived Dextool AORS; derived Cherenkov design; same Mothra AOR | breadth, cargo-mutants, sufficient | `+` -> `-` (go, python, rust) |
-| `aor/add->mul` | Replace addition with multiplication. | derived cargo-mutants; same Mothra AOR | cargo-mutants | `+` -> `*` (go, python, rust) |
-| `aor/sub->add` | Replace subtraction with addition. | derived cargo-mutants; derived Dextool AORS; derived Cherenkov design; same Mothra AOR | breadth, cargo-mutants, sufficient | `-` -> `+` (go, python, rust) |
-| `aor/sub->div` | Replace subtraction with division. | derived cargo-mutants; same Mothra AOR | cargo-mutants | `-` -> `/` (go, python, rust) |
-| `aor/mul->add` | Replace multiplication with addition. | derived cargo-mutants; same Mothra AOR | cargo-mutants | `*` -> `+` (go, python, rust) |
-| `aor/mul->div` | Replace multiplication with division. | derived cargo-mutants; derived Dextool AORS; derived Cherenkov design; same Mothra AOR | breadth, cargo-mutants, sufficient | `*` -> `/` (go, python, rust) |
-| `aor/div->mul` | Replace division with multiplication. | derived cargo-mutants; derived Dextool AORS; derived Cherenkov design; same Mothra AOR | breadth, cargo-mutants, sufficient | `/` -> `*` (go, python, rust) |
-| `aor/div->rem` | Replace division with remainder. | derived cargo-mutants; same Mothra AOR | cargo-mutants | `/` -> `%` (go, python, rust) |
-| `aor/rem->div` | Replace remainder with division. | derived cargo-mutants; derived Dextool AORS; same Mothra AOR | cargo-mutants, sufficient | `%` -> `/` (go, python, rust) |
-| `aor/rem->add` | Replace remainder with addition. | derived cargo-mutants; same Mothra AOR | cargo-mutants | `%` -> `+` (go, python, rust) |
+| Replacement | Definition | Sources | Also called | Sets | Spelling |
+|---|---|---|---|---|---|
+| `aor/add->sub` | Replace addition with subtraction. | derived cargo-mutants; derived Dextool AORS; derived Cherenkov design; same Mothra AOR | Dextool AORS | breadth, cargo-mutants, sufficient | `+` -> `-` (go, python, rust) |
+| `aor/add->mul` | Replace addition with multiplication. | derived cargo-mutants; same Mothra AOR |  | cargo-mutants | `+` -> `*` (go, python, rust) |
+| `aor/sub->add` | Replace subtraction with addition. | derived cargo-mutants; derived Dextool AORS; derived Cherenkov design; same Mothra AOR | Dextool AORS | breadth, cargo-mutants, sufficient | `-` -> `+` (go, python, rust) |
+| `aor/sub->div` | Replace subtraction with division. | derived cargo-mutants; same Mothra AOR |  | cargo-mutants | `-` -> `/` (go, python, rust) |
+| `aor/mul->add` | Replace multiplication with addition. | derived cargo-mutants; same Mothra AOR |  | cargo-mutants | `*` -> `+` (go, python, rust) |
+| `aor/mul->div` | Replace multiplication with division. | derived cargo-mutants; derived Dextool AORS; derived Cherenkov design; same Mothra AOR | Dextool AORS | breadth, cargo-mutants, sufficient | `*` -> `/` (go, python, rust) |
+| `aor/div->mul` | Replace division with multiplication. | derived cargo-mutants; derived Dextool AORS; derived Cherenkov design; same Mothra AOR | Dextool AORS | breadth, cargo-mutants, sufficient | `/` -> `*` (go, python, rust) |
+| `aor/div->rem` | Replace division with remainder. | derived cargo-mutants; same Mothra AOR |  | cargo-mutants | `/` -> `%` (go, python, rust) |
+| `aor/rem->div` | Replace remainder with division. | derived cargo-mutants; derived Dextool AORS; same Mothra AOR | Dextool AORS | cargo-mutants, sufficient | `%` -> `/` (go, python, rust) |
+| `aor/rem->add` | Replace remainder with addition. | derived cargo-mutants; same Mothra AOR |  | cargo-mutants | `%` -> `+` (go, python, rust) |
 
 ### `bitwise`
 
-| Replacement | Definition | Sources | Sets | Spelling |
-|---|---|---|---|---|
-| `bitwise/and->or` | Replace bitwise and with bitwise or. | derived cargo-mutants | cargo-mutants, sufficient | `&` -> `\|` (go, python, rust) |
-| `bitwise/and->xor` | Replace bitwise and with bitwise xor. | derived cargo-mutants | cargo-mutants | `&` -> `^` (go, python, rust) |
-| `bitwise/or->and` | Replace bitwise or with bitwise and. | derived cargo-mutants | cargo-mutants, sufficient | `\|` -> `&` (go, python, rust) |
-| `bitwise/or->xor` | Replace bitwise or with bitwise xor. | derived cargo-mutants | cargo-mutants | `\|` -> `^` (go, python, rust) |
-| `bitwise/xor->or` | Replace bitwise xor with bitwise or. | derived cargo-mutants | cargo-mutants | `^` -> `\|` (go, python, rust) |
-| `bitwise/xor->and` | Replace bitwise xor with bitwise and. | derived cargo-mutants | cargo-mutants, sufficient | `^` -> `&` (go, python, rust) |
+| Replacement | Definition | Sources | Also called | Sets | Spelling |
+|---|---|---|---|---|---|
+| `bitwise/and->or` | Replace bitwise and with bitwise or. | derived cargo-mutants |  | cargo-mutants, sufficient | `&` -> `\|` (go, python, rust) |
+| `bitwise/and->xor` | Replace bitwise and with bitwise xor. | derived cargo-mutants |  | cargo-mutants | `&` -> `^` (go, python, rust) |
+| `bitwise/or->and` | Replace bitwise or with bitwise and. | derived cargo-mutants |  | cargo-mutants, sufficient | `\|` -> `&` (go, python, rust) |
+| `bitwise/or->xor` | Replace bitwise or with bitwise xor. | derived cargo-mutants |  | cargo-mutants | `\|` -> `^` (go, python, rust) |
+| `bitwise/xor->or` | Replace bitwise xor with bitwise or. | derived cargo-mutants |  | cargo-mutants | `^` -> `\|` (go, python, rust) |
+| `bitwise/xor->and` | Replace bitwise xor with bitwise and. | derived cargo-mutants |  | cargo-mutants, sufficient | `^` -> `&` (go, python, rust) |
 
 ### `shift`
 
-| Replacement | Definition | Sources | Sets | Spelling |
-|---|---|---|---|---|
-| `shift/shl->shr` | Replace left shift with right shift. | derived cargo-mutants | cargo-mutants, sufficient | `<<` -> `>>` (go, python, rust) |
-| `shift/shr->shl` | Replace right shift with left shift. | derived cargo-mutants | cargo-mutants, sufficient | `>>` -> `<<` (go, python, rust) |
+| Replacement | Definition | Sources | Also called | Sets | Spelling |
+|---|---|---|---|---|---|
+| `shift/shl->shr` | Replace left shift with right shift. | derived cargo-mutants |  | cargo-mutants, sufficient | `<<` -> `>>` (go, python, rust) |
+| `shift/shr->shl` | Replace right shift with left shift. | derived cargo-mutants |  | cargo-mutants, sufficient | `>>` -> `<<` (go, python, rust) |
 
 ### `lcr`
 
-| Replacement | Definition | Sources | Sets | Spelling |
-|---|---|---|---|---|
-| `lcr/and->or` | Replace logical and with logical or. | derived cargo-mutants; same Mothra LCR | cargo-mutants | `&&` -> `\|\|` (go, rust); `and` -> `or` (python) |
-| `lcr/or->and` | Replace logical or with logical and. | derived cargo-mutants; same Mothra LCR | cargo-mutants | `\|\|` -> `&&` (go, rust); `or` -> `and` (python) |
-| `lcr/and->eq` | Replace logical and with equal. | derived Just & Schweiggert 2014 | sufficient | `&&` -> `==` (go, rust); `and` -> `==` (python) |
-| `lcr/or->ne` | Replace logical or with not-equal. | derived Just & Schweiggert 2014 | sufficient | `\|\|` -> `!=` (go, rust); `or` -> `!=` (python) |
+| Replacement | Definition | Sources | Also called | Sets | Spelling |
+|---|---|---|---|---|---|
+| `lcr/and->or` | Replace logical and with logical or. | derived cargo-mutants; same Mothra LCR | Mothra LCR | cargo-mutants | `&&` -> `\|\|` (go, rust); `and` -> `or` (python) |
+| `lcr/or->and` | Replace logical or with logical and. | derived cargo-mutants; same Mothra LCR | Mothra LCR | cargo-mutants | `\|\|` -> `&&` (go, rust); `or` -> `and` (python) |
+| `lcr/and->eq` | Replace logical and with equal. | derived Just & Schweiggert 2014 |  | sufficient | `&&` -> `==` (go, rust); `and` -> `==` (python) |
+| `lcr/or->ne` | Replace logical or with not-equal. | derived Just & Schweiggert 2014 |  | sufficient | `\|\|` -> `!=` (go, rust); `or` -> `!=` (python) |
 
 ### `compound-assign`
 
-| Replacement | Definition | Sources | Sets | Spelling |
-|---|---|---|---|---|
-| `compound-assign/add->sub` | Replace addition assignment with subtraction assignment. | derived cargo-mutants; derived Dextool AORS; same Mothra AOR | cargo-mutants, sufficient | `+=` -> `-=` (go, python, rust) |
-| `compound-assign/add->mul` | Replace addition assignment with multiplication assignment. | derived cargo-mutants; same Mothra AOR | cargo-mutants | `+=` -> `*=` (go, python, rust) |
-| `compound-assign/sub->add` | Replace subtraction assignment with addition assignment. | derived cargo-mutants; derived Dextool AORS; same Mothra AOR | cargo-mutants, sufficient | `-=` -> `+=` (go, python, rust) |
-| `compound-assign/sub->div` | Replace subtraction assignment with division assignment. | derived cargo-mutants; same Mothra AOR | cargo-mutants | `-=` -> `/=` (go, python, rust) |
-| `compound-assign/mul->add` | Replace multiplication assignment with addition assignment. | derived cargo-mutants; same Mothra AOR | cargo-mutants | `*=` -> `+=` (go, python, rust) |
-| `compound-assign/mul->div` | Replace multiplication assignment with division assignment. | derived cargo-mutants; derived Dextool AORS; same Mothra AOR | cargo-mutants, sufficient | `*=` -> `/=` (go, python, rust) |
-| `compound-assign/div->rem` | Replace division assignment with remainder assignment. | derived cargo-mutants; same Mothra AOR | cargo-mutants | `/=` -> `%=` (go, python, rust) |
-| `compound-assign/div->mul` | Replace division assignment with multiplication assignment. | derived cargo-mutants; derived Dextool AORS; same Mothra AOR | cargo-mutants, sufficient | `/=` -> `*=` (go, python, rust) |
-| `compound-assign/rem->div` | Replace remainder assignment with division assignment. | derived cargo-mutants; derived Dextool AORS; same Mothra AOR | cargo-mutants, sufficient | `%=` -> `/=` (go, python, rust) |
-| `compound-assign/rem->add` | Replace remainder assignment with addition assignment. | derived cargo-mutants; same Mothra AOR | cargo-mutants | `%=` -> `+=` (go, python, rust) |
-| `compound-assign/shl->shr` | Replace left-shift assignment with right-shift assignment. | derived cargo-mutants | cargo-mutants, sufficient | `<<=` -> `>>=` (go, python, rust) |
-| `compound-assign/shr->shl` | Replace right-shift assignment with left-shift assignment. | derived cargo-mutants | cargo-mutants, sufficient | `>>=` -> `<<=` (go, python, rust) |
-| `compound-assign/and->or` | Replace bitwise-and assignment with bitwise-or assignment. | derived cargo-mutants | cargo-mutants, sufficient | `&=` -> `\|=` (go, python, rust) |
-| `compound-assign/or->and` | Replace bitwise-or assignment with bitwise-and assignment. | derived cargo-mutants | cargo-mutants, sufficient | `\|=` -> `&=` (go, python, rust) |
-| `compound-assign/xor->or` | Replace bitwise-xor assignment with bitwise-or assignment. | derived cargo-mutants | cargo-mutants | `^=` -> `\|=` (go, python, rust) |
-| `compound-assign/xor->and` | Replace bitwise-xor assignment with bitwise-and assignment. | derived cargo-mutants | cargo-mutants, sufficient | `^=` -> `&=` (go, python, rust) |
+| Replacement | Definition | Sources | Also called | Sets | Spelling |
+|---|---|---|---|---|---|
+| `compound-assign/add->sub` | Replace addition assignment with subtraction assignment. | derived cargo-mutants; derived Dextool AORS; same Mothra AOR | Dextool AORS; Mothra AOR | cargo-mutants, sufficient | `+=` -> `-=` (go, python, rust) |
+| `compound-assign/add->mul` | Replace addition assignment with multiplication assignment. | derived cargo-mutants; same Mothra AOR | Mothra AOR | cargo-mutants | `+=` -> `*=` (go, python, rust) |
+| `compound-assign/sub->add` | Replace subtraction assignment with addition assignment. | derived cargo-mutants; derived Dextool AORS; same Mothra AOR | Dextool AORS; Mothra AOR | cargo-mutants, sufficient | `-=` -> `+=` (go, python, rust) |
+| `compound-assign/sub->div` | Replace subtraction assignment with division assignment. | derived cargo-mutants; same Mothra AOR | Mothra AOR | cargo-mutants | `-=` -> `/=` (go, python, rust) |
+| `compound-assign/mul->add` | Replace multiplication assignment with addition assignment. | derived cargo-mutants; same Mothra AOR | Mothra AOR | cargo-mutants | `*=` -> `+=` (go, python, rust) |
+| `compound-assign/mul->div` | Replace multiplication assignment with division assignment. | derived cargo-mutants; derived Dextool AORS; same Mothra AOR | Dextool AORS; Mothra AOR | cargo-mutants, sufficient | `*=` -> `/=` (go, python, rust) |
+| `compound-assign/div->rem` | Replace division assignment with remainder assignment. | derived cargo-mutants; same Mothra AOR | Mothra AOR | cargo-mutants | `/=` -> `%=` (go, python, rust) |
+| `compound-assign/div->mul` | Replace division assignment with multiplication assignment. | derived cargo-mutants; derived Dextool AORS; same Mothra AOR | Dextool AORS; Mothra AOR | cargo-mutants, sufficient | `/=` -> `*=` (go, python, rust) |
+| `compound-assign/rem->div` | Replace remainder assignment with division assignment. | derived cargo-mutants; derived Dextool AORS; same Mothra AOR | Dextool AORS; Mothra AOR | cargo-mutants, sufficient | `%=` -> `/=` (go, python, rust) |
+| `compound-assign/rem->add` | Replace remainder assignment with addition assignment. | derived cargo-mutants; same Mothra AOR | Mothra AOR | cargo-mutants | `%=` -> `+=` (go, python, rust) |
+| `compound-assign/shl->shr` | Replace left-shift assignment with right-shift assignment. | derived cargo-mutants |  | cargo-mutants, sufficient | `<<=` -> `>>=` (go, python, rust) |
+| `compound-assign/shr->shl` | Replace right-shift assignment with left-shift assignment. | derived cargo-mutants |  | cargo-mutants, sufficient | `>>=` -> `<<=` (go, python, rust) |
+| `compound-assign/and->or` | Replace bitwise-and assignment with bitwise-or assignment. | derived cargo-mutants |  | cargo-mutants, sufficient | `&=` -> `\|=` (go, python, rust) |
+| `compound-assign/or->and` | Replace bitwise-or assignment with bitwise-and assignment. | derived cargo-mutants |  | cargo-mutants, sufficient | `\|=` -> `&=` (go, python, rust) |
+| `compound-assign/xor->or` | Replace bitwise-xor assignment with bitwise-or assignment. | derived cargo-mutants |  | cargo-mutants | `^=` -> `\|=` (go, python, rust) |
+| `compound-assign/xor->and` | Replace bitwise-xor assignment with bitwise-and assignment. | derived cargo-mutants |  | cargo-mutants, sufficient | `^=` -> `&=` (go, python, rust) |
 
 ### `unary`
 
-| Replacement | Definition | Sources | Sets | Spelling |
-|---|---|---|---|---|
-| `unary/delete-not` | Delete the logical not operator, keeping its operand. | derived cargo-mutants UnaryOperator; same cosmic-ray; same Dextool UOI | cargo-mutants | delete `!` (go, rust); delete `not` (python) |
-| `unary/delete-neg` | Delete the negation operator, keeping its operand. | derived cargo-mutants UnaryOperator | cargo-mutants | delete `-` (go, python, rust) |
+| Replacement | Definition | Sources | Also called | Sets | Spelling |
+|---|---|---|---|---|---|
+| `unary/delete-not` | Delete the logical not operator, keeping its operand. | derived cargo-mutants UnaryOperator; same cosmic-ray; same Dextool UOI | Dextool UOI | cargo-mutants | delete `!` (go, rust); delete `not` (python) |
+| `unary/delete-neg` | Delete the negation operator, keeping its operand. | derived cargo-mutants UnaryOperator |  | cargo-mutants | delete `-` (go, python, rust) |
 
 ### `match-guard`
 
-| Replacement | Definition | Sources | Sets |
-|---|---|---|---|
-| `match-guard/true` | Replace a match arm's guard with the constant true. | derived cargo-mutants MatchArmGuard | cargo-mutants |
-| `match-guard/false` | Replace a match arm's guard with the constant false. | derived cargo-mutants MatchArmGuard | cargo-mutants |
+| Replacement | Definition | Sources | Also called | Sets |
+|---|---|---|---|---|
+| `match-guard/true` | Replace a match arm's guard with the constant true. | derived cargo-mutants MatchArmGuard |  | cargo-mutants |
+| `match-guard/false` | Replace a match arm's guard with the constant false. | derived cargo-mutants MatchArmGuard |  | cargo-mutants |
 
 ### `match-arm`
 
-| Replacement | Definition | Sources | Sets |
-|---|---|---|---|
-| `match-arm/delete` | Delete a match arm, when the match has a catch-all arm. | derived cargo-mutants MatchArm | cargo-mutants |
+| Replacement | Definition | Sources | Also called | Sets |
+|---|---|---|---|---|
+| `match-arm/delete` | Delete a match arm, when the match has a catch-all arm. | derived cargo-mutants MatchArm |  | cargo-mutants |
 
 ### `struct-field`
 
-| Replacement | Definition | Sources | Sets |
-|---|---|---|---|
-| `struct-field/delete` | Delete a field of a struct literal whose omitted fields take a default. | derived cargo-mutants StructField | cargo-mutants |
+| Replacement | Definition | Sources | Also called | Sets |
+|---|---|---|---|---|
+| `struct-field/delete` | Delete a field of a struct literal whose omitted fields take a default. | derived cargo-mutants StructField |  | cargo-mutants |
 
 ### `fn-value`
 
-| Replacement | Definition | Sources | Sets |
-|---|---|---|---|
-| `fn-value` | Replace a function body with each value the language profile generates for its result type. | derived cargo-mutants FnValue | cargo-mutants, sufficient |
+| Replacement | Definition | Sources | Also called | Sets |
+|---|---|---|---|---|
+| `fn-value` | Replace a function body with each value the language profile generates for its result type. | derived cargo-mutants FnValue |  | cargo-mutants, sufficient |
 
 ### `delete-statement`
 
-| Replacement | Definition | Sources | Sets |
-|---|---|---|---|
-| `delete-statement/call` | Delete a call statement. | derived Cherenkov design; derived Just et al. 2014; similar PIT VOID_METHOD_CALLS; similar Mothra SDL | breadth, sufficient |
+| Replacement | Definition | Sources | Also called | Sets |
+|---|---|---|---|---|
+| `delete-statement/call` | Delete a call statement. | derived Cherenkov design; derived Just et al. 2014; similar PIT VOID_METHOD_CALLS; similar Mothra SDL |  | breadth, sufficient |
 
 ### `negate-condition`
 
-| Replacement | Definition | Sources | Sets |
-|---|---|---|---|
-| `negate-condition` | Negate the condition of an if or loop. | derived Cherenkov design; similar PIT NEGATE_CONDITIONALS | breadth |
+| Replacement | Definition | Sources | Also called | Sets |
+|---|---|---|---|---|
+| `negate-condition` | Negate the condition of an if or loop. | derived Cherenkov design; similar PIT NEGATE_CONDITIONALS |  | breadth |
 
 ### `return-bool-flip`
 
-| Replacement | Definition | Sources | Sets |
-|---|---|---|---|
-| `return-bool-flip` | Replace a returned boolean literal with its opposite. | derived Cherenkov design | breadth |
+| Replacement | Definition | Sources | Also called | Sets |
+|---|---|---|---|---|
+| `return-bool-flip` | Replace a returned boolean literal with its opposite. | derived Cherenkov design |  | breadth |
 
 ### `body-default`
 
-| Replacement | Definition | Sources | Sets |
-|---|---|---|---|
-| `body-default` | Replace a function body with the zero value of its result type. | derived Cherenkov design; similar cargo-mutants FnValue | breadth |
+| Replacement | Definition | Sources | Also called | Sets |
+|---|---|---|---|---|
+| `body-default` | Replace a function body with the zero value of its result type. | derived Cherenkov design; similar cargo-mutants FnValue |  | breadth |
 <!-- /generated -->
 
 Mothra's relations are recorded only where the one-line description in

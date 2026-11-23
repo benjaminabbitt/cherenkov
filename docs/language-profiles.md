@@ -1004,7 +1004,7 @@ Verified against the profiles and `plan` output.
 |---|---|---|
 | D40 `README.md`, "Fidelity" | The refusal list names `struct-field/delete` and one `aor/rem->div`. | The list has 26 entries (section 8.2). |
 | D41 `docs/operator-sets.md:74` | "Set `sufficient` (Cherenkov's default)". | `cherenkov sets` marks `breadth` as the default; `--operators` defaults to `breadth` (`main.rs:66,97`). |
-| D42 `docs/rust-operator-evaluation.md` | Statuses ("done", "easy", "missing") as of the time written. | Unverified against current code; not rechecked here. |
+| D42 `docs/rust-operator-evaluation.md` | Statuses ("done", "easy", "missing") as of the time written, by numbered row. | The document is now one row for each operator (family), with the rows that are not operators or not implemented listed apart (docs/mutation-operators.md). Its codegen statuses are as of 2026-11-17 and unverified against current code. |
 
 ---
 

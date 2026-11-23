@@ -97,30 +97,36 @@ struct Asked<'a> {
 pub fn run(
     dir: &Path,
     tools: &Tools,
-    sets: &[OperatorSet],
+    operators: Option<&str>,
     tests: &[String],
     format: Format,
 ) -> Result<(), CliError> {
+    let root = dir.canonicalize().map_err(|e| unreadable(dir, &e))?;
+    let lang = if root.join("go.mod").is_file() {
+        "go"
+    } else if root.join("Cargo.toml").is_file() {
+        "rust"
+    } else {
+        return Err(CliError::NoProject {
+            dir: dir.display().to_string(),
+        });
+    };
+    let sets = crate::operator_sets_for(operators, lang)?;
     // Under JSON, run.started names the set.
     if format == Format::Text {
-        eprintln!("operators: {}", crate::set_names(sets));
+        eprintln!("operators: {}", crate::set_names(&sets));
     }
-    let root = dir.canonicalize().map_err(|e| unreadable(dir, &e))?;
     let asked = Asked {
         root: &root,
         tools,
-        sets,
+        sets: &sets,
         tests,
         format,
     };
-    if root.join("go.mod").is_file() {
+    if lang == "go" {
         run_go(&asked)
-    } else if root.join("Cargo.toml").is_file() {
-        run_rust(&asked)
     } else {
-        Err(CliError::NoProject {
-            dir: dir.display().to_string(),
-        })
+        run_rust(&asked)
     }
 }
 

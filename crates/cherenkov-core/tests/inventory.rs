@@ -327,3 +327,23 @@ fn test_markdown_shows_spellings_grouped_by_language_only_when_asked_for() {
     let without = Inventory::of_all(&without_spellings()).markdown();
     assert!(!without.contains("| Spelling |"), "{without}");
 }
+
+#[test]
+fn test_an_operators_aliases_do_not_depend_on_the_set_viewed() {
+    let all = Inventory::of_all(&without_spellings());
+    let want = &all
+        .operators
+        .iter()
+        .find(|o| o.name == "ror")
+        .unwrap()
+        .aliases;
+    let breadth = Inventory::of_set(&named("breadth").unwrap(), &without_spellings());
+    let got = &breadth
+        .operators
+        .iter()
+        .find(|o| o.name == "ror")
+        .unwrap()
+        .aliases;
+    assert_eq!(got, want);
+    assert_eq!(want, &["Mothra ROR".to_string()]);
+}

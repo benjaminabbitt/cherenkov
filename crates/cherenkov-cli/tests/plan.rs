@@ -52,7 +52,7 @@ fn expected(lang: &str) -> Vec<String> {
 }
 
 fn assert_golden(lang: &str) {
-    let got: Vec<String> = listing(&plan(&fixtures().join(lang), &[]))
+    let got: Vec<String> = listing(&plan(&fixtures().join(lang), &["--operators", "breadth"]))
         .into_iter()
         .map(|(_, d)| d)
         .collect();
@@ -100,7 +100,7 @@ fn test_plan_is_identical_across_runs() {
 
 #[test]
 fn test_plan_over_mixed_tree_plans_every_language_with_prefixed_paths() {
-    let all = listing(&plan(&fixtures(), &[]));
+    let all = listing(&plan(&fixtures(), &["--operators", "breadth"]));
     assert_eq!(
         all.len(),
         expected("go").len() + expected("python").len() + expected("rust").len()
@@ -118,7 +118,7 @@ fn test_plan_over_mixed_tree_plans_every_language_with_prefixed_paths() {
 
 #[test]
 fn test_plan_summary_on_stderr_reports_counts_and_unmapped_concepts() {
-    let out = plan(&fixtures(), &[]);
+    let out = plan(&fixtures(), &["--operators", "breadth"]);
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(stderr.contains("python: 12 mutants"), "{stderr}");
     assert!(stderr.contains("rust: 13 mutants"), "{stderr}");
@@ -260,10 +260,17 @@ fn test_plan_missing_dir_fails_with_message() {
 
 #[test]
 fn test_plan_exclude_drops_matching_files_for_every_language() {
-    let all = listing(&plan(&fixtures(), &[]));
+    let all = listing(&plan(&fixtures(), &["--operators", "breadth"]));
     let some = listing(&plan(
         &fixtures(),
-        &["--exclude", "**/calc.go", "--exclude", "python/**"],
+        &[
+            "--operators",
+            "breadth",
+            "--exclude",
+            "**/calc.go",
+            "--exclude",
+            "python/**",
+        ],
     ));
     assert!(
         all.iter().any(|(_, d)| d.starts_with("go/"))
@@ -284,10 +291,101 @@ fn test_sets_lists_every_named_set_with_its_pending_rules() {
     let out = cherenkov(&["sets"]);
     assert!(out.status.success());
     let text = String::from_utf8(out.stdout).unwrap();
-    for name in ["breadth (default)", "cargo-mutants", "sufficient"] {
+    for name in [
+        "breadth (default for the other languages)",
+        "cargo-mutants (default for rust)",
+        "sufficient:",
+    ] {
         assert!(text.contains(name), "{name} in {text}");
     }
     assert!(text.contains("pending: unary operator deletion"), "{text}");
+}
+
+#[test]
+fn test_sets_and_mutations_list_other_tools_names_beside_the_canonical_ones() {
+    let sets = String::from_utf8(cherenkov(&["sets"]).stdout).unwrap();
+    assert!(
+        sets.contains("    ror (Mothra ROR): lt->le (PIT CONDITIONALS_BOUNDARY)"),
+        "{sets}"
+    );
+    let muts = String::from_utf8(cherenkov(&["mutations"]).stdout).unwrap();
+    assert!(
+        muts.contains("\nror: Replace a relational operator"),
+        "{muts}"
+    );
+    assert!(muts.contains("  also called: Mothra ROR\n"), "{muts}");
+    assert!(
+        muts.contains("ror/lt->le\n  also called: PIT CONDITIONALS_BOUNDARY"),
+        "{muts}"
+    );
+}
+
+#[test]
+fn test_plan_defaults_to_cargo_mutants_for_rust_and_breadth_for_go() {
+    let rust = plan(&fixtures().join("rust"), &[]);
+    assert!(String::from_utf8_lossy(&rust.stderr).starts_with("operators: cargo-mutants\n"));
+    let explicit = plan(&fixtures().join("rust"), &["--operators", "cargo-mutants"]);
+    assert_eq!(listing(&rust), listing(&explicit));
+    let go = plan(&fixtures().join("go"), &[]);
+    let breadth = plan(&fixtures().join("go"), &["--operators", "breadth"]);
+    assert_eq!(listing(&go), listing(&breadth));
+}
+
+#[test]
+fn test_plan_of_a_project_with_two_languages_uses_each_languages_default() {
+    let dir = std::env::temp_dir().join(format!("cherenkov-twolang-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        "pub fn f(a: i32) -> i32 { a + 1 }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("a.go"),
+        "package a\nfunc F(a int) int { return a + 1 }\n",
+    )
+    .unwrap();
+    let out = plan(&dir, &[]);
+    std::fs::remove_dir_all(&dir).unwrap();
+    let lines: Vec<String> = listing(&out).into_iter().map(|(_, d)| d).collect();
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(
+        err.contains("operators: go=breadth,rust=cargo-mutants\n"),
+        "{err}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("a.go") && l.contains(" aor ")),
+        "{lines:?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("lib.rs") && l.contains("fn-value")),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn test_a_custom_set_naming_an_alias_fails_naming_the_canonical_names() {
+    let dir = std::env::temp_dir().join(format!("cherenkov-alias-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("s.toml");
+    std::fs::write(&file, "name = \"mine\"\nmutations = [\"Mothra ROR\"]\n").unwrap();
+    let out = cherenkov(&[
+        "plan",
+        fixtures().join("rust").to_str().unwrap(),
+        "--operators",
+        file.to_str().unwrap(),
+    ]);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("Mothra ROR is another tool's name for ror"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -296,12 +394,12 @@ fn test_sets_lists_each_sets_operators_with_their_tables() {
     let text = String::from_utf8(out.stdout).unwrap();
     // The cargo-mutants set's `lcr` table is its own; `sufficient`'s differs.
     assert!(text.contains("  operators (11):\n"), "{text}");
-    assert!(text.contains("    lcr: and->or or->and\n"), "{text}");
-    assert!(text.contains("    lcr: and->eq or->ne\n"), "{text}");
     assert!(
-        text.contains("    compound-assign: add->sub add->mul"),
+        text.contains("    lcr: and->or (Mothra LCR) or->and (Mothra LCR)\n"),
         "{text}"
     );
+    assert!(text.contains("    lcr: and->eq or->ne\n"), "{text}");
+    assert!(text.contains("    compound-assign: add->sub"), "{text}");
 }
 
 #[test]

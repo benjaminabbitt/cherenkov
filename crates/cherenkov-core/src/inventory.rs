@@ -155,7 +155,9 @@ fn operator_entry(
     OperatorEntry {
         name: family.id,
         definition: family.definition,
-        aliases: family_aliases(table),
+        // Of the whole family: a set's smaller table must not narrow what
+        // the operator is called.
+        aliases: family_aliases(&family.replacements),
         sources,
         replacements: table
             .iter()
