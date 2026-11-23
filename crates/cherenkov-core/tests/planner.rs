@@ -289,8 +289,8 @@ fn test_plan_compound_assignment_swap_evaluates_the_mutated_statement_then_skips
     assert_eq!(
         listing,
         [
-            r#"c.src:1:1 - aor eval-then-jump "x -= y" [assign]"#,
-            r#"c.src:1:1 - aor eval-then-jump "x *= y" [assign]"#
+            r#"c.src:1:1 - compound-assign eval-then-jump "x -= y" [assign]"#,
+            r#"c.src:1:1 - compound-assign eval-then-jump "x *= y" [assign]"#
         ]
     );
 }
