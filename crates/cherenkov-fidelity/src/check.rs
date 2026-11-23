@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use cherenkov_core::execution::{Budget, Driven, MutantExecutor, RawOutcome};
+use cherenkov_core::execution::{Budget, Driven, MutantExecutor, RawOutcome, Tier, classify};
 use cherenkov_core::plan::{MutantPlan, render_source};
 use cherenkov_core::profile::Profile;
 
@@ -26,6 +26,8 @@ pub struct Debugger {
     /// Per executor, which of its tests call each plan's function (by plan
     /// id), from its recording run; `None` runs every test.
     drives: Vec<Option<std::collections::HashMap<String, Driven>>>,
+    /// The tier that applied each mutant (by plan id) in the last run.
+    tiers: std::collections::HashMap<String, Tier>,
 }
 
 /// The first, unmutated run is given this long.
@@ -55,6 +57,7 @@ impl Debugger {
         Ok(Debugger {
             executors: out,
             drives,
+            tiers: std::collections::HashMap::new(),
         })
     }
 
@@ -71,6 +74,12 @@ impl Debugger {
                 .map(|d| plans.iter().map(|p| p.id.to_string()).zip(d).collect());
         }
         Ok(())
+    }
+
+    /// The tier that applied `plan` in the last test program that ran it;
+    /// `None` when it was not applied (refused, unviable, not reached).
+    pub fn tier(&self, plan: &MutantPlan) -> Option<Tier> {
+        self.tiers.get(&plan.id.to_string()).copied()
     }
 
     /// Every test program's outcome under the run-time mutant.
@@ -92,6 +101,9 @@ impl Debugger {
             let (raw, output) = ex
                 .run_with_output(plan, *budget)
                 .map_err(|e| format!("{} {}: {e}", plan.id, plan.site()))?;
+            if let Some(tier) = classify(&raw).tier {
+                self.tiers.insert(plan.id.to_string(), tier);
+            }
             let run = match raw {
                 RawOutcome::Unsupported { reason } => return Ok(Err(reason)),
                 RawOutcome::Unviable { .. } => return Ok(Ok(Run::Unviable)),

@@ -556,3 +556,95 @@ pub struct Banner {
 pub fn banners(n: u32) -> Vec<Banner> {
     (0..n).map(|_| Banner { text: "hi".into(), by: "ops" }).collect()
 }
+
+// --- Arithmetic inside something: a call argument, a field, a guard, an
+// entry. The instruction is told from the line's others by its column.
+
+fn times(x: i64, k: i64) -> i64 {
+    x * k
+}
+
+pub fn lifted(a: i64) -> i64 {
+    times(a + 1, 2)
+}
+
+fn same(x: u64) -> u64 {
+    x
+}
+
+pub fn lifted_u(s: u64) -> u64 {
+    same(s + 1)
+}
+
+fn positive(x: i64) -> bool {
+    x > 0
+}
+
+/// A test that does not tell `a + 1` from `a - 1` for the large `a`.
+pub fn lifted_loose(a: i64) -> bool {
+    positive(a + 1)
+}
+
+pub struct Tally {
+    pub x: i64,
+    pub u: u64,
+    pub w: f64,
+    pub bits: u32,
+    pub seen: std::collections::BTreeMap<u32, i32>,
+}
+
+impl Tally {
+    pub fn new() -> Tally {
+        Tally {
+            x: 0,
+            u: 0,
+            w: 0.0,
+            bits: 0,
+            seen: std::collections::BTreeMap::new(),
+        }
+    }
+}
+
+pub fn tally_x(s: &mut Tally) {
+    s.x += 1;
+}
+
+pub fn tally_u(s: &mut Tally) {
+    s.u += 1;
+}
+
+pub fn tally_down(s: &mut Tally) {
+    s.u -= 1;
+    s.x -= 2;
+}
+
+pub fn tally_guarded(m: &std::sync::Mutex<Tally>) {
+    let mut g = m.lock().unwrap();
+    g.x += 1;
+}
+
+pub fn tally_seen(s: &mut Tally, k: u32) {
+    *s.seen.entry(k).or_default() += 1;
+}
+
+pub fn tally_w(s: &mut Tally) {
+    s.w += 0.5;
+    s.w *= 3.0;
+}
+
+pub fn tally_bits(s: &mut Tally) {
+    s.bits |= 4;
+    s.bits &= 0xfe;
+}
+
+fn keep_f(x: f64) -> f64 {
+    x
+}
+
+pub fn blend(a: f64, b: f64) -> f64 {
+    keep_f(a - b)
+}
+
+pub fn area(w: f64, h: f64) -> f64 {
+    keep_f(w * h)
+}

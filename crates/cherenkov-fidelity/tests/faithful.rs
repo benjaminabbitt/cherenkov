@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use cherenkov_core::execution::MutantExecutor;
+use cherenkov_core::execution::{MutantExecutor, Tier};
 use cherenkov_core::operator::Operator;
 use cherenkov_core::operator_set::named;
 use cherenkov_core::plan::MutantPlan;
@@ -33,6 +33,14 @@ fn fixture(name: &str) -> PathBuf {
 /// Every mutant of a Rust project under the named set, with what checking
 /// it found.
 fn check_rust(root: &Path, set: &str) -> Vec<(MutantPlan, Checked)> {
+    check_rust_tiers(root, set)
+        .into_iter()
+        .map(|(p, c, _)| (p, c))
+        .collect()
+}
+
+/// The same, with the tier that applied each mutant.
+fn check_rust_tiers(root: &Path, set: &str) -> Vec<(MutantPlan, Checked, Option<Tier>)> {
     let operators: Vec<Box<dyn Operator>> = named(set).unwrap().operators();
     let syntax = TreeSitterSyntax::builtin().unwrap();
     let profiles: Vec<_> = syntax
@@ -83,9 +91,12 @@ fn check_rust(root: &Path, set: &str) -> Vec<(MutantPlan, Checked)> {
         &mut debugger,
         &scratch,
         &[],
-        |plan, checked| out.push((plan.clone(), checked.clone())),
+        |plan, checked| out.push((plan.clone(), checked.clone(), None)),
     )
     .unwrap();
+    for (plan, _, tier) in &mut out {
+        *tier = debugger.tier(plan);
+    }
     out
 }
 
@@ -142,12 +153,6 @@ const ACCEPTED_REFUSALS: &[(&str, &str, &str)] = &[
     ),
     (
         "inc",
-        "aor/add->sub",
-        "`let y = x - 1`: no `y` to assign at the statement's start, and rustc's unsigned check \
-         (cmp; jb) makes a tier P swap unfaithful",
-    ),
-    (
-        "inc",
         "aor/add->mul",
         "`let y = x * 1`: no `y` to assign at the statement's start",
     ),
@@ -164,11 +169,6 @@ const ACCEPTED_REFUSALS: &[(&str, &str, &str)] = &[
     (
         "twice",
         "aor/mul->div",
-        "an async fn's poll returns Poll<i64>: GDB returns only scalars",
-    ),
-    (
-        "twice_plus",
-        "aor/add->sub",
         "an async fn's poll returns Poll<i64>: GDB returns only scalars",
     ),
     (
@@ -193,18 +193,8 @@ const ACCEPTED_REFUSALS: &[(&str, &str, &str)] = &[
     ),
     (
         "boxed",
-        "aor/add->sub",
-        "a mutated expression returning a heap value: GDB returns only scalars",
-    ),
-    (
-        "boxed",
         "aor/add->mul",
         "a mutated expression returning a heap value: GDB returns only scalars",
-    ),
-    (
-        "shared_later",
-        "aor/add->sub",
-        "an async fn's poll returns Poll<Arc<i64>>: GDB returns only scalars",
     ),
     (
         "shared_later",
@@ -213,13 +203,18 @@ const ACCEPTED_REFUSALS: &[(&str, &str, &str)] = &[
     ),
     (
         "checked_later",
-        "aor/add->sub",
+        "aor/add->mul",
         "an async block's poll returns Poll<Result<u32, String>>: GDB returns only scalars",
     ),
     (
-        "checked_later",
-        "aor/add->mul",
-        "an async block's poll returns Poll<Result<u32, String>>: GDB returns only scalars",
+        "tally_guarded",
+        "aor/add_assign->mul_assign",
+        "`+=` to `*=` on an integer has no tier P rule, and GDB cannot call a guard's Deref",
+    ),
+    (
+        "tally_seen",
+        "aor/add_assign->mul_assign",
+        "`+=` to `*=` on an integer has no tier P rule, and GDB cannot call the map's entry",
     ),
     (
         "named_later",
@@ -285,4 +280,51 @@ fn test_every_cargo_mutants_mutant_of_rust_ops_is_faithful_unviable_or_an_accept
         stale.is_empty(),
         "no longer refused; drop from the list: {stale:?}"
     );
+}
+
+/// Arithmetic whose instruction tier P finds by the column of its operator:
+/// each of these must run on tier P, and give the verdict of the source
+/// build, test by test (`lifted_loose` survives, the others are killed).
+const BY_COLUMN: &[(&str, &str)] = &[
+    ("lifted", "aor/add->sub"),
+    ("lifted_u", "aor/add->sub"),
+    ("lifted_loose", "aor/add->sub"),
+    ("inc", "aor/add->sub"),
+    ("twice_plus", "aor/add->sub"),
+    ("tally_x", "aor/add_assign->sub_assign"),
+    ("tally_u", "aor/add_assign->sub_assign"),
+    ("tally_down", "aor/sub_assign->add_assign"),
+    ("tally_guarded", "aor/add_assign->sub_assign"),
+    ("tally_seen", "aor/add_assign->sub_assign"),
+    ("tally_w", "aor/add_assign->sub_assign"),
+    ("tally_w", "aor/add_assign->mul_assign"),
+    ("tally_w", "aor/mul_assign->add_assign"),
+    ("tally_w", "aor/mul_assign->div_assign"),
+    ("tally_bits", "bitwise/or_assign->and_assign"),
+    ("tally_bits", "bitwise/and_assign->or_assign"),
+    ("blend", "aor/sub->add"),
+    ("area", "aor/mul->div"),
+];
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_arithmetic_found_by_column_runs_on_tier_p_and_is_faithful_to_its_source() {
+    let checked = check_rust_tiers(&fixture("rust-ops"), "cargo-mutants");
+    for &(function, mutation) in BY_COLUMN {
+        let mut found = checked.iter().filter(|(p, _, _)| {
+            p.function.as_deref() == Some(function) && p.mutation == Some(mutation)
+        });
+        assert!(
+            found.clone().next().is_some(),
+            "no {mutation} in {function}"
+        );
+        for (plan, c, tier) in found.by_ref() {
+            assert_eq!(
+                (c, tier),
+                (&Checked::Judged(Judgement::Faithful), &Some(Tier::P)),
+                "{}",
+                plan.describe()
+            );
+        }
+    }
 }

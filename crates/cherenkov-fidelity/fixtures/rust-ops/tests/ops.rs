@@ -549,3 +549,71 @@ fn test_banners() {
     assert_eq!(banners(1)[0].text, "hi");
     assert_eq!(banners(1)[0].by, "ops");
 }
+
+#[test]
+fn test_lifted() {
+    assert_eq!(lifted(3), 8);
+}
+
+#[test]
+fn test_lifted_u() {
+    assert_eq!(lifted_u(4), 5);
+}
+
+#[test]
+fn test_lifted_loose_for_a_large_number() {
+    assert!(lifted_loose(10));
+}
+
+#[test]
+fn test_tally_fields() {
+    let mut s = Tally::new();
+    s.x = 5;
+    s.u = 7;
+    tally_x(&mut s);
+    tally_u(&mut s);
+    assert_eq!((s.x, s.u), (6, 8));
+    tally_down(&mut s);
+    assert_eq!((s.x, s.u), (4, 7));
+}
+
+#[test]
+fn test_tally_guarded() {
+    let m = std::sync::Mutex::new(Tally::new());
+    tally_guarded(&m);
+    assert_eq!(m.lock().unwrap().x, 1);
+}
+
+#[test]
+fn test_tally_seen_counts_only_how_many_keys() {
+    let mut s = Tally::new();
+    tally_seen(&mut s, 7);
+    tally_seen(&mut s, 7);
+    assert_eq!(s.seen.len(), 1);
+}
+
+#[test]
+fn test_tally_seen_counts_each_key() {
+    let mut s = Tally::new();
+    tally_seen(&mut s, 1);
+    tally_seen(&mut s, 1);
+    tally_seen(&mut s, 2);
+    assert_eq!(s.seen[&1], 2);
+}
+
+#[test]
+fn test_tally_w_and_bits() {
+    let mut s = Tally::new();
+    s.w = 1.0;
+    s.bits = 1;
+    tally_w(&mut s);
+    tally_bits(&mut s);
+    assert_eq!(s.w, 4.5);
+    assert_eq!(s.bits, 4);
+}
+
+#[test]
+fn test_blend_and_area() {
+    assert_eq!(blend(5.5, 2.0), 3.5);
+    assert_eq!(area(2.0, 4.0), 8.0);
+}
