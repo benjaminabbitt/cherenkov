@@ -110,7 +110,7 @@ fn action_of(src: &str, mutation: &str) -> (Action, Vec<&'static str>) {
 #[test]
 fn test_rust_compound_assignment_swap_evaluates_the_mutated_statement() {
     let src = "fn f(mut t: i64, k: i64) -> i64 {\n    t += k;\n    t\n}\n";
-    let (action, requires) = action_of(src, "aor/add_assign->sub_assign");
+    let (action, requires) = action_of(src, "compound-assign/add->sub");
     let Action::EvalThenJump {
         text,
         target,

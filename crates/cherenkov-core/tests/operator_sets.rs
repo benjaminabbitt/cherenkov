@@ -117,9 +117,9 @@ fn test_sufficient_token_swaps_are_the_token_part_of_the_sufficient_sets() {
     assert_eq!(swaps("sufficient", "ror", Ge), [Gt, Eq]);
     assert_eq!(swaps("sufficient", "ror", Eq), [Le, Ge]);
     assert_eq!(swaps("sufficient", "ror", Ne), [Lt, Gt]);
-    // COR's `a == b` / `a != b`; lhs, rhs and constants are pending.
-    assert_eq!(swaps("sufficient", "cor", And), [Eq]);
-    assert_eq!(swaps("sufficient", "cor", Or), [Ne]);
+    // LCR (Just's COR) `a == b` / `a != b`; lhs, rhs and constants are pending.
+    assert_eq!(swaps("sufficient", "lcr", And), [Eq]);
+    assert_eq!(swaps("sufficient", "lcr", Or), [Ne]);
     // AOR counterparts, `%` -> `/` [choice].
     assert_eq!(swaps("sufficient", "aor", Add), [Sub]);
     assert_eq!(swaps("sufficient", "aor", Mul), [Div]);
@@ -309,4 +309,250 @@ fn test_an_invalid_custom_set_is_reported_with_its_path_and_reason() {
             reason: "no mutation named ror/zzz".into()
         }
     );
+}
+
+// --- Operators are families; a set gives each family a table.
+
+use cherenkov_core::operator_set::{Relation, families, mutation_named};
+
+const FAMILIES: [&str; 15] = [
+    "ror",
+    "aor",
+    "bitwise",
+    "shift",
+    "lcr",
+    "compound-assign",
+    "unary",
+    "match-guard",
+    "match-arm",
+    "struct-field",
+    "fn-value",
+    "delete-statement",
+    "negate-condition",
+    "return-bool-flip",
+    "body-default",
+];
+
+#[test]
+fn test_the_operator_count_is_the_family_count_not_the_replacement_count() {
+    let mut got: Vec<&str> = families().iter().map(|f| f.id).collect();
+    got.sort();
+    let mut want = FAMILIES.to_vec();
+    want.sort();
+    assert_eq!(got, want);
+    assert!(mutations().len() > families().len() * 3);
+}
+
+#[test]
+fn test_every_replacement_belongs_to_a_family_and_is_named_family_slash_detail() {
+    let ids: Vec<&str> = families().iter().map(|f| f.id).collect();
+    for m in mutations() {
+        assert!(ids.contains(&m.family), "{}", m.name);
+        assert!(
+            m.name == m.family || m.name.starts_with(&format!("{}/", m.family)),
+            "{} is not named after {}",
+            m.name,
+            m.family
+        );
+    }
+}
+
+#[test]
+fn test_compound_assignment_is_one_family_of_its_own() {
+    for m in mutations() {
+        let assign = matches!(
+            m.rule,
+            cherenkov_core::operator_set::Rule::ReplaceToken { from, .. }
+                if from.name().ends_with("_assign")
+        );
+        assert_eq!(assign, m.family == "compound-assign", "{}", m.name);
+    }
+    for name in [
+        "compound-assign/add->sub",
+        "compound-assign/shl->shr",
+        "compound-assign/and->or",
+    ] {
+        assert!(mutation_named(name).is_some(), "{name}");
+    }
+    let f = families();
+    let table = &f.iter().find(|f| f.id == "compound-assign").unwrap();
+    assert_eq!(table.replacements.len(), 16);
+}
+
+#[test]
+fn test_lcr_holds_the_cargo_mutants_and_the_just_replacements_with_their_origins() {
+    assert!(mutation_named("cor/and->eq").is_none());
+    assert!(mutation_named("cor/or->ne").is_none());
+    let derived = |name: &str, source: &str| {
+        mutation_named(name)
+            .unwrap_or_else(|| panic!("{name}"))
+            .origins
+            .iter()
+            .any(|o| o.relation == Relation::Derived && o.source.contains(source))
+    };
+    assert!(derived("lcr/and->or", "cargo-mutants"));
+    assert!(derived("lcr/or->and", "cargo-mutants"));
+    assert!(derived("lcr/and->eq", "Just & Schweiggert 2014"));
+    assert!(derived("lcr/or->ne", "Just & Schweiggert 2014"));
+}
+
+#[test]
+fn test_a_set_lists_its_operators_each_with_its_own_table() {
+    let table = |set: &str, family: &str| -> Vec<&'static str> {
+        named(set)
+            .unwrap()
+            .tables()
+            .into_iter()
+            .find(|t| t.family == family)
+            .map(|t| t.replacements.iter().map(|m| m.name).collect())
+            .unwrap_or_default()
+    };
+    assert_eq!(
+        table("cargo-mutants", "lcr"),
+        ["lcr/and->or", "lcr/or->and"]
+    );
+    assert_eq!(table("sufficient", "lcr"), ["lcr/and->eq", "lcr/or->ne"]);
+    assert_eq!(table("breadth", "lcr"), Vec::<&str>::new());
+    assert_eq!(
+        table("sufficient", "compound-assign"),
+        [
+            "compound-assign/add->sub",
+            "compound-assign/sub->add",
+            "compound-assign/mul->div",
+            "compound-assign/div->mul",
+            "compound-assign/rem->div",
+            "compound-assign/shl->shr",
+            "compound-assign/shr->shl",
+            "compound-assign/and->or",
+            "compound-assign/or->and",
+            "compound-assign/xor->and",
+        ]
+    );
+}
+
+#[test]
+fn test_set_tables_cover_exactly_the_sets_mutations_once_each() {
+    for set in registry() {
+        let tables = set.tables();
+        let mut ids: Vec<&str> = tables.iter().map(|t| t.family).collect();
+        let n = ids.len();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), n, "{}: a family twice", set.name);
+        let mut listed: Vec<&str> = tables
+            .iter()
+            .flat_map(|t| t.replacements.iter().map(|m| m.name))
+            .collect();
+        let mut want: Vec<&str> = set.mutations.to_vec();
+        listed.sort();
+        want.sort();
+        assert_eq!(listed, want, "{}", set.name);
+        let ops: Vec<&str> = set.operators().iter().map(|o| o.id()).collect();
+        assert_eq!(ops, tables.iter().map(|t| t.family).collect::<Vec<_>>());
+    }
+}
+
+#[test]
+fn test_every_replacement_has_a_derived_origin() {
+    for m in mutations() {
+        assert!(
+            m.origins.iter().any(|o| o.relation == Relation::Derived),
+            "{}",
+            m.name
+        );
+    }
+}
+
+/// The comment block above `name`'s entry in the source of the superset.
+fn comment_above(source: &str, name: &str) -> String {
+    let lines: Vec<&str> = source.lines().collect();
+    let at = lines
+        .iter()
+        .position(|l| {
+            l.trim() == format!("\"{name}\",") || l.trim() == format!("name: \"{name}\",")
+        })
+        .unwrap_or_else(|| panic!("no entry {name}"));
+    // The entry opens one line above its name: `tok(` or `Mutation {`.
+    let mut top = at - 1;
+    let mut block = Vec::new();
+    while top > 0 && lines[top - 1].trim_start().starts_with("//") {
+        top -= 1;
+        block.push(lines[top].trim());
+    }
+    block.join(" ")
+}
+
+#[test]
+fn test_every_replacements_comment_names_each_source_it_is_derived_from() {
+    let source = include_str!("../src/operator_set.rs");
+    for m in mutations() {
+        let comment = comment_above(source, m.name);
+        for o in m.origins {
+            let relation = match o.relation {
+                Relation::Derived => "derived from",
+                Relation::Same => "same as",
+                Relation::Similar(_) => "similar to",
+            };
+            let want = format!("{relation} {}", o.source);
+            assert!(
+                comment.contains(&want),
+                "{}: comment lacks `{want}`: {comment}",
+                m.name
+            );
+        }
+    }
+}
+
+/// The row of a docs table that starts with `family` in backticks.
+fn row_of(doc: &str, family: &str) -> String {
+    doc.lines()
+        .find(|l| l.starts_with(&format!("| `{family}`")))
+        .unwrap_or_else(|| panic!("no row for {family}"))
+        .to_string()
+}
+
+#[test]
+fn test_the_docs_name_every_familys_derived_sources() {
+    for path in [
+        "../../docs/mutation-operators.md",
+        "../../docs/rust-operator-evaluation.md",
+    ] {
+        let doc =
+            std::fs::read_to_string(format!("{}/{path}", env!("CARGO_MANIFEST_DIR"))).unwrap();
+        for f in families() {
+            let row = row_of(&doc, f.id);
+            for m in &f.replacements {
+                for o in m.origins.iter().filter(|o| o.relation == Relation::Derived) {
+                    assert!(
+                        row.contains(o.source),
+                        "{path}: {} row lacks {}",
+                        f.id,
+                        o.source
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_every_family_has_a_definition_and_the_inventory_holds_every_replacement() {
+    let all = families();
+    assert!(
+        all.iter()
+            .all(|f| !f.definition.is_empty() && !f.replacements.is_empty())
+    );
+    let total: usize = all.iter().map(|f| f.replacements.len()).sum();
+    assert_eq!(total, mutations().len());
+}
+
+#[test]
+fn test_the_default_set_is_cargo_mutants_for_rust_and_breadth_for_the_other_languages() {
+    use cherenkov_core::operator_set::default_set_name;
+    assert_eq!(default_set_name("rust"), "cargo-mutants");
+    assert_eq!(default_set_name("go"), "breadth");
+    assert_eq!(default_set_name("python"), "breadth");
+    for lang in ["rust", "go", "python"] {
+        assert!(named(default_set_name(lang)).is_some(), "{lang}");
+    }
 }

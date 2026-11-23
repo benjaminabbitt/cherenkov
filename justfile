@@ -141,3 +141,9 @@ mod? dev '.dev'
 cm-differential *args:
     cargo build -q -p cherenkov-cli
     python3 -I scripts/cm-differential.py {{args}}
+
+# Regenerate the operator tables of the docs (blocks between `<!-- generated: cherenkov ARGS -->`
+# markers) from `cherenkov operators`; a test fails when a committed block differs from the dump.
+docs:
+    cargo build -q -p cherenkov-cli
+    python3 -I scripts/gen-operator-docs.py docs/mutation-operators.md docs/operator-sets.md docs/rust-operator-evaluation.md

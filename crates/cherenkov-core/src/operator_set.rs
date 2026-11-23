@@ -91,9 +91,7 @@ const fn tok(
 
 /// Every mutation any set can use.
 static MUTATIONS: &[Mutation] = &[
-    // Relational, logical, arithmetic, shift, bitwise and compound-assignment
-    // operators. cargo-mutants-derived entries cite the source line their
-    // replacement was read from.
+    // ror/lt->le: derived from cargo-mutants (visit.rs binary-operator replacement table); derived from Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; derived from Cherenkov design; same as PIT CONDITIONALS_BOUNDARY; same as mutmut; same as go-mutesting; same as Stryker; same as Gremlins; same as Mull; same as Mothra ROR.
     tok(
         "ror/lt->le",
         "ror",
@@ -145,41 +143,71 @@ static MUTATIONS: &[Mutation] = &[
                 name: None,
                 relation: Relation::Same,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // ror/lt->eq: derived from cargo-mutants (visit.rs binary-operator replacement table); same as Mothra ROR.
     tok(
         "ror/lt->eq",
         "ror",
         Lt,
         Eq,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // ror/lt->gt: derived from cargo-mutants (visit.rs binary-operator replacement table); same as Mothra ROR.
     tok(
         "ror/lt->gt",
         "ror",
         Lt,
         Gt,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // ror/lt->ne: derived from Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same as Mothra ROR.
     tok(
         "ror/lt->ne",
         "ror",
         Lt,
         Ne,
-        &[Origin {
-            source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // ror/le->lt: derived from Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; derived from Cherenkov design; same as PIT CONDITIONALS_BOUNDARY; same as mutmut; same as go-mutesting; same as Stryker; same as Gremlins; same as Mull; same as Mothra ROR.
     tok(
         "ror/le->lt",
         "ror",
@@ -226,30 +254,52 @@ static MUTATIONS: &[Mutation] = &[
                 name: None,
                 relation: Relation::Same,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // ror/le->gt: derived from cargo-mutants (visit.rs binary-operator replacement table); same as Mothra ROR.
     tok(
         "ror/le->gt",
         "ror",
         Le,
         Gt,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // ror/le->eq: derived from Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same as Mothra ROR.
     tok(
         "ror/le->eq",
         "ror",
         Le,
         Eq,
-        &[Origin {
-            source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // ror/gt->ge: derived from cargo-mutants (visit.rs binary-operator replacement table); derived from Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; derived from Cherenkov design; same as PIT CONDITIONALS_BOUNDARY; same as mutmut; same as go-mutesting; same as Stryker; same as Gremlins; same as Mull; same as Mothra ROR.
     tok(
         "ror/gt->ge",
         "ror",
@@ -301,41 +351,71 @@ static MUTATIONS: &[Mutation] = &[
                 name: None,
                 relation: Relation::Same,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // ror/gt->eq: derived from cargo-mutants (visit.rs binary-operator replacement table); same as Mothra ROR.
     tok(
         "ror/gt->eq",
         "ror",
         Gt,
         Eq,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // ror/gt->lt: derived from cargo-mutants (visit.rs binary-operator replacement table); same as Mothra ROR.
     tok(
         "ror/gt->lt",
         "ror",
         Gt,
         Lt,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // ror/gt->ne: derived from Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same as Mothra ROR.
     tok(
         "ror/gt->ne",
         "ror",
         Gt,
         Ne,
-        &[Origin {
-            source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // ror/ge->gt: derived from Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; derived from Cherenkov design; same as PIT CONDITIONALS_BOUNDARY; same as mutmut; same as go-mutesting; same as Stryker; same as Gremlins; same as Mull; same as Mothra ROR.
     tok(
         "ror/ge->gt",
         "ror",
@@ -382,30 +462,52 @@ static MUTATIONS: &[Mutation] = &[
                 name: None,
                 relation: Relation::Same,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // ror/ge->lt: derived from cargo-mutants (visit.rs binary-operator replacement table); same as Mothra ROR.
     tok(
         "ror/ge->lt",
         "ror",
         Ge,
         Lt,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // ror/ge->eq: derived from Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same as Mothra ROR.
     tok(
         "ror/ge->eq",
         "ror",
         Ge,
         Eq,
-        &[Origin {
-            source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // ror/eq->ne: derived from cargo-mutants (visit.rs binary-operator replacement table); same as PIT NEGATE_CONDITIONALS; same as Stryker; same as Gremlins; same as Mull; same as Mothra ROR.
     tok(
         "ror/eq->ne",
         "ror",
@@ -437,30 +539,52 @@ static MUTATIONS: &[Mutation] = &[
                 name: None,
                 relation: Relation::Same,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // ror/eq->le: derived from Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same as Mothra ROR.
     tok(
         "ror/eq->le",
         "ror",
         Eq,
         Le,
-        &[Origin {
-            source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // ror/eq->ge: derived from Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same as Mothra ROR.
     tok(
         "ror/eq->ge",
         "ror",
         Eq,
         Ge,
-        &[Origin {
-            source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // ror/ne->eq: derived from cargo-mutants (visit.rs binary-operator replacement table); same as PIT NEGATE_CONDITIONALS; same as Stryker; same as Gremlins; same as Mull; same as Mothra ROR.
     tok(
         "ror/ne->eq",
         "ror",
@@ -492,52 +616,90 @@ static MUTATIONS: &[Mutation] = &[
                 name: None,
                 relation: Relation::Same,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // ror/ne->lt: derived from Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same as Mothra ROR.
     tok(
         "ror/ne->lt",
         "ror",
         Ne,
         Lt,
-        &[Origin {
-            source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // ror/ne->gt: derived from Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; same as Mothra ROR.
     tok(
         "ror/ne->gt",
         "ror",
         Ne,
         Gt,
-        &[Origin {
-            source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("ROR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // lcr/and->or: derived from cargo-mutants (visit.rs binary-operator replacement table); same as Mothra LCR.
     tok(
         "lcr/and->or",
         "lcr",
         And,
         Or,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("LCR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // lcr/or->and: derived from cargo-mutants (visit.rs binary-operator replacement table); same as Mothra LCR.
     tok(
         "lcr/or->and",
         "lcr",
         Or,
         And,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("LCR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // aor/add->sub: derived from cargo-mutants (visit.rs binary-operator replacement table); derived from Dextool AORS; derived from Cherenkov design; same as Mothra AOR.
     tok(
         "aor/add->sub",
         "aor",
@@ -559,19 +721,33 @@ static MUTATIONS: &[Mutation] = &[
                 name: None,
                 relation: Relation::Derived,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // aor/add->mul: derived from cargo-mutants (visit.rs binary-operator replacement table); same as Mothra AOR.
     tok(
         "aor/add->mul",
         "aor",
         Add,
         Mul,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // aor/sub->add: derived from cargo-mutants (visit.rs binary-operator replacement table); derived from Dextool AORS; derived from Cherenkov design; same as Mothra AOR.
     tok(
         "aor/sub->add",
         "aor",
@@ -593,30 +769,52 @@ static MUTATIONS: &[Mutation] = &[
                 name: None,
                 relation: Relation::Derived,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // aor/sub->div: derived from cargo-mutants (visit.rs binary-operator replacement table); same as Mothra AOR.
     tok(
         "aor/sub->div",
         "aor",
         Sub,
         Div,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // aor/mul->add: derived from cargo-mutants (visit.rs binary-operator replacement table); same as Mothra AOR.
     tok(
         "aor/mul->add",
         "aor",
         Mul,
         Add,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // aor/mul->div: derived from cargo-mutants (visit.rs binary-operator replacement table); derived from Dextool AORS; derived from Cherenkov design; same as Mothra AOR.
     tok(
         "aor/mul->div",
         "aor",
@@ -638,8 +836,14 @@ static MUTATIONS: &[Mutation] = &[
                 name: None,
                 relation: Relation::Derived,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // aor/div->mul: derived from cargo-mutants (visit.rs binary-operator replacement table); derived from Dextool AORS; derived from Cherenkov design; same as Mothra AOR.
     tok(
         "aor/div->mul",
         "aor",
@@ -661,19 +865,33 @@ static MUTATIONS: &[Mutation] = &[
                 name: None,
                 relation: Relation::Derived,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // aor/div->rem: derived from cargo-mutants (visit.rs binary-operator replacement table); same as Mothra AOR.
     tok(
         "aor/div->rem",
         "aor",
         Div,
         Rem,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // aor/rem->div: derived from cargo-mutants (visit.rs binary-operator replacement table); derived from Dextool AORS; same as Mothra AOR.
     tok(
         "aor/rem->div",
         "aor",
@@ -690,19 +908,33 @@ static MUTATIONS: &[Mutation] = &[
                 name: Some("AORS"),
                 relation: Relation::Derived,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // aor/rem->add: derived from cargo-mutants (visit.rs binary-operator replacement table); same as Mothra AOR.
     tok(
         "aor/rem->add",
         "aor",
         Rem,
         Add,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // shift/shl->shr: derived from cargo-mutants (visit.rs binary-operator replacement table).
     tok(
         "shift/shl->shr",
         "shift",
@@ -714,6 +946,7 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
+    // shift/shr->shl: derived from cargo-mutants (visit.rs binary-operator replacement table).
     tok(
         "shift/shr->shl",
         "shift",
@@ -725,6 +958,7 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
+    // bitwise/and->or: derived from cargo-mutants (visit.rs binary-operator replacement table).
     tok(
         "bitwise/and->or",
         "bitwise",
@@ -736,6 +970,7 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
+    // bitwise/and->xor: derived from cargo-mutants (visit.rs binary-operator replacement table).
     tok(
         "bitwise/and->xor",
         "bitwise",
@@ -747,6 +982,7 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
+    // bitwise/or->and: derived from cargo-mutants (visit.rs binary-operator replacement table).
     tok(
         "bitwise/or->and",
         "bitwise",
@@ -758,6 +994,7 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
+    // bitwise/or->xor: derived from cargo-mutants (visit.rs binary-operator replacement table).
     tok(
         "bitwise/or->xor",
         "bitwise",
@@ -769,6 +1006,7 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
+    // bitwise/xor->or: derived from cargo-mutants (visit.rs binary-operator replacement table).
     tok(
         "bitwise/xor->or",
         "bitwise",
@@ -780,6 +1018,7 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
+    // bitwise/xor->and: derived from cargo-mutants (visit.rs binary-operator replacement table).
     tok(
         "bitwise/xor->and",
         "bitwise",
@@ -791,9 +1030,10 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
+    // compound-assign/add->sub: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms); derived from Dextool AORS; same as Mothra AOR.
     tok(
-        "aor/add_assign->sub_assign",
-        "aor",
+        "compound-assign/add->sub",
+        "compound-assign",
         AddAssign,
         SubAssign,
         &[
@@ -807,22 +1047,36 @@ static MUTATIONS: &[Mutation] = &[
                 name: Some("AORS"),
                 relation: Relation::Derived,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // compound-assign/add->mul: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms); same as Mothra AOR.
     tok(
-        "aor/add_assign->mul_assign",
-        "aor",
+        "compound-assign/add->mul",
+        "compound-assign",
         AddAssign,
         MulAssign,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // compound-assign/sub->add: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms); derived from Dextool AORS; same as Mothra AOR.
     tok(
-        "aor/sub_assign->add_assign",
-        "aor",
+        "compound-assign/sub->add",
+        "compound-assign",
         SubAssign,
         AddAssign,
         &[
@@ -836,33 +1090,55 @@ static MUTATIONS: &[Mutation] = &[
                 name: Some("AORS"),
                 relation: Relation::Derived,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // compound-assign/sub->div: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms); same as Mothra AOR.
     tok(
-        "aor/sub_assign->div_assign",
-        "aor",
+        "compound-assign/sub->div",
+        "compound-assign",
         SubAssign,
         DivAssign,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // compound-assign/mul->add: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms); same as Mothra AOR.
     tok(
-        "aor/mul_assign->add_assign",
-        "aor",
+        "compound-assign/mul->add",
+        "compound-assign",
         MulAssign,
         AddAssign,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // compound-assign/mul->div: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms); derived from Dextool AORS; same as Mothra AOR.
     tok(
-        "aor/mul_assign->div_assign",
-        "aor",
+        "compound-assign/mul->div",
+        "compound-assign",
         MulAssign,
         DivAssign,
         &[
@@ -876,22 +1152,36 @@ static MUTATIONS: &[Mutation] = &[
                 name: Some("AORS"),
                 relation: Relation::Derived,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // compound-assign/div->rem: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms); same as Mothra AOR.
     tok(
-        "aor/div_assign->rem_assign",
-        "aor",
+        "compound-assign/div->rem",
+        "compound-assign",
         DivAssign,
         RemAssign,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // compound-assign/div->mul: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms); derived from Dextool AORS; same as Mothra AOR.
     tok(
-        "aor/div_assign->mul_assign",
-        "aor",
+        "compound-assign/div->mul",
+        "compound-assign",
         DivAssign,
         MulAssign,
         &[
@@ -905,11 +1195,17 @@ static MUTATIONS: &[Mutation] = &[
                 name: Some("AORS"),
                 relation: Relation::Derived,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // compound-assign/rem->div: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms); derived from Dextool AORS; same as Mothra AOR.
     tok(
-        "aor/rem_assign->div_assign",
-        "aor",
+        "compound-assign/rem->div",
+        "compound-assign",
         RemAssign,
         DivAssign,
         &[
@@ -923,22 +1219,36 @@ static MUTATIONS: &[Mutation] = &[
                 name: Some("AORS"),
                 relation: Relation::Derived,
             },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
         ],
     ),
+    // compound-assign/rem->add: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms); same as Mothra AOR.
     tok(
-        "aor/rem_assign->add_assign",
-        "aor",
+        "compound-assign/rem->add",
+        "compound-assign",
         RemAssign,
         AddAssign,
-        &[Origin {
-            source: "cargo-mutants",
-            name: None,
-            relation: Relation::Derived,
-        }],
+        &[
+            Origin {
+                source: "cargo-mutants",
+                name: None,
+                relation: Relation::Derived,
+            },
+            Origin {
+                source: "Mothra",
+                name: Some("AOR"),
+                relation: Relation::Same,
+            },
+        ],
     ),
+    // compound-assign/shl->shr: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms).
     tok(
-        "shift/shl_assign->shr_assign",
-        "shift",
+        "compound-assign/shl->shr",
+        "compound-assign",
         ShlAssign,
         ShrAssign,
         &[Origin {
@@ -947,9 +1257,10 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
+    // compound-assign/shr->shl: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms).
     tok(
-        "shift/shr_assign->shl_assign",
-        "shift",
+        "compound-assign/shr->shl",
+        "compound-assign",
         ShrAssign,
         ShlAssign,
         &[Origin {
@@ -958,9 +1269,10 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
+    // compound-assign/and->or: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms).
     tok(
-        "bitwise/and_assign->or_assign",
-        "bitwise",
+        "compound-assign/and->or",
+        "compound-assign",
         BitAndAssign,
         BitOrAssign,
         &[Origin {
@@ -969,9 +1281,10 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
+    // compound-assign/or->and: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms).
     tok(
-        "bitwise/or_assign->and_assign",
-        "bitwise",
+        "compound-assign/or->and",
+        "compound-assign",
         BitOrAssign,
         BitAndAssign,
         &[Origin {
@@ -980,9 +1293,10 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
+    // compound-assign/xor->or: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms).
     tok(
-        "bitwise/xor_assign->or_assign",
-        "bitwise",
+        "compound-assign/xor->or",
+        "compound-assign",
         BitXorAssign,
         BitOrAssign,
         &[Origin {
@@ -991,9 +1305,10 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
+    // compound-assign/xor->and: derived from cargo-mutants (visit.rs binary-operator replacement table, assignment forms).
     tok(
-        "bitwise/xor_assign->and_assign",
-        "bitwise",
+        "compound-assign/xor->and",
+        "compound-assign",
         BitXorAssign,
         BitAndAssign,
         &[Origin {
@@ -1002,10 +1317,10 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
-    // Logical connectors as the equality they equal on booleans.
+    // lcr/and->eq: derived from Just & Schweiggert 2014.
     tok(
-        "cor/and->eq",
-        "cor",
+        "lcr/and->eq",
+        "lcr",
         And,
         Eq,
         &[Origin {
@@ -1014,9 +1329,10 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
+    // lcr/or->ne: derived from Just & Schweiggert 2014.
     tok(
-        "cor/or->ne",
-        "cor",
+        "lcr/or->ne",
+        "lcr",
         Or,
         Ne,
         &[Origin {
@@ -1025,7 +1341,7 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     ),
-    // Statements, conditions, returns.
+    // delete-statement/call: derived from Cherenkov design; derived from Just et al. 2014; similar to PIT VOID_METHOD_CALLS (removes calls to void methods only); similar to Mothra SDL (deletes call statements only, not every statement).
     Mutation {
         name: "delete-statement/call",
         family: "delete-statement",
@@ -1046,8 +1362,14 @@ static MUTATIONS: &[Mutation] = &[
                 name: Some("VOID_METHOD_CALLS"),
                 relation: Relation::Similar("removes calls to void methods only"),
             },
+            Origin {
+                source: "Mothra",
+                name: Some("SDL"),
+                relation: Relation::Similar("deletes call statements only, not every statement"),
+            },
         ],
     },
+    // negate-condition: derived from Cherenkov design; similar to PIT NEGATE_CONDITIONALS (negates the relational operator; this negates the whole condition).
     Mutation {
         name: "negate-condition",
         family: "negate-condition",
@@ -1067,6 +1389,7 @@ static MUTATIONS: &[Mutation] = &[
             },
         ],
     },
+    // return-bool-flip: derived from Cherenkov design.
     Mutation {
         name: "return-bool-flip",
         family: "return-bool-flip",
@@ -1077,6 +1400,7 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     },
+    // body-default: derived from Cherenkov design; similar to cargo-mutants FnValue (only the profile's zero value, not cargo-mutants' per-type table).
     Mutation {
         name: "body-default",
         family: "body-default",
@@ -1096,6 +1420,7 @@ static MUTATIONS: &[Mutation] = &[
             },
         ],
     },
+    // fn-value: derived from cargo-mutants FnValue (fnvalue.rs return-value table).
     Mutation {
         name: "fn-value",
         family: "fn-value",
@@ -1106,7 +1431,7 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     },
-    // Match arms and guards, struct literal fields.
+    // match-arm/delete: derived from cargo-mutants MatchArm (visit.rs match-arm deletion).
     Mutation {
         name: "match-arm/delete",
         family: "match-arm",
@@ -1117,6 +1442,7 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     },
+    // match-guard/true: derived from cargo-mutants MatchArmGuard (visit.rs match-guard replacement).
     Mutation {
         name: "match-guard/true",
         family: "match-guard",
@@ -1127,6 +1453,7 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     },
+    // match-guard/false: derived from cargo-mutants MatchArmGuard (visit.rs match-guard replacement).
     Mutation {
         name: "match-guard/false",
         family: "match-guard",
@@ -1137,6 +1464,7 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     },
+    // struct-field/delete: derived from cargo-mutants StructField (visit.rs struct-field deletion).
     Mutation {
         name: "struct-field/delete",
         family: "struct-field",
@@ -1147,7 +1475,7 @@ static MUTATIONS: &[Mutation] = &[
             relation: Relation::Derived,
         }],
     },
-    // Unary operators: deleted, never replaced.
+    // unary/delete-not: derived from cargo-mutants UnaryOperator (visit.rs unary-operator deletion); same as cosmic-ray; same as Dextool UOI.
     Mutation {
         name: "unary/delete-not",
         family: "unary",
@@ -1170,6 +1498,7 @@ static MUTATIONS: &[Mutation] = &[
             },
         ],
     },
+    // unary/delete-neg: derived from cargo-mutants UnaryOperator (visit.rs unary-operator deletion).
     Mutation {
         name: "unary/delete-neg",
         family: "unary",
@@ -1181,6 +1510,116 @@ static MUTATIONS: &[Mutation] = &[
         }],
     },
 ];
+
+/// An operator: one family of replacements, defined without reference to
+/// a language. A set gives each family it uses a table of replacements.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FamilyDef {
+    /// The operator id in mutant IDs, and the head of its replacements' names.
+    pub id: &'static str,
+    /// What the operator does, in terms of the concept it works on.
+    pub definition: &'static str,
+}
+
+const fn def(id: &'static str, definition: &'static str) -> FamilyDef {
+    FamilyDef { id, definition }
+}
+
+/// Every operator. The sources of each family are those of its replacements
+/// (their comments in `MUTATIONS` and their `origins`):
+///
+/// - `ror`: Mothra ROR; cargo-mutants visit.rs; PIT CONDITIONALS_BOUNDARY;
+///   Kaminski et al. 2013 and Just & Schweiggert 2014 (sufficient sets).
+/// - `aor`: Mothra AOR; cargo-mutants visit.rs; Dextool AORS.
+/// - `bitwise`, `shift`: cargo-mutants visit.rs; PIT, mutmut, Gremlins.
+/// - `lcr`: Mothra LCR; cargo-mutants visit.rs; Just & Schweiggert 2014 (COR).
+/// - `compound-assign`: cargo-mutants visit.rs assignment forms; Cherenkov design.
+/// - `unary`, `match-arm`, `match-guard`, `struct-field`, `fn-value`:
+///   cargo-mutants visit.rs and fnvalue.rs.
+/// - `delete-statement`: Just et al. 2014; Mothra SDL; PIT VOID_METHOD_CALLS.
+/// - `negate-condition`, `return-bool-flip`, `body-default`: Cherenkov design.
+static FAMILIES: &[FamilyDef] = &[
+    def(
+        "ror",
+        "Replace a relational operator with another relational operator.",
+    ),
+    def(
+        "aor",
+        "Replace an arithmetic operator with another arithmetic operator.",
+    ),
+    def(
+        "bitwise",
+        "Replace a bitwise operator with another bitwise operator.",
+    ),
+    def("shift", "Replace a shift operator with the opposite shift."),
+    def(
+        "lcr",
+        "Replace a logical connector with the other connector, or with an equality test of its operands.",
+    ),
+    def(
+        "compound-assign",
+        "Replace the operator of a compound assignment with another operator of its kind.",
+    ),
+    def("unary", "Delete a unary operator, keeping its operand."),
+    def(
+        "match-guard",
+        "Replace a match arm's guard with a constant boolean.",
+    ),
+    def(
+        "match-arm",
+        "Delete a match arm, when the match has a catch-all arm.",
+    ),
+    def(
+        "struct-field",
+        "Delete a field of a struct literal whose omitted fields take a default.",
+    ),
+    def(
+        "fn-value",
+        "Replace a function body with each value the language profile generates for its result type.",
+    ),
+    def("delete-statement", "Delete a call statement."),
+    def("negate-condition", "Negate the condition of an if or loop."),
+    def(
+        "return-bool-flip",
+        "Replace a returned boolean literal with its opposite.",
+    ),
+    def(
+        "body-default",
+        "Replace a function body with the zero value of its result type.",
+    ),
+];
+
+/// The language-neutral definition of the family called `id`.
+pub fn family_definition(id: &str) -> Option<&'static str> {
+    FAMILIES.iter().find(|f| f.id == id).map(|f| f.definition)
+}
+
+/// An operator with every replacement any set gives it.
+#[derive(Debug, Clone)]
+pub struct Family {
+    pub id: &'static str,
+    pub definition: &'static str,
+    pub replacements: Vec<&'static Mutation>,
+}
+
+/// The operators, each with the replacements of all sets: the inventory.
+pub fn families() -> Vec<Family> {
+    FAMILIES
+        .iter()
+        .map(|f| Family {
+            id: f.id,
+            definition: f.definition,
+            replacements: MUTATIONS.iter().filter(|m| m.family == f.id).collect(),
+        })
+        .collect()
+}
+
+/// An operator as one set uses it: that set's replacements of the family.
+#[derive(Debug, Clone)]
+pub struct FamilyTable {
+    pub family: &'static str,
+    pub replacements: Vec<&'static Mutation>,
+}
 
 /// The superset of named mutations.
 pub fn mutations() -> &'static [Mutation] {
@@ -1258,6 +1697,26 @@ impl Operator for Honouring {
 }
 
 impl OperatorSet {
+    /// The set's operators, each with its table of replacements, families in
+    /// order of first appearance in the set.
+    pub fn tables(&self) -> Vec<FamilyTable> {
+        let mut tables: Vec<FamilyTable> = Vec::new();
+        for name in self.mutations {
+            let m = MUTATIONS
+                .iter()
+                .find(|m| m.name == *name)
+                .unwrap_or_else(|| panic!("set {}: no mutation named {name:?}", self.name));
+            match tables.iter_mut().find(|t| t.family == m.family) {
+                Some(table) => table.replacements.push(m),
+                None => tables.push(FamilyTable {
+                    family: m.family,
+                    replacements: vec![m],
+                }),
+            }
+        }
+        tables
+    }
+
     /// The set's operators, declining test code too unless `include_tests`:
     /// cargo-mutants leaves test code alone, and so does every set by default.
     pub fn operators_for(&self, include_tests: bool) -> Vec<Box<dyn Operator>> {
@@ -1394,7 +1853,16 @@ fn family_operator(family: &'static str, rules: &[Rule]) -> Box<dyn Operator> {
 /// each token occurs in only one of them.
 const BINARY: &[Concept] = &[Concept::Binary, Concept::CompoundAssign];
 
-/// Every named set; the first is the default.
+/// The set a run uses for `lang` when none is asked for: cargo-mutants'
+/// for Rust (parity with it), the prototype's `breadth` for the others.
+pub fn default_set_name(lang: &str) -> &'static str {
+    match lang {
+        "rust" => "cargo-mutants",
+        _ => "breadth",
+    }
+}
+
+/// Every named set.
 pub fn registry() -> Vec<OperatorSet> {
     vec![breadth(), cargo_mutants(), sufficient()]
 }
@@ -1461,22 +1929,22 @@ fn cargo_mutants() -> OperatorSet {
             "bitwise/or->xor",
             "bitwise/xor->or",
             "bitwise/xor->and",
-            "aor/add_assign->sub_assign",
-            "aor/add_assign->mul_assign",
-            "aor/sub_assign->add_assign",
-            "aor/sub_assign->div_assign",
-            "aor/mul_assign->add_assign",
-            "aor/mul_assign->div_assign",
-            "aor/div_assign->rem_assign",
-            "aor/div_assign->mul_assign",
-            "aor/rem_assign->div_assign",
-            "aor/rem_assign->add_assign",
-            "shift/shl_assign->shr_assign",
-            "shift/shr_assign->shl_assign",
-            "bitwise/and_assign->or_assign",
-            "bitwise/or_assign->and_assign",
-            "bitwise/xor_assign->or_assign",
-            "bitwise/xor_assign->and_assign",
+            "compound-assign/add->sub",
+            "compound-assign/add->mul",
+            "compound-assign/sub->add",
+            "compound-assign/sub->div",
+            "compound-assign/mul->add",
+            "compound-assign/mul->div",
+            "compound-assign/div->rem",
+            "compound-assign/div->mul",
+            "compound-assign/rem->div",
+            "compound-assign/rem->add",
+            "compound-assign/shl->shr",
+            "compound-assign/shr->shl",
+            "compound-assign/and->or",
+            "compound-assign/or->and",
+            "compound-assign/xor->or",
+            "compound-assign/xor->and",
             "unary/delete-not",
             "unary/delete-neg",
             "match-arm/delete",
@@ -1511,8 +1979,8 @@ fn sufficient() -> OperatorSet {
             "ror/eq->ge",
             "ror/ne->lt",
             "ror/ne->gt",
-            "cor/and->eq",
-            "cor/or->ne",
+            "lcr/and->eq",
+            "lcr/or->ne",
             "aor/add->sub",
             "aor/sub->add",
             "aor/mul->div",
@@ -1523,23 +1991,23 @@ fn sufficient() -> OperatorSet {
             "bitwise/and->or",
             "bitwise/or->and",
             "bitwise/xor->and",
-            "aor/add_assign->sub_assign",
-            "aor/sub_assign->add_assign",
-            "aor/mul_assign->div_assign",
-            "aor/div_assign->mul_assign",
-            "aor/rem_assign->div_assign",
-            "shift/shl_assign->shr_assign",
-            "shift/shr_assign->shl_assign",
-            "bitwise/and_assign->or_assign",
-            "bitwise/or_assign->and_assign",
-            "bitwise/xor_assign->and_assign",
+            "compound-assign/add->sub",
+            "compound-assign/sub->add",
+            "compound-assign/mul->div",
+            "compound-assign/div->mul",
+            "compound-assign/rem->div",
+            "compound-assign/shl->shr",
+            "compound-assign/shr->shl",
+            "compound-assign/and->or",
+            "compound-assign/or->and",
+            "compound-assign/xor->and",
             "delete-statement/call",
             "fn-value",
         ],
         pending: &[
             "ror: predicate -> true/false",
             "ror: type-specific limits (bool, floats)",
-            "cor: lhs, rhs, true/false",
+            "lcr: lhs, rhs, true/false (Just & Schweiggert 2014 COR)",
             "unary operator deletion",
             "statement deletion beyond call statements (assignments, return, break, continue)",
             "break <-> continue",

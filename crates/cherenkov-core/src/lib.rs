@@ -12,6 +12,7 @@ pub mod diff;
 pub mod edit;
 pub mod execution;
 pub mod id;
+pub mod inventory;
 pub mod operator;
 pub mod operator_set;
 pub mod plan;
