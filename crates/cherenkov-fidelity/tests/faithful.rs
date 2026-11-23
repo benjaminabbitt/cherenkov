@@ -344,3 +344,79 @@ fn test_arithmetic_found_by_column_runs_on_tier_p_and_is_faithful_to_its_source(
         }
     }
 }
+
+/// Bodies replaced by a trivial value, whose stub tier P writes from the
+/// shapes table (each is faithful to its source mutant, and runs on tier P).
+const STUBBED: &[(&str, &str)] = &[
+    ("flag", "true"),
+    ("digit", "1"),
+    ("sign", "1"),
+    ("sign", "-1"),
+    ("narrow", "1"),
+    ("narrow", "-1"),
+    ("small", "1"),
+    ("maybe", "None"),
+    ("verdict", "None"),
+    ("index_of", "None"),
+    ("status", "Ok(())"),
+    ("fits", "Ok(())"),
+];
+
+/// The value a body is replaced by.
+fn value_of(plan: &MutantPlan) -> Option<&str> {
+    match &plan.action {
+        cherenkov_core::plan::Action::ReturnDefault {
+            value_text: Some(v),
+            ..
+        } => Some(v),
+        _ => None,
+    }
+}
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_trivial_value_stubs_run_on_tier_p_and_are_faithful_to_their_source() {
+    let checked = check_rust_tiers(&fixture("rust-ops"), "cargo-mutants");
+    for &(function, value) in STUBBED {
+        let found: Vec<_> = checked
+            .iter()
+            .filter(|(p, _, _)| {
+                p.function.as_deref() == Some(function) && value_of(p) == Some(value)
+            })
+            .collect();
+        assert_eq!(found.len(), 1, "{function} {value}");
+        for (plan, c, tier) in found {
+            assert_eq!(
+                (c, tier),
+                (&Checked::Judged(Judgement::Faithful), &Some(Tier::P)),
+                "{}",
+                plan.describe()
+            );
+        }
+    }
+}
+
+/// Values without a shape in the table are declined by tier P and run on
+/// tier B, still faithful: a result returned through memory, a float.
+const NOT_STUBBED: &[(&str, &str)] = &[("check", "Ok(())"), ("blend", "1.0")];
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_trivial_values_without_a_shape_are_declined_by_tier_p_and_stay_faithful() {
+    let checked = check_rust_tiers(&fixture("rust-ops"), "cargo-mutants");
+    for &(function, value) in NOT_STUBBED {
+        let mut found = checked.iter().filter(|(p, _, _)| {
+            p.function.as_deref() == Some(function) && value_of(p) == Some(value)
+        });
+        let (plan, c, tier) = found.next().unwrap_or_else(|| panic!("{function} {value}"));
+        assert_ne!(tier, &Some(Tier::P), "{}", plan.describe());
+        assert!(
+            matches!(
+                c,
+                Checked::Judged(Judgement::Faithful | Judgement::Unviable)
+            ),
+            "{}: {c:?}",
+            plan.describe()
+        );
+    }
+}

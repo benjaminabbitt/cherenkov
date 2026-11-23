@@ -648,3 +648,33 @@ pub fn blend(a: f64, b: f64) -> f64 {
 pub fn area(w: f64, h: f64) -> f64 {
     keep_f(w * h)
 }
+
+/// Functions whose result is a trivial value's type: the stubs of tier P
+/// return `1`, `-1`, `None` and `Ok(())` of each of these exactly.
+pub fn sign(n: i64) -> i64 {
+    n.signum()
+}
+
+pub fn narrow(n: i64) -> i32 {
+    n.clamp(-5, 5) as i32
+}
+
+pub fn small(n: i64) -> u16 {
+    n.clamp(0, 9) as u16
+}
+
+pub fn verdict(n: i64) -> Option<bool> {
+    if n < 0 { None } else { Some(n > 3) }
+}
+
+pub fn index_of(n: i64) -> Option<u32> {
+    u32::try_from(n).ok()
+}
+
+pub fn status(n: i64) -> Result<(), u8> {
+    if n < 0 { Err(7) } else { Ok(()) }
+}
+
+pub fn fits(n: i64) -> Result<(), std::num::TryFromIntError> {
+    u8::try_from(n).map(|_| ())
+}

@@ -14,7 +14,7 @@ use cherenkov_core::syntax::Pos;
 use cherenkov_core::token::Token;
 
 use crate::isa::Isa;
-use crate::tierp::{Insn, Patch, Unpatchable, derive};
+use crate::tierp::{Insn, Patch, Unpatchable, derive, derive_returning};
 
 /// One function's instructions, with the path its debug info reports for
 /// the requested source file (instructions from other files are inlined code).
@@ -1062,8 +1062,8 @@ impl<L: Launcher> TierPExecutor<L> {
         )
     }
 
-    /// Whether the function returns an integer wider than one register.
-    fn wide_result(&self, code: &FunctionCode) -> bool {
+    /// The layout of the function's result, from the program's DWARF.
+    fn result_layout(&self, code: &FunctionCode) -> Option<crate::layouts::Layout> {
         let layouts = self
             .layouts
             .get_or_init(|| {
@@ -1071,16 +1071,29 @@ impl<L: Launcher> TierPExecutor<L> {
                     .binary()
                     .and_then(|b| crate::layouts::Layouts::read(b).ok())
             })
-            .as_ref();
+            .as_ref()?;
         let bias = self.bias.get().copied().unwrap_or(0);
-        let entry = code.insns.iter().map(|i| i.pc).min();
+        let entry = code.insns.iter().map(|i| i.pc).min()?;
+        layouts.result_of(entry.wrapping_sub(bias))
+    }
+
+    /// Whether the function returns an integer wider than one register.
+    fn wide_result(&self, code: &FunctionCode) -> bool {
         matches!(
-            (layouts, entry),
-            (Some(l), Some(e)) if matches!(
-                l.result_of(e.wrapping_sub(bias)),
-                Some(crate::layouts::Layout::Int { size, .. }) if size > 8
-            )
+            self.result_layout(code),
+            Some(crate::layouts::Layout::Int { size, .. }) if size > 8
         )
+    }
+
+    /// The tier P patch of `plan` over one copy of its function. A body
+    /// replaced by a trivial value is a stub from the shapes table, chosen
+    /// by the layout of the copy's result.
+    fn derive_copy(&self, plan: &MutantPlan, code: &FunctionCode) -> Result<Patch, Unpatchable> {
+        let result = match plan.action {
+            Action::ReturnDefault { .. } => self.result_layout(code),
+            _ => None,
+        };
+        derive_returning(plan, &code.file, &code.insns, &self.isa, result.as_ref())
     }
 
     fn acquire(&mut self) -> Result<L::Session, ExecError> {
@@ -1156,7 +1169,7 @@ impl<L: Launcher> TierPExecutor<L> {
         // mutant it would need is refused rather than applied to one copy.
         let mut others = Vec::new();
         for copy in rest {
-            match derive(plan, &copy.file, &copy.insns, &self.isa) {
+            match self.derive_copy(plan, copy) {
                 Ok(p) => others.extend(p.regions),
                 Err(e) if effect_of(plan).is_some() => return Derived::TierB(e),
                 Err(e) => {
@@ -1166,7 +1179,7 @@ impl<L: Launcher> TierPExecutor<L> {
                 }
             }
         }
-        let derived = match derive(plan, &code.file, &code.insns, &self.isa) {
+        let derived = match self.derive_copy(plan, code) {
             // The return stub clears only the first result register: a
             // wider integer result (i128, u128) would keep its upper half.
             Ok(_)

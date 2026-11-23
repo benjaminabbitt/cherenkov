@@ -617,3 +617,26 @@ fn test_blend_and_area() {
     assert_eq!(blend(5.5, 2.0), 3.5);
     assert_eq!(area(2.0, 4.0), 8.0);
 }
+
+#[test]
+fn test_sign_narrow_and_small() {
+    assert_eq!(sign(-9), -1);
+    assert_eq!(sign(9), 1);
+    assert_eq!(sign(0), 0);
+    assert_eq!(narrow(-100), -5);
+    assert_eq!(narrow(100), 5);
+    assert_eq!(small(100), 9);
+}
+
+#[test]
+fn test_verdict_index_of_status_and_fits() {
+    assert_eq!(verdict(-1), None);
+    assert_eq!(verdict(5), Some(true));
+    assert_eq!(verdict(2), Some(false));
+    assert_eq!(index_of(-1), None);
+    assert_eq!(index_of(4), Some(4));
+    assert_eq!(status(-1), Err(7));
+    assert_eq!(status(1), Ok(()));
+    assert!(fits(3).is_ok());
+    assert!(fits(300).is_err());
+}
