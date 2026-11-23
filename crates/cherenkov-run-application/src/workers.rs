@@ -306,12 +306,25 @@ fn run_one(
     let seen = match executor.run_with_output(plan, budget) {
         Ok((raw, output)) => {
             let detected = classify(&raw).verdict.detected();
-            let killed_by = if detected {
-                explain(&output)
+            let killed_by = explain(&output);
+            if !detected && !killed_by.is_empty() {
+                // The exit status and the report disagree: neither can be
+                // trusted, and a survivor is not to be claimed from either.
+                let tests: Vec<&str> = killed_by.iter().map(|k| k.test.as_str()).collect();
+                Seen::Failed {
+                    reason: format!(
+                        "the run's exit status says it passed (exit code 0) but its output reports failed test(s): {}",
+                        tests.join(", ")
+                    ),
+                }
+            } else if detected {
+                Seen::Observed { raw, killed_by }
             } else {
-                Vec::new()
-            };
-            Seen::Observed { raw, killed_by }
+                Seen::Observed {
+                    raw,
+                    killed_by: Vec::new(),
+                }
+            }
         }
         Err(e) => Seen::Failed {
             reason: e.to_string(),

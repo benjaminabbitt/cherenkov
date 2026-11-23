@@ -386,3 +386,45 @@ fn test_a_failing_exit_with_no_failed_test_in_the_output_is_killed_not_survived(
     );
     assert!(killed_by.is_empty(), "no failed test to name");
 }
+
+/// Exits 0 although its output names a failed test.
+struct PassesWithAFailure;
+
+impl MutantExecutor for PassesWithAFailure {
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+        Ok(exited(0))
+    }
+
+    fn run_with_output(
+        &mut self,
+        _: &MutantPlan,
+        _: Budget,
+    ) -> Result<(RawOutcome, String), ExecError> {
+        Ok((exited(0), "FAILED test_a".to_string()))
+    }
+
+    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+        Ok(exited(0))
+    }
+}
+
+#[test]
+fn test_a_passing_exit_whose_output_names_a_failed_test_is_a_failure_not_a_survivor() {
+    let plan = plans().remove(0);
+    let mut executor = PassesWithAFailure;
+    let ran = run_one(
+        0,
+        &mut executor,
+        Budget::from_baseline(Duration::from_secs(1)),
+        Driven::Every,
+        &plan,
+        explain,
+    );
+    let Seen::Failed { reason } = ran.seen else {
+        panic!("a contradictory run was judged: {:?}", ran.seen);
+    };
+    assert!(
+        reason.contains("exit code 0") && reason.contains("test_a"),
+        "{reason}"
+    );
+}
