@@ -10,9 +10,13 @@ mod cases;
 mod compile;
 mod driver;
 mod exe;
+mod harvest;
 mod run;
 mod snippets;
 mod table;
+mod value_driver;
+mod value_gate;
+mod values;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -48,8 +52,11 @@ impl Verdict {
 struct Scratch(PathBuf);
 
 impl Scratch {
-    fn new() -> Scratch {
-        let dir = std::env::temp_dir().join(format!("cherenkov-tierp-gate-{}", std::process::id()));
+    fn new(name: &str) -> Scratch {
+        let dir = std::env::temp_dir().join(format!(
+            "cherenkov-tierp-gate-{}-{name}",
+            std::process::id()
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("scratch directory");
         Scratch(dir)
@@ -70,13 +77,13 @@ fn derived(exe: &Exe, case: &Case, isa: &Isa) -> Result<(Patch, Option<Shape>), 
         .map_err(|e: Unpatchable| e.to_string())
 }
 
-fn write_patched(original: &Path, exe: &Exe, to: &Path) {
+pub(crate) fn write_patched(original: &Path, exe: &Exe, to: &Path) {
     std::fs::write(to, &exe.bytes).expect("write the patched executable");
     let perms = std::fs::metadata(original).expect("metadata").permissions();
     std::fs::set_permissions(to, perms).expect("permissions");
 }
 
-fn judge(orig: Outcome, mutant: Outcome, patched: Outcome) -> Verdict {
+pub(crate) fn judge(orig: Outcome, mutant: Outcome, patched: Outcome) -> Verdict {
     if matches!(patched, Outcome::Crashed) {
         return Verdict::Crashed;
     }
@@ -97,9 +104,16 @@ struct Findings {
 }
 
 fn gate(cases: &[Case]) -> Findings {
-    let work = Scratch::new();
+    let work = Scratch::new("arith");
     let started = std::time::Instant::now();
-    let built = compile::build(&work.0, cases);
+    let main = driver::main_source(cases);
+    let units = compile::units(cases);
+    let krate = compile::Crate {
+        support: driver::SUPPORT,
+        main: &main,
+        units: &units,
+    };
+    let built = compile::build(&work.0, &krate);
     eprintln!("compiled both executables in {:?}", started.elapsed());
     let isa = Isa::amd64_unfiltered();
     let mut patched_exe = Exe::read(&built.original);
@@ -214,4 +228,43 @@ fn test_tier_p_patches_behave_like_the_rustc_mutants_they_stand_for() {
             "isa/tierp-shapes.toml is not what the gate finds: run `just tierp-harvest`"
         );
     }
+}
+
+/// The stubs a mutant that returns a trivial value needs.
+#[test]
+fn test_non_zero_scalar_stubs_are_patched_like_their_rustc_mutants() {
+    let cases = values::all();
+    let isa = Isa::amd64_unfiltered().with_abi("sysv").expect("sysv");
+    let found = value_gate::gate(&cases, &isa);
+    let scalar = |c: &&values::ValueCase| {
+        [
+            "bool", "i8", "i16", "i32", "i64", "isize", "u8", "u16", "u32", "u64", "usize",
+        ]
+        .contains(&c.result.ty)
+            && ["true", "1", "-1"].contains(&c.value.as_str())
+    };
+    let unpatched: Vec<String> = cases
+        .iter()
+        .filter(scalar)
+        .filter(|c| matches!(found.verdicts[&c.id], Verdict::Declined(_)))
+        .map(|c| format!("{} {}", c.result.ty, c.value))
+        .collect();
+    assert!(
+        found.verdicts.values().all(|v| !v.wrong()),
+        "patches that do not behave like their mutants"
+    );
+    let unharvested: Vec<String> = cases
+        .iter()
+        .filter(scalar)
+        .filter_map(|c| {
+            Some(format!(
+                "{} {}: {}",
+                c.result.ty,
+                c.value,
+                found.harvested[&c.id].clone().err()?
+            ))
+        })
+        .collect();
+    assert_eq!(unharvested, Vec::<String>::new());
+    assert_eq!(unpatched, Vec::<String>::new());
 }

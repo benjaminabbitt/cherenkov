@@ -6,7 +6,26 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::cases::Case;
-use crate::driver;
+
+/// One module of a gate executable: its file's stem, and its text in the
+/// original and in the mutant.
+pub struct Unit {
+    pub name: String,
+    pub original: String,
+    pub mutated: String,
+}
+
+/// The module of each arithmetic case.
+pub fn units(cases: &[Case]) -> Vec<Unit> {
+    cases
+        .iter()
+        .map(|c| Unit {
+            name: format!("s_{}", c.id),
+            original: c.snippet.source.clone(),
+            mutated: c.mutated.clone(),
+        })
+        .collect()
+}
 
 /// The `rustc -vV` of the toolchain on `PATH`.
 pub fn rustc_version() -> String {
@@ -28,17 +47,20 @@ pub fn rustc_identity() -> String {
     format!("{} ({})", field("release:"), field("commit-hash:"))
 }
 
-fn write_crate(dir: &Path, cases: &[Case], mutated: bool) {
+/// What a gate executable is made of besides its modules.
+pub struct Crate<'a> {
+    pub support: &'a str,
+    pub main: &'a str,
+    pub units: &'a [Unit],
+}
+
+fn write_crate(dir: &Path, krate: &Crate<'_>, mutated: bool) {
     std::fs::create_dir_all(dir).expect("scratch directory");
-    std::fs::write(dir.join("support.rs"), driver::SUPPORT).expect("write support");
-    std::fs::write(dir.join("main.rs"), driver::main_source(cases)).expect("write main");
-    for c in cases {
-        let text = if mutated {
-            &c.mutated
-        } else {
-            &c.snippet.source
-        };
-        std::fs::write(dir.join(format!("s_{}.rs", c.id)), text).expect("write snippet");
+    std::fs::write(dir.join("support.rs"), krate.support).expect("write support");
+    std::fs::write(dir.join("main.rs"), krate.main).expect("write main");
+    for u in krate.units {
+        let text = if mutated { &u.mutated } else { &u.original };
+        std::fs::write(dir.join(format!("{}.rs", u.name)), text).expect("write snippet");
     }
 }
 
@@ -68,12 +90,12 @@ pub struct Built {
     pub mutant: PathBuf,
 }
 
-pub fn build(work: &Path, cases: &[Case]) -> Built {
+pub fn build(work: &Path, krate: &Crate<'_>) -> Built {
     let mut children = Vec::new();
     let mut exes = Vec::new();
     for (name, mutated) in [("original", false), ("mutant", true)] {
         let dir = work.join(name);
-        write_crate(&dir, cases, mutated);
+        write_crate(&dir, krate, mutated);
         let exe = work.join(format!("{name}.exe"));
         children.push(rustc(&dir, &exe).expect("rustc starts"));
         exes.push(exe);
