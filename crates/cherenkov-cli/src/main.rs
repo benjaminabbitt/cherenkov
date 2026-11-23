@@ -35,8 +35,8 @@ use cherenkov_core::session::{FileProblem, ProjectPlan};
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::Settings;
 use cherenkov_syntax::TreeSitterSyntax;
-use clap::{Args, Parser, Subcommand, ValueEnum};
-use cli_support::{Exit, Failure, usage_exit};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use cli_support::{Exit, Failure, detailed_exitcode, detailed_exitcode_arg, usage_exit};
 
 use crate::error::CliError;
 use crate::output::Listed;
@@ -190,19 +190,34 @@ fn catalog() -> Result<Catalog, CatalogError> {
     Catalog::en_us(&sources)
 }
 
+/// Whether the raw command line asked for `--detailed-exitcode`, for the
+/// exits that come before it is parsed.
+fn asked_detailed() -> bool {
+    std::env::args().any(|a| a == "--detailed-exitcode")
+}
+
+/// The command line, and whether it asked for every success to exit 16-31.
+fn parse() -> Result<(Cli, bool), clap::Error> {
+    let matches = Cli::command()
+        .arg(detailed_exitcode_arg())
+        .try_get_matches()?;
+    let detailed = detailed_exitcode(&matches);
+    Ok((Cli::from_arg_matches(&matches)?, detailed))
+}
+
 fn main() -> ExitCode {
     let catalog = match catalog() {
         Ok(catalog) => catalog,
         Err(e) => {
             eprintln!("{PROG}: {e}");
-            return Exit::FAILED.process(false);
+            return Exit::FAILED.process(asked_detailed());
         }
     };
-    let cli = match Cli::try_parse() {
-        Ok(cli) => cli,
+    let (cli, detailed) = match parse() {
+        Ok(parsed) => parsed,
         Err(e) => {
             let _ = e.print();
-            return usage_exit(&e).process(false);
+            return usage_exit(&e).process(asked_detailed());
         }
     };
     let (format, result) = match cli.command {
@@ -278,11 +293,11 @@ fn main() -> ExitCode {
         }
     };
     match result {
-        Ok(()) => Exit::OK.process(false),
+        Ok(()) => Exit::OK.process(detailed),
         Err(error) => {
             let failure = Failure::of(error);
             let _ = failure.say(PROG, format, &catalog, &mut std::io::stderr());
-            failure.exit.process(false)
+            failure.exit.process(detailed)
         }
     }
 }

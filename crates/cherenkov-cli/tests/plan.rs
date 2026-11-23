@@ -493,3 +493,29 @@ fn test_a_successful_plan_exits_zero_without_the_detailed_flag() {
     let out = cherenkov(&["plan", fixtures().join("go").to_str().unwrap()]);
     assert_eq!(out.status.code(), Some(0));
 }
+
+#[test]
+fn test_a_successful_plan_exits_16_under_detailed_exitcode() {
+    let dir = fixtures().join("go");
+    let out = cherenkov(&["plan", dir.to_str().unwrap(), "--detailed-exitcode"]);
+    assert_eq!(out.status.code(), Some(16));
+    let out = cherenkov(&["--detailed-exitcode", "plan", dir.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(16), "the flag is global");
+}
+
+#[test]
+fn test_failures_and_usage_errors_keep_their_codes_under_detailed_exitcode() {
+    let out = cherenkov(&["plan", "/no/such/dir", "--detailed-exitcode"]);
+    assert_eq!(out.status.code(), Some(32));
+    let out = cherenkov(&["plan", "--no-such-flag", "--detailed-exitcode"]);
+    assert_eq!(out.status.code(), Some(48));
+}
+
+#[test]
+fn test_help_exits_zero_and_sixteen_under_detailed_exitcode() {
+    assert_eq!(cherenkov(&["--help"]).status.code(), Some(0));
+    assert_eq!(
+        cherenkov(&["--help", "--detailed-exitcode"]).status.code(),
+        Some(16)
+    );
+}
