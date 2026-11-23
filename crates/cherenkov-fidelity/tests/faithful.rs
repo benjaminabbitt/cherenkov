@@ -258,6 +258,11 @@ const ACCEPTED_REFUSALS: &[(&str, &str, &str)] = &[
         "`+=` to `*=` on an integer has no tier P rule, and GDB cannot call the map's entry",
     ),
     (
+        "drained",
+        "unary/delete-not",
+        "`!f` of a bool stored then read by a jump has no patch, and GDB cannot call Vec::is_empty",
+    ),
+    (
         "named_later",
         "ror/gt->lt",
         "an async block's poll returns Poll<Option<String>>: GDB returns only scalars",
@@ -279,6 +284,20 @@ const ACCEPTED_REFUSALS: &[(&str, &str, &str)] = &[
 fn test_every_cargo_mutants_mutant_of_rust_ops_is_faithful_unviable_or_an_accepted_refusal() {
     // Unviable: the source mutant does not compile, as cargo-mutants finds.
     let checked = check_rust(&fixture("rust-ops"), "cargo-mutants");
+    let refused = checked
+        .iter()
+        .filter(|(_, c)| matches!(c, Checked::Unsupported(_)))
+        .count();
+    eprintln!("{} mutants, {refused} unsupported", checked.len());
+    for (p, c) in &checked {
+        if let Checked::Unsupported(why) = c {
+            eprintln!(
+                "unsupported {} [{}]: {why}",
+                p.describe(),
+                p.mutation.unwrap_or("?")
+            );
+        }
+    }
     let key = |p: &cherenkov_core::plan::MutantPlan| {
         (
             p.function.clone().unwrap_or_default(),
@@ -351,6 +370,50 @@ const BY_COLUMN: &[(&str, &str)] = &[
 fn test_arithmetic_found_by_column_runs_on_tier_p_and_is_faithful_to_its_source() {
     let checked = check_rust_tiers(&fixture("rust-ops"), "cargo-mutants");
     for &(function, mutation) in BY_COLUMN {
+        let mut found = checked.iter().filter(|(p, _, _)| {
+            p.function.as_deref() == Some(function) && p.mutation == Some(mutation)
+        });
+        assert!(
+            found.clone().next().is_some(),
+            "no {mutation} in {function}"
+        );
+        for (plan, c, tier) in found.by_ref() {
+            assert_eq!(
+                (c, tier),
+                (&Checked::Judged(Judgement::Faithful), &Some(Tier::P)),
+                "{}",
+                plan.describe()
+            );
+        }
+    }
+}
+
+/// Comparisons whose flags are read by the instruction at their own
+/// operands (a jump out of an `&&`/`||` chain, a `setcc`, a closure's
+/// result), with calls among the operands: each must run on tier P and give
+/// the verdict of the source build.
+const CONDITIONS: &[(&str, &str)] = &[
+    ("pending", "ror/gt->ge"),
+    ("pending", "ror/gt->eq"),
+    ("busy", "ror/ge->lt"),
+    ("enough", "ror/ge->lt"),
+    ("fewer", "ror/lt->le"),
+    ("fewer", "ror/lt->eq"),
+    ("fewer", "ror/lt->gt"),
+    ("keyed", "ror/gt->ge"),
+    ("large", "ror/ge->lt"),
+    ("both", "ror/gt->ge"),
+    ("both", "ror/le->gt"),
+    ("either", "ror/gt->ge"),
+    ("above", "ror/gt->ge"),
+    ("same_len", "ror/eq->ne"),
+];
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_conditions_with_calls_run_on_tier_p_and_are_faithful_to_their_source() {
+    let checked = check_rust_tiers(&fixture("rust-ops"), "cargo-mutants");
+    for &(function, mutation) in CONDITIONS {
         let mut found = checked.iter().filter(|(p, _, _)| {
             p.function.as_deref() == Some(function) && p.mutation == Some(mutation)
         });

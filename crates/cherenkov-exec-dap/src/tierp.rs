@@ -13,6 +13,13 @@ use crate::shapes::{Check, Kind, Shape};
 use crate::x86;
 
 mod column;
+mod compare;
+
+/// Every shape of comparison patch the rules can make.
+pub(crate) fn compare_universe(isa: &Isa) -> Vec<Shape> {
+    compare::universe(isa)
+}
+
 use column::{Shaped, arithmetic_at, is_rust, memory_source, shape_of};
 
 /// One instruction of the function under mutation.
@@ -201,6 +208,9 @@ pub fn derive_shaped(
     if let Some(done) = arithmetic_route(plan, &ours, isa) {
         return done.map(|s| (s.patch, Some(s.shape)));
     }
+    if let Some(done) = comparison_route(plan, &ours, isa) {
+        return done.map(|s| (s.patch, Some(s.shape)));
+    }
     derive_other(plan, file, insns, isa).map(|patch| (patch, None))
 }
 
@@ -224,6 +234,26 @@ fn arithmetic_route(
             Some(arithmetic_at(plan, *from, *with, ours, isa))
         }
         _ => None,
+    }
+}
+
+/// A comparison operator replacement, found by the column of its operands.
+/// `None` where its code is not found that way: another rule may place it.
+fn comparison_route(
+    plan: &MutantPlan,
+    ours: &[&Insn],
+    isa: &Isa,
+) -> Option<Result<Shaped, Unpatchable>> {
+    let Edit::ReplaceToken { from, with, .. } = &plan.edit else {
+        return None;
+    };
+    if !(compare::is_comparison(*from) && compare::is_comparison(*with)) {
+        return None;
+    }
+    match compare::comparison_at(plan, *from, *with, ours, isa) {
+        Ok(shaped) => Some(Ok(shaped)),
+        Err(compare::Refused::Elsewhere) => None,
+        Err(compare::Refused::Declined(why)) => Some(Err(why)),
     }
 }
 
@@ -535,23 +565,13 @@ fn branch_token_swap(
     isa: &Isa,
 ) -> Result<Patch, Unpatchable> {
     let site = branch_site(&plan.stop_at, then, guard_arm(plan), ours, isa)?;
-    // The condition code that holds when the source condition does.
-    let holds = if site.taken_when_true {
-        site.jcc.cc
-    } else {
-        isa.inverse(site.jcc.cc)
-    };
-    let mutated = mutated_condition(isa, holds, from, with).ok_or_else(|| {
+    let domain = compare::domain_before(ours, site.insn);
+    let cc = compare::mutated_cc(isa, domain, from, with, site.jcc.cc).ok_or_else(|| {
         Unpatchable::ConditionMismatch {
             cc: isa.cc_name(site.jcc.cc).unwrap_or("?").to_string(),
             token: from.name().to_string(),
         }
     })?;
-    let cc = if site.taken_when_true {
-        mutated
-    } else {
-        isa.inverse(mutated)
-    };
     Ok(site.patch(isa, cc))
 }
 
@@ -628,7 +648,8 @@ fn compared_value(
         ));
     };
     let holds = d.setcc_condition().unwrap_or_default();
-    let mutated = mutated_condition(isa, holds, from, with).ok_or_else(|| {
+    let domain = compare::domain_before(ours, insn);
+    let mutated = compare::mutated_cc(isa, domain, from, with, holds).ok_or_else(|| {
         Unpatchable::ConditionMismatch {
             cc: isa.cc_name(holds).unwrap_or("?").to_string(),
             token: from.name().to_string(),
@@ -738,23 +759,6 @@ fn branch_site<'a>(
         jcc,
         taken_when_true,
     })
-}
-
-/// The condition code for `lhs with rhs`, given the code `holds` that
-/// implements `lhs from rhs` in either operand order and signedness.
-fn mutated_condition(isa: &Isa, holds: u8, from: Token, with: Token) -> Option<u8> {
-    [Signedness::Signed, Signedness::Unsigned]
-        .into_iter()
-        .find_map(|s| {
-            if isa.relational(s, from) == Some(holds) {
-                return isa.relational(s, with);
-            }
-            let (from_sw, with_sw) = (isa.swapped(from)?, isa.swapped(with)?);
-            if isa.relational(s, from_sw) == Some(holds) {
-                return isa.relational(s, with_sw);
-            }
-            None
-        })
 }
 
 /// Jump from the statement's first byte to just past the last call on

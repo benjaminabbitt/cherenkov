@@ -107,6 +107,19 @@ impl Instr {
         self.inner.mnemonic() == Mnemonic::Cmp
     }
 
+    /// What this instruction compares, when it only sets flags for a
+    /// comparison's consumer: integers (`cmp`) or floats (`ucomis`).
+    pub fn compare_domain(&self) -> Option<crate::shapes::Domain> {
+        use crate::shapes::Domain;
+        match self.inner.mnemonic() {
+            Mnemonic::Cmp => Some(Domain::Int),
+            Mnemonic::Ucomiss | Mnemonic::Ucomisd | Mnemonic::Comiss | Mnemonic::Comisd => {
+                Some(Domain::Float)
+            }
+            _ => None,
+        }
+    }
+
     /// Reads its second operand from memory (`add r, [m]`, `addsd x, [m]`):
     /// rustc puts the left operand of a commutative operation there when it
     /// has it in memory, and the right one in the register.
