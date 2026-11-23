@@ -4,8 +4,11 @@ Evaluated 2026-11-17 by reading debug-profile codegen (Rust 1.100,
 x86-64) for one probe function per operator, `spikes/rust-ops/src/lib.rs`.
 `dump.py` there prints each function's instructions by source line.
 
-The set merges the classic operators (Mothra's 22, design §4.2) with
-cargo-mutants' Rust operators.
+The operators are Cherenkov's 15 (docs/mutation-operators.md): the classic
+operators (Mothra's 22, design §4.2) that apply to Rust and cargo-mutants'
+Rust operators, as one family each. The evaluation was first written as 21
+rows; rows that are not operators, or are not implemented, are listed apart
+below and not counted.
 
 **Status:**
 - **done**: implemented and tested.
@@ -20,31 +23,45 @@ cargo-mutants' Rust operators.
 
 ## Operators
 
-| # | Operator | Rust debug codegen (observed) | Route | Status |
-|---|---|---|---|---|
-| 1 | AOR `+` ↔ `-` | `add`/`sub` (or `inc`/`dec`), then `seto; jo panic` | P: opcode or ModRM swap; the overflow check stays valid | done |
-| 2 | AOR `*`, `/`, `%` | `imul` + `jo`. Division is a block: zero check, `MIN/-1` check, `idiv`, result in `rax` (`/`) or `rdx` (`%`) | `/`↔`%`: P, take `rdx` instead of `rax` (one ModRM byte). `*`→`+`: P (`add` + NOP pad). `*`→`/`, `/`→`*`: no same-shape patch; B for pure operands | partial: `/`↔`%`, `*`→`+` moderate; others hard |
-| 3 | ASR `+=` `-=` `*=` … | `add r, [mem]`, `imul r, [mem]` | as rows 1 and 2, on memory forms | `+=`/`-=` done (shapes listed); rest as row 2 |
-| 4 | ROR, all swaps | branches: `cmp; jcc`. Values: `cmp; setcc` | P: condition-code rewrite, with polarity, signedness and operand order | boundary swaps done; full swap set and `setcc` easy |
-| 5 | Condition negation; condition → true/false (`if`, `while`, guards) | one `jcc` on the condition's line | P: invert; `jcc`→`jmp` or NOP | negation done; constants easy |
-| 6 | LCR `&&` ↔ `\|\|` | short-circuit: a `jcc` per operand (branch form); as a value, the last operand stored to a slot and a shared `movb $c, slot; jmp join` block for the short circuit | B, nothing evaluated: at each jump out of the left operand, read the flags; edges into the right operand go where the right operand's other exit goes (as a value: store the other constant, then the join); short-circuit edges go into the right operand. The operands are those the mutated text groups to (`a \|\| b && c` is `a \|\| (b && c)`) | done (conditions, chains, values) |
-| 7 | Bitwise `&` `\|` `^` | `and`/`or`/`xor r, r` | P: opcode swap | easy |
-| 8 | Shift `<<` ↔ `>>` | `shl r, cl` after a shift-amount check that is the same for both | P: ModRM reg swap (`shr` or `sar` by signedness) | easy |
-| 9 | Delete `!` | folded into branch polarity (`test al,1; jne`); as a value, `xor al, 0xff` (or `1`) then `and al, 1` | P: same as negation; as a value, the `xor` becomes `and al, 1` | done |
-| 10 | Delete unary `-` | `xor eax,eax; sub rax,rcx`, after a `== MIN` overflow check | P: `mov rax,rcx` + NOP. The `MIN` check stays, so the mutant still panics for `MIN` | easy (one edge case differs) |
-| 11 | UOI / ABS insertion | needs new instructions | B (evaluate, set variable) | hard; dropped from the value ranking (§4.5.1) |
-| 12 | Constant replacement (0, 1, −1, ±1) | literals are immediates (`add rdi, 0x2a`, `mov …, imm`) | P: patch the immediate | easy where the literal is an immediate |
-| 13 | Statement deletion | the call, drops of its result, next-statement loads on the same line | P: path walk, resume after the last call | done |
-| 14 | Non-void call → default result | `call`, result in `rax` (or sret). Trivial calls may be inlined even at debug (`v.len()` is a register move) | P: `call` → `xor eax,eax` + NOPs for register results; sret as row 15 | moderate |
-| 15 | Function body → value (cargo-mutants' main operator) | see the table below | P: entry stub per result type | partial |
-| 16 | Match arm deletion | compare chain (`test`/`sub`; `je arm`) or jump table | P: NOP the arm's `je` so it falls to the wildcard; or rewrite the table entry | moderate |
-| 17 | Match guard → true/false | the guard's `jcc` | P: as row 5 | easy |
-| 18 | Struct field deletion (`..Default::default()`) | `call <S as Default>::default`, then field stores | P: skip that field's store (DWARF offsets) | moderate; codegen not yet confirmed |
-| 19 | Variable replacement (SVR) | `let x = a` often elided; values in registers or stack slots | B: set the variable at the stop; candidate choice at the stop is an open design question (§12) | hard |
-| 20 | Index replacement (AAR, ACR) | bounds check `cmp; jae panic`, then `mov rax, [base + i*8]` | B (set the index; the bounds check must see the mutant's index too) | hard |
-| 21 | Loop condition | `cmp; jb body` | P | done |
+One row for each operator (family; definitions, tables per set and sources
+in docs/mutation-operators.md). "Derived from" is where Cherenkov's
+definition comes from; "Mothra" names are the classic operators the family
+corresponds to.
 
-## Body replacement by result type (row 15)
+| Operator | Derived from | Rust debug codegen (observed) | Route | Status |
+|---|---|---|---|---|
+| `aor` | cargo-mutants (visit.rs); Dextool AORS; Cherenkov design. Same as Mothra AOR | `+`/`-`: `add`/`sub` (or `inc`/`dec`), then `seto; jo panic`. `*`, `/`, `%`: `imul` + `jo`; division is a block: zero check, `MIN/-1` check, `idiv`, result in `rax` (`/`) or `rdx` (`%`) | P: `+`<->`-` opcode or ModRM swap, the overflow check stays valid. `/`<->`%`: take `rdx` instead of `rax`. `*`->`+`: `add` + NOP pad. `*`->`/`, `/`->`*`: no same-shape patch; B for pure operands | `+`<->`-` done; `/`<->`%`, `*`->`+` moderate; others hard |
+| `compound-assign` | cargo-mutants (visit.rs assignment forms); Dextool AORS. (Not Mothra's ASR, which is array-for-scalar) | `add r, [mem]`, `imul r, [mem]` | as `aor` and the bitwise and shift rows, on memory forms | `+=`/`-=` done (shapes listed); rest as `aor` |
+| `ror` | cargo-mutants (visit.rs); Kaminski, Ammann & Offutt 2013; Just & Schweiggert 2014; Cherenkov design. Same as Mothra ROR; same as PIT CONDITIONALS_BOUNDARY | branches: `cmp; jcc`. Values: `cmp; setcc` | P: condition-code rewrite, with polarity, signedness and operand order | boundary swaps done; full swap set and `setcc` easy |
+| `negate-condition` | Cherenkov design. Similar to PIT NEGATE_CONDITIONALS (that negates the relational operator) | one `jcc` on the condition's line | P: invert | done. Loop conditions (`cmp; jb body`) are the same operator and `ror` on a loop's condition, not a row of their own |
+| `lcr` | cargo-mutants (visit.rs); Just & Schweiggert 2014 (COR: `&&` -> `==`, `\|\|` -> `!=`). Same as Mothra LCR for `&&` <-> `\|\|` | short-circuit: a `jcc` per operand (branch form); as a value, the last operand stored to a slot and a shared `movb $c, slot; jmp join` block | B, nothing evaluated: at each jump out of the left operand, read the flags; edges into the right operand go where the right operand's other exit goes (as a value: store the other constant, then the join); short-circuit edges go into the right operand. The operands are those the mutated text groups to (`a \|\| b && c` is `a \|\| (b && c)`) | `&&` <-> `\|\|` done (conditions, chains, values); `==`/`!=` forms not checked |
+| `bitwise` | cargo-mutants (visit.rs) | `and`/`or`/`xor r, r` | P: opcode swap | easy |
+| `shift` | cargo-mutants (visit.rs) | `shl r, cl` after a shift-amount check that is the same for both | P: ModRM reg swap (`shr` or `sar` by signedness) | easy |
+| `unary` | cargo-mutants UnaryOperator (visit.rs). Same as cosmic-ray, Dextool UOI (reduced to deletion) | `!`: folded into branch polarity (`test al,1; jne`), as a value `xor al, 0xff` (or `1`) then `and al, 1`. `-`: `xor eax,eax; sub rax,rcx`, after a `== MIN` overflow check | P: `!` as negation, as a value the `xor` becomes `and al, 1`. `-`: `mov rax,rcx` + NOP; the `MIN` check stays, so the mutant still panics for `MIN` | `!` done; `-` easy (one edge case differs) |
+| `delete-statement` | Cherenkov design; Just et al. 2014. Similar to PIT VOID_METHOD_CALLS; similar to Mothra SDL (call statements only) | the call, drops of its result, next-statement loads on the same line | P: path walk, resume after the last call | done |
+| `fn-value` | cargo-mutants FnValue (fnvalue.rs) | see the table below | P: entry stub per result type | partial |
+| `body-default` | Cherenkov design. Similar to cargo-mutants FnValue (only the zero value) | the zero-value row of the table below | as `fn-value` | zero done |
+| `match-arm` | cargo-mutants MatchArm (visit.rs) | compare chain (`test`/`sub`; `je arm`) or jump table | P: NOP the arm's `je` so it falls to the wildcard; or rewrite the table entry | moderate |
+| `match-guard` | cargo-mutants MatchArmGuard (visit.rs) | the guard's `jcc` | P: as `negate-condition` | easy |
+| `struct-field` | cargo-mutants StructField (visit.rs) | `call <S as Default>::default`, then field stores | P: skip that field's store (DWARF offsets) | moderate; codegen not yet confirmed |
+| `return-bool-flip` | Cherenkov design | a constant `al` store before `ret` | P: patch the immediate | not evaluated for codegen |
+
+### Not operators, not implemented
+
+Rows of the earlier 21-row table that are not counted as operators (sources
+and reasons in docs/mutation-operators.md). Their codegen findings stay for
+when they are built.
+
+| Was | Source | Rust debug codegen (observed) | Route | Why not an operator here |
+|---|---|---|---|---|
+| 11 UOI / ABS insertion | Mothra UOI, ABS | needs new instructions | B (evaluate, set variable) | not implemented; hard; dropped from the value ranking (§4.5.1) |
+| 12 constant replacement (0, 1, −1, ±1) | Mothra CRP, SRC; PIT (experimental) | literals are immediates (`add rdi, 0x2a`, `mov …, imm`) | P: patch the immediate | not implemented; easy where the literal is an immediate |
+| 14 non-void call -> default result | PIT non-void call removal; mutest-rs 2026 | `call`, result in `rax` (or sret). Trivial calls may be inlined even at debug | P: `call` -> `xor eax,eax` + NOPs for register results | not implemented; moderate |
+| 19 variable replacement | Mothra SVR | `let x = a` often elided; values in registers or stack slots | B: set the variable at the stop; candidate choice is an open design question (§12) | not implemented; hard |
+| 20 index replacement | Mothra AAR, ACR, ASR, CAR, CNR, SAR (and CSR) | bounds check `cmp; jae panic`, then `mov rax, [base + i*8]` | B (the bounds check must see the mutant's index too) | six operators, none implemented; hard |
+| 21 loop condition | `ror` and `negate-condition` on a loop's condition | `cmp; jb body` | P | not a separate operator |
+
+## Body replacement by result type (`fn-value`, `body-default`)
 
 | Result type | ABI shape (observed) | Stub | Status |
 |---|---|---|---|
@@ -61,12 +78,14 @@ cargo-mutants' Rust operators.
 
 ## Summary
 
-- **Done:** 6 of the 21 rows (1, 3 partly, 4 partly, 5, 13, 21).
-- **Easy:** 9 more, mostly table additions to `isa/amd64.toml`: 4 (full), 5 (constants), 7, 8, 9, 10, 12, 17, and the unit, `&str` and constant-value body stubs.
-- **Moderate:** about 6 (2 partly, 6, 14, 16, 18, the typed-layout body stubs). These need control-flow or DWARF-layout reasoning, but no runtime help.
-- **Hard or tier B:** 11, 19, 20, the `*`↔`/` swaps, and `Box`. These are also the lowest-value operators in §4.5.1.
+- **15 operators are implemented.** By status of their Rust route:
+  - **Done:** `delete-statement`, `negate-condition`; `lcr` for `&&` <-> `\|\|`; `aor` for `+` <-> `-`; `compound-assign` for `+=` and `-=`; `ror` for the boundary swaps; `unary` for `!`.
+  - **Easy:** `bitwise`, `shift`, `match-guard`, the rest of `ror` and `unary`, and the unit, `&str` and constant-value body stubs.
+  - **Moderate:** the rest of `aor`, `match-arm`, `struct-field`, and the typed-layout body stubs. These need control-flow or DWARF-layout reasoning, but no runtime help.
+  - **Not evaluated:** `return-bool-flip`.
+- **Not implemented, not counted:** UOI/ABS, constant replacement, call -> default, SVR, the array-reference family. The tier B ones (UOI/ABS, SVR, the array family) and the `*`↔`/` swaps are also the lowest-value operators in §4.5.1.
 - **Nothing needs recompiling**, except constructing heap values that the binary has no code for.
-- **Fidelity caveats are all overflow and bounds checks the compiler emitted for the original expression:** row 10's `MIN` check, and row 2's division checks. Each changes the outcome for one edge input only.
+- **Fidelity caveats are all overflow and bounds checks the compiler emitted for the original expression:** `unary`'s `MIN` check for `-`, and `aor`'s division checks. Each changes the outcome for one edge input only.
 
 ## Binary patching on disk instead of under a debugger
 
@@ -84,6 +103,6 @@ binary on disk and run it natively instead of in a debugged process.
   - One copy of the binary per worker, patched and restored per mutant, which costs nothing per mutant.
 - **What it loses:**
   - Crash-stop capture: crashes become exit codes and signals, still kills.
-  - Tier B operators, which need a live stop: rows 11, 19, 20 and the `*`↔`/` swaps.
+  - Tier B operators, which need a live stop: UOI/ABS, SVR, the array family and the `*`↔`/` swaps.
 - **The design invariant changes.** "No adapter writes files" becomes "nothing writes source; only build output and scratch copies of binaries."
 - **Likely best:** a hybrid. Static patching for every tier P operator, the debugger only for tier B. Parallel runs then need nothing more than separate copies.

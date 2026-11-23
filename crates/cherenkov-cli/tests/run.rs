@@ -5,6 +5,8 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use cli_support::Exit;
+
 use serde_json::Value;
 
 fn fixtures() -> PathBuf {
@@ -111,7 +113,7 @@ fn decided(stdout: &[u8]) -> Vec<Value> {
 #[test]
 #[ignore = "slow: needs gdb and cargo"]
 fn test_run_gives_the_rust_fixture_s_hand_labelled_verdicts_as_json_lines() {
-    let out = run(&fixtures().join("rust"), &[]);
+    let out = run(&fixtures().join("rust"), &["--operators", "breadth"]);
     assert_eq!(
         decided_lines(&out.stdout),
         sorted_lines(fixtures().join("rust/expected-verdicts.txt"))
@@ -126,10 +128,41 @@ fn test_run_gives_the_rust_fixture_s_hand_labelled_verdicts_as_json_lines() {
     );
 }
 
+/// A mutant's verdict is a fact about the mutant, not about how busy the
+/// machine was: the same corpus run twice decides every mutant the same way,
+/// each by the same tier. Slow (two runs of the fixture), outside `just
+/// check`; run it under load to mean something (`just test-determinism`).
+#[test]
+#[ignore = "slow: needs gdb and cargo; two runs of the rust fixture"]
+fn test_run_twice_decides_every_mutant_of_the_rust_fixture_the_same_way() {
+    let first = run(&fixtures().join("rust"), &["--operators", "breadth"]);
+    let second = run(&fixtures().join("rust"), &["--operators", "breadth"]);
+    let (a, b) = (decided_lines(&first.stdout), decided_lines(&second.stdout));
+    assert!(!a.is_empty(), "the fixture decided no mutant");
+    let differing: Vec<String> = a
+        .iter()
+        .filter(|l| !b.contains(l))
+        .map(|l| format!("first only: {l}"))
+        .chain(
+            b.iter()
+                .filter(|l| !a.contains(l))
+                .map(|l| format!("second only: {l}")),
+        )
+        .collect();
+    assert!(
+        differing.is_empty(),
+        "verdicts differ between identical runs:\n{}",
+        differing.join("\n")
+    );
+}
+
 #[test]
 #[ignore = "slow: needs gdb and cargo"]
 fn test_run_as_text_gives_the_rust_fixture_s_hand_labelled_verdicts() {
-    let out = run(&fixtures().join("rust"), &["--format", "text"]);
+    let out = run(
+        &fixtures().join("rust"),
+        &["--operators", "breadth", "--format", "text"],
+    );
     assert_eq!(
         text_lines(&out.stdout),
         sorted_lines(fixtures().join("rust/expected-verdicts.txt"))
@@ -153,7 +186,11 @@ fn test_run_without_a_go_or_cargo_project_fails_with_message() {
         .args(["--format", "text"])
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(20), "declined");
+    assert_eq!(
+        out.status.code(),
+        Some(i32::from(Exit::REFUSED.code(false))),
+        "declined"
+    );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("no go.mod or Cargo.toml"), "{stderr}");
 }
@@ -164,7 +201,10 @@ fn test_run_with_a_selected_test_runs_only_that_test() {
     // Only test_total runs: total's mutants are killed as before; every
     // other function's mutants are not called (the selected test never
     // calls them), never "survived", which would blame the test.
-    let out = run(&fixtures().join("rust"), &["--test", "test_total"]);
+    let out = run(
+        &fixtures().join("rust"),
+        &["--operators", "breadth", "--test", "test_total"],
+    );
     let called: Vec<(String, String)> = decided(&out.stdout)
         .iter()
         .filter(|d| d["verdict"] != "not-called")

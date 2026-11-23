@@ -45,11 +45,21 @@ message Started {
   io.angzarr.v1.UUID run = 1;
   google.protobuf.Timestamp at = 2;
   string root = 3;
-  string language = 4;
-  string operators = 5;
+  reserved 4, 5;
+  reserved "language";
   uint32 jobs = 6;
   bool fast = 7;
   uint32 mutants = 8;
+  // The operator set each language of the run was planned with.
+  repeated OperatorSet operators = 9;
+}
+
+// The operator set a language of the run was planned with.
+message OperatorSet {
+  option (io.angzarr.codegen.v1.message) = {json_names: JSON_NAMES_PROTO};
+
+  string language = 1;
+  string set = 2;
 }
 
 // One mutant of the run, planned.

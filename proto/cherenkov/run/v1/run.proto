@@ -118,14 +118,22 @@ message PlanRun {
   };
 
   string root = 1;
-  string language = 2;
-  string operators = 3;
+  reserved 2, 3;
+  reserved "language";
   uint32 jobs = 4;
   bool fast = 5;
   repeated cherenkov.mutant.v1.ExecutableMutant mutants = 6;
   // How many test programs are to be prepared before the mutants can run:
   // none for a dry run.
   uint32 programs = 7;
+  // The operator set each language of the run is planned with.
+  repeated OperatorSet operators = 8;
+}
+
+// The operator set a language of a run is planned with.
+message OperatorSet {
+  string language = 1;
+  string set = 2;
 }
 
 // endregion commands
@@ -196,13 +204,15 @@ message RunStarted {
   option (io.angzarr.v1.event) = {component: "cherenkov.run.v1.RunSnapshot"};
 
   string root = 1;
-  string language = 2;
-  string operators = 3;
+  reserved 2, 3;
+  reserved "language";
   uint32 jobs = 4;
   bool fast = 5;
   uint32 mutants = 6;
   optional google.protobuf.Timestamp started_at = 7;
   uint32 programs = 8;
+  // The operator set each language of the run was planned with.
+  repeated OperatorSet operators = 9;
 }
 
 // The run's mutants, in plan order, each with the plan to run it.

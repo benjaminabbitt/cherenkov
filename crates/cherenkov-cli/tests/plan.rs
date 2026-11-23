@@ -4,6 +4,8 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use cli_support::Exit;
+
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures")
 }
@@ -52,7 +54,7 @@ fn expected(lang: &str) -> Vec<String> {
 }
 
 fn assert_golden(lang: &str) {
-    let got: Vec<String> = listing(&plan(&fixtures().join(lang), &[]))
+    let got: Vec<String> = listing(&plan(&fixtures().join(lang), &["--operators", "breadth"]))
         .into_iter()
         .map(|(_, d)| d)
         .collect();
@@ -100,7 +102,7 @@ fn test_plan_is_identical_across_runs() {
 
 #[test]
 fn test_plan_over_mixed_tree_plans_every_language_with_prefixed_paths() {
-    let all = listing(&plan(&fixtures(), &[]));
+    let all = listing(&plan(&fixtures(), &["--operators", "breadth"]));
     assert_eq!(
         all.len(),
         expected("go").len() + expected("python").len() + expected("rust").len()
@@ -118,7 +120,7 @@ fn test_plan_over_mixed_tree_plans_every_language_with_prefixed_paths() {
 
 #[test]
 fn test_plan_summary_on_stderr_reports_counts_and_unmapped_concepts() {
-    let out = plan(&fixtures(), &[]);
+    let out = plan(&fixtures(), &["--operators", "breadth"]);
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(stderr.contains("python: 12 mutants"), "{stderr}");
     assert!(stderr.contains("rust: 13 mutants"), "{stderr}");
@@ -157,7 +159,7 @@ fn test_plan_json_is_the_dry_run_s_events_the_run_started_then_each_mutant_plann
     let docs = documents(&out);
     assert_eq!(docs[0]["event"], "run.started");
     assert_eq!(docs[0]["mutants"], expected("go").len());
-    assert_eq!(docs[0]["language"], "go");
+    assert_eq!(docs[0]["operators"][0]["language"], "go");
     let planned = &docs[1..];
     assert_eq!(planned.len(), expected("go").len());
     assert!(planned.iter().all(|d| d["event"] == "mutant.planned"));
@@ -221,7 +223,11 @@ fn error_document(out: &Output) -> serde_json::Value {
 #[test]
 fn test_an_error_under_json_is_its_code_args_and_message_on_stderr() {
     let out = cherenkov(&["plan", "/no/such/dir", "--format", "json"]);
-    assert_eq!(out.status.code(), Some(10), "it tried, and something broke");
+    assert_eq!(
+        out.status.code(),
+        Some(i32::from(Exit::FAILED.code(false))),
+        "it tried, and something broke"
+    );
     assert!(out.stdout.is_empty());
     let error = error_document(&out);
     assert_eq!(error["code"], "cherenkov-cli-unreadable");
@@ -245,7 +251,10 @@ fn test_a_request_the_state_forbids_is_declined() {
         "--format",
         "json",
     ]);
-    assert_eq!(out.status.code(), Some(20));
+    assert_eq!(
+        out.status.code(),
+        Some(i32::from(Exit::REFUSED.code(false)))
+    );
     let error = error_document(&out);
     assert_eq!(error["code"], "cherenkov-cli-unknown-operator-set");
     assert_eq!(error["args"]["name"], "nope");
@@ -260,10 +269,17 @@ fn test_plan_missing_dir_fails_with_message() {
 
 #[test]
 fn test_plan_exclude_drops_matching_files_for_every_language() {
-    let all = listing(&plan(&fixtures(), &[]));
+    let all = listing(&plan(&fixtures(), &["--operators", "breadth"]));
     let some = listing(&plan(
         &fixtures(),
-        &["--exclude", "**/calc.go", "--exclude", "python/**"],
+        &[
+            "--operators",
+            "breadth",
+            "--exclude",
+            "**/calc.go",
+            "--exclude",
+            "python/**",
+        ],
     ));
     assert!(
         all.iter().any(|(_, d)| d.starts_with("go/"))
@@ -284,10 +300,161 @@ fn test_sets_lists_every_named_set_with_its_pending_rules() {
     let out = cherenkov(&["sets"]);
     assert!(out.status.success());
     let text = String::from_utf8(out.stdout).unwrap();
-    for name in ["breadth (default)", "cargo-mutants", "sufficient"] {
+    for name in [
+        "breadth (default for the other languages)",
+        "cargo-mutants (default for rust)",
+        "sufficient:",
+    ] {
         assert!(text.contains(name), "{name} in {text}");
     }
     assert!(text.contains("pending: unary operator deletion"), "{text}");
+}
+
+#[test]
+fn test_sets_and_mutations_list_other_tools_names_beside_the_canonical_ones() {
+    let sets = String::from_utf8(cherenkov(&["sets"]).stdout).unwrap();
+    assert!(
+        sets.contains("    ror (Mothra ROR): lt->le (PIT CONDITIONALS_BOUNDARY)"),
+        "{sets}"
+    );
+    let muts = String::from_utf8(cherenkov(&["mutations"]).stdout).unwrap();
+    assert!(
+        muts.contains("\nror: Replace a relational operator"),
+        "{muts}"
+    );
+    assert!(muts.contains("  also called: Mothra ROR\n"), "{muts}");
+    assert!(
+        muts.contains("ror/lt->le\n  also called: PIT CONDITIONALS_BOUNDARY"),
+        "{muts}"
+    );
+}
+
+#[test]
+fn test_plan_defaults_to_cargo_mutants_for_rust_and_breadth_for_go() {
+    let rust = plan(&fixtures().join("rust"), &[]);
+    assert!(String::from_utf8_lossy(&rust.stderr).starts_with("operators: cargo-mutants\n"));
+    let explicit = plan(&fixtures().join("rust"), &["--operators", "cargo-mutants"]);
+    assert_eq!(listing(&rust), listing(&explicit));
+    let go = plan(&fixtures().join("go"), &[]);
+    let breadth = plan(&fixtures().join("go"), &["--operators", "breadth"]);
+    assert_eq!(listing(&go), listing(&breadth));
+}
+
+#[test]
+fn test_plan_of_a_project_with_two_languages_uses_each_languages_default() {
+    let dir = std::env::temp_dir().join(format!("cherenkov-twolang-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        "pub fn f(a: i32) -> i32 { a + 1 }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("a.go"),
+        "package a\nfunc F(a int) int { return a + 1 }\n",
+    )
+    .unwrap();
+    let out = plan(&dir, &[]);
+    std::fs::remove_dir_all(&dir).unwrap();
+    let lines: Vec<String> = listing(&out).into_iter().map(|(_, d)| d).collect();
+    let err = String::from_utf8(out.stderr).unwrap();
+    assert!(
+        err.contains("operators: go=breadth,rust=cargo-mutants\n"),
+        "{err}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("a.go") && l.contains(" aor ")),
+        "{lines:?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("lib.rs") && l.contains("fn-value")),
+        "{lines:?}"
+    );
+}
+
+/// The `operators` of the first document of `plan dir --format json`.
+fn started_operators(dir: &Path, extra: &[&str]) -> (serde_json::Value, serde_json::Value) {
+    let mut args = vec!["--format", "json"];
+    args.extend_from_slice(extra);
+    let out = plan(dir, &args);
+    let text = String::from_utf8(out.stdout).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+    assert_eq!(doc["event"], "run.started");
+    (doc["operators"].clone(), doc)
+}
+
+#[test]
+fn test_plan_json_of_two_languages_names_each_languages_set_in_run_started() {
+    let dir = std::env::temp_dir().join(format!("cherenkov-twoset-{}", std::process::id()));
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::write(
+        dir.join("src/lib.rs"),
+        "pub fn f(a: i32) -> i32 { a + 1 }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("a.go"),
+        "package a\nfunc F(a int) int { return a + 1 }\n",
+    )
+    .unwrap();
+    let (operators, doc) = started_operators(&dir, &[]);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(
+        operators,
+        serde_json::json!([
+            {"language": "go", "set": "breadth"},
+            {"language": "rust", "set": "cargo-mutants"}
+        ])
+    );
+    assert!(doc.get("language").is_none(), "{doc}");
+}
+
+#[test]
+fn test_plan_json_of_one_language_has_one_operator_entry() {
+    let (operators, _) = started_operators(&fixtures().join("go"), &[]);
+    assert_eq!(
+        operators,
+        serde_json::json!([{"language": "go", "set": "breadth"}])
+    );
+}
+
+#[test]
+fn test_a_custom_set_naming_an_alias_fails_naming_the_canonical_names() {
+    let dir = std::env::temp_dir().join(format!("cherenkov-alias-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("s.toml");
+    std::fs::write(&file, "name = \"mine\"\nmutations = [\"Mothra ROR\"]\n").unwrap();
+    let out = cherenkov(&[
+        "plan",
+        fixtures().join("rust").to_str().unwrap(),
+        "--operators",
+        file.to_str().unwrap(),
+    ]);
+    std::fs::remove_dir_all(&dir).unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("Mothra ROR is another tool's name for ror"),
+        "{err}"
+    );
+}
+
+#[test]
+fn test_sets_lists_each_sets_operators_with_their_tables() {
+    let out = cherenkov(&["sets"]);
+    let text = String::from_utf8(out.stdout).unwrap();
+    // The cargo-mutants set's `lcr` table is its own; `sufficient`'s differs.
+    assert!(text.contains("  operators (11):\n"), "{text}");
+    assert!(
+        text.contains("    lcr: and->or (Mothra LCR) or->and (Mothra LCR)\n"),
+        "{text}"
+    );
+    assert!(text.contains("    lcr: and->eq or->ne\n"), "{text}");
+    assert!(text.contains("    compound-assign: add->sub"), "{text}");
 }
 
 #[test]
@@ -340,6 +507,11 @@ fn test_mutations_lists_each_mutation_with_where_it_came_from_and_its_peers() {
     assert!(out.status.success());
     let text = String::from_utf8(out.stdout).unwrap();
     assert!(text.contains("ror/lt->le"), "{text}");
+    assert!(
+        text.contains("\nror: Replace a relational operator"),
+        "{text}"
+    );
+    assert!(text.contains("operators: 15"), "{text}");
     assert!(text.contains("derived from cargo-mutants\n"), "{text}");
     assert!(text.contains("same as PIT CONDITIONALS_BOUNDARY"), "{text}");
 }
@@ -458,8 +630,76 @@ fn test_plan_with_a_bad_custom_set_is_declined_naming_the_problem() {
         "json",
     ]);
     std::fs::remove_file(&file).unwrap();
-    assert_eq!(out.status.code(), Some(20));
+    assert_eq!(
+        out.status.code(),
+        Some(i32::from(Exit::REFUSED.code(false)))
+    );
     let error = error_document(&out);
     assert_eq!(error["code"], "cherenkov-cli-bad-operator-set");
     assert_eq!(error["args"]["reason"], "no mutation named ror/zzz");
+}
+
+#[test]
+fn test_mutations_lists_no_alias_line_for_an_operator_nothing_else_calls_the_same() {
+    let text = String::from_utf8(cherenkov(&["mutations"]).stdout).unwrap();
+    let (_, from_lcr) = text.split_once("\nlcr: ").unwrap();
+    let heading = from_lcr.lines().nth(1).unwrap();
+    assert_eq!(heading, "lcr/and->or", "no operator-level alias for lcr");
+    let (_, from_ror) = text.split_once("\nror: ").unwrap();
+    assert_eq!(
+        from_ror.lines().nth(1).unwrap(),
+        "  also called: Mothra ROR"
+    );
+}
+
+#[test]
+fn test_plan_names_prints_no_operators_header() {
+    let out = plan(&fixtures().join("rust"), &["--names"]);
+    assert!(!String::from_utf8_lossy(&out.stderr).contains("operators:"));
+    let out = plan(&fixtures().join("rust"), &[]);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("operators:"));
+}
+
+#[test]
+fn test_a_usage_error_exits_with_the_published_refused_code_48() {
+    let out = cherenkov(&["plan", "--no-such-flag"]);
+    assert_eq!(out.status.code(), Some(48));
+}
+
+#[test]
+fn test_a_failed_plan_exits_with_the_published_failed_code_32() {
+    let out = cherenkov(&["plan", "/no/such/dir"]);
+    assert_eq!(out.status.code(), Some(32));
+}
+
+#[test]
+fn test_a_successful_plan_exits_zero_without_the_detailed_flag() {
+    let out = cherenkov(&["plan", fixtures().join("go").to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(0));
+}
+
+#[test]
+fn test_a_successful_plan_exits_16_under_detailed_exitcode() {
+    let dir = fixtures().join("go");
+    let out = cherenkov(&["plan", dir.to_str().unwrap(), "--detailed-exitcode"]);
+    assert_eq!(out.status.code(), Some(16));
+    let out = cherenkov(&["--detailed-exitcode", "plan", dir.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(16), "the flag is global");
+}
+
+#[test]
+fn test_failures_and_usage_errors_keep_their_codes_under_detailed_exitcode() {
+    let out = cherenkov(&["plan", "/no/such/dir", "--detailed-exitcode"]);
+    assert_eq!(out.status.code(), Some(32));
+    let out = cherenkov(&["plan", "--no-such-flag", "--detailed-exitcode"]);
+    assert_eq!(out.status.code(), Some(48));
+}
+
+#[test]
+fn test_help_exits_zero_and_sixteen_under_detailed_exitcode() {
+    assert_eq!(cherenkov(&["--help"]).status.code(), Some(0));
+    assert_eq!(
+        cherenkov(&["--help", "--detailed-exitcode"]).status.code(),
+        Some(16)
+    );
 }

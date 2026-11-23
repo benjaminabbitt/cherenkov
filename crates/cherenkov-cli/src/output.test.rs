@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use cherenkov_run_wire::output::{Executors, FailedTests, Killers};
+use cherenkov_run_wire::output::{Executors, FailedTests, Killers, OperatorSet};
 use cherenkov_run_wire::{RunStatus, Tier};
 
 use super::*;
@@ -133,8 +133,10 @@ fn started(language: &str, mutants: u32) -> Started {
         run: None,
         at: None,
         root: "/p".to_string(),
-        language: language.to_string(),
-        operators: "breadth".to_string(),
+        operators: vec![OperatorSet {
+            language: language.to_string(),
+            set: "breadth".to_string(),
+        }],
         jobs: 1,
         fast: false,
         mutants,
@@ -277,7 +279,7 @@ fn test_the_run_s_finish_counts_the_mutants_it_could_not_run_by_reason() {
 
 #[test]
 fn test_the_finish_says_the_exit_code_its_status_maps_to() {
-    for (status, exit) in [(RunStatus::Complete, 0), (RunStatus::Failed, 10)] {
+    for (status, exit) in [(RunStatus::Complete, 0), (RunStatus::Failed, 32)] {
         let kept = Kept::default();
         let mut sink = Deficiencies::new(kept.clone(), None::<Log>);
         let mut done = finished(&[], &[]);

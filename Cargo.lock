@@ -643,8 +643,8 @@ checksum = "e0921b3876b3a1df8a1c9f912e7f94342458022c2e84288015893d83c4d62a79"
 
 [[package]]
 name = "cli-support"
-version = "0.1.0"
-source = "git+https://github.com/benjaminabbitt/rust-support?rev=d543b4e903371d89e87e504d9ebb8ea212330673#d543b4e903371d89e87e504d9ebb8ea212330673"
+version = "0.2.0"
+source = "git+https://github.com/benjaminabbitt/rust-support?rev=5bc1d60f1a10d4902b2daad36c348e9bc39c15fa#5bc1d60f1a10d4902b2daad36c348e9bc39c15fa"
 dependencies = [
  "angzarr-diagnostic",
  "angzarr-presentation",
@@ -871,8 +871,8 @@ dependencies = [
 
 [[package]]
 name = "exit-code"
-version = "0.1.0"
-source = "git+https://github.com/benjaminabbitt/rust-support?rev=d543b4e903371d89e87e504d9ebb8ea212330673#d543b4e903371d89e87e504d9ebb8ea212330673"
+version = "0.2.0"
+source = "git+https://github.com/benjaminabbitt/rust-support?rev=5bc1d60f1a10d4902b2daad36c348e9bc39c15fa#5bc1d60f1a10d4902b2daad36c348e9bc39c15fa"
 
 [[package]]
 name = "fastrand"
@@ -1855,7 +1855,7 @@ version = "0.14.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b6e4d69d0fa3e7f6f9cf6b53a0e83e4fc99ba3586f65ce166cff30bd13bb4ad2"
 dependencies = [
- "heck 0.5.0",
+ "heck 0.4.1",
  "itertools",
  "log",
  "multimap",
@@ -3187,7 +3187,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

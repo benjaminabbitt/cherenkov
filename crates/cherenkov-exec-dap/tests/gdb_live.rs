@@ -36,8 +36,15 @@ fn binaries() -> &'static [PathBuf] {
 
 /// The integration test binary, which links the library and runs its tests.
 fn integration() -> PathBuf {
-    binaries()
-        .iter()
+    integration_of(binaries())
+}
+
+/// The binary of `bins` that runs the fixture's integration tests. The
+/// library's own unit-test binary is not it: the linker drops the library
+/// functions nothing there calls. Binaries' names are hashes, so their
+/// order says nothing about which is which.
+fn integration_of(bins: &[PathBuf]) -> PathBuf {
+    bins.iter()
         .find(|b| {
             let out = std::process::Command::new(b)
                 .arg("--list")
@@ -350,7 +357,7 @@ fn test_live_gdb_finds_code_in_a_binary_built_at_another_path() {
     let mut exec = GdbExecutor::new(
         GdbConfig {
             gdb: PathBuf::from("gdb"),
-            test_binary: bins.into_iter().max().unwrap(),
+            test_binary: integration_of(&bins),
             test_args: Vec::new(),
             cwd: None,
             env: Vec::new(),

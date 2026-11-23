@@ -110,8 +110,10 @@ fn explain(_: &str) -> Vec<Killer> {
 fn settings() -> Settings {
     Settings {
         root: "/project".to_string(),
-        language: "rust".to_string(),
-        operators: "breadth".to_string(),
+        operators: vec![OperatorSet {
+            language: "rust".to_string(),
+            set: "breadth".to_string(),
+        }],
         jobs: 2,
     }
 }

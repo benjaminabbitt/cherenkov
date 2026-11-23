@@ -21,7 +21,9 @@ use cherenkov_run_application::host::Output;
 use cherenkov_run_application::verdicts::VerdictFile;
 use cherenkov_run_wire::names;
 use cherenkov_run_wire::output::VerdictLine;
-use cherenkov_run_wire::output::{Decided, Document, Finished, Prepared, Started, document::Event};
+use cherenkov_run_wire::output::{
+    Decided, Document, Finished, OperatorSet, Prepared, Started, document::Event,
+};
 use cherenkov_run_wire::{KilledBy, PlannedMutant};
 use cherenkov_run_wire::{RunStatus, Selection, Verdict};
 use cli_support::Exit;
@@ -370,12 +372,24 @@ fn finished(f: &Finished, started: Option<&Started>) -> String {
         true => String::new(),
         false => format!("; not run, accepted: {}", accepted.join(", ")),
     };
-    let (language, mutants) =
-        started.map_or((String::new(), 0), |s| (s.language.clone(), s.mutants));
+    let (language, mutants) = started.map_or((String::new(), 0), |s| {
+        (languages_of(&s.operators), s.mutants)
+    });
     format!(
         "{language}: {mutants} mutants; {}{accepted}",
         counts.join(", ")
     )
+}
+
+/// The languages of a run's operator sets, each once, comma-joined.
+fn languages_of(operators: &[OperatorSet]) -> String {
+    let mut languages: Vec<&str> = Vec::new();
+    for entry in operators {
+        if !languages.contains(&entry.language.as_str()) {
+            languages.push(&entry.language);
+        }
+    }
+    languages.join(",")
 }
 
 #[cfg(test)]

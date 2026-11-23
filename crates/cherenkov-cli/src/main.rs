@@ -34,9 +34,13 @@ use cherenkov_core::profile::Profile;
 use cherenkov_core::session::{FileProblem, ProjectPlan};
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::Settings;
+use cherenkov_run_domain::OperatorSet as LanguageSet;
 use cherenkov_syntax::TreeSitterSyntax;
-use clap::{Args, Parser, Subcommand, ValueEnum};
-use cli_support::{Failure, usage_exit};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
+use cli_support::{
+    DETAILED_EXITCODE, Exit, ExitStatuses, Failure, detailed_exitcode_arg, exit_statuses,
+    usage_exit,
+};
 
 use crate::error::CliError;
 use crate::output::Listed;
@@ -69,6 +73,31 @@ enum Command {
     /// List every named mutation, where its definition came from, and peers
     /// that have the same or a similar mutation.
     Mutations,
+    /// Dump the operator inventory (operators, their replacements,
+    /// definitions, sources, other tools' names, per-language spellings)
+    /// as Markdown or JSON, for documentation.
+    Operators(OperatorsArgs),
+}
+
+/// What `cherenkov operators` is asked.
+#[derive(Args)]
+struct OperatorsArgs {
+    /// markdown (default) or json (schema 1: the keys are documented in
+    /// docs/mutation-operators.md).
+    #[arg(long, value_enum, default_value = "markdown")]
+    format: DumpFormat,
+    /// Only this registered set's operators, each with its table.
+    #[arg(long, value_name = "SET")]
+    set: Option<String>,
+    /// Leave out each language's spellings of the replacements.
+    #[arg(long = "no-spellings")]
+    no_spellings: bool,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum DumpFormat {
+    Markdown,
+    Json,
 }
 
 /// What `cherenkov plan` is asked.
@@ -84,9 +113,11 @@ struct PlanArgs {
     /// `/` matches at any depth, as in cargo-mutants.
     #[arg(short = 'e', long)]
     exclude: Vec<String>,
-    /// The named operator set to use (see `cherenkov sets`).
-    #[arg(long, default_value = "breadth")]
-    operators: String,
+    /// The named operator set to use, `a,b,file.toml` for several (see
+    /// `cherenkov sets`). Default: `cargo-mutants` for Rust, `breadth` for
+    /// the other languages.
+    #[arg(long)]
+    operators: Option<String>,
     #[command(flatten)]
     select: SelectArgs,
     /// Print each mutant's cargo-mutants name (`path:line:col: replace
@@ -124,9 +155,11 @@ struct RunArgs {
     /// matches at any depth, as in cargo-mutants.
     #[arg(short = 'e', long)]
     exclude: Vec<String>,
-    /// The named operator set to use (see `cherenkov sets`).
-    #[arg(long, default_value = "breadth")]
-    operators: String,
+    /// The named operator set to use, `a,b,file.toml` for several (see
+    /// `cherenkov sets`). Default: `cargo-mutants` for Rust, `breadth` for
+    /// the other languages.
+    #[arg(long)]
+    operators: Option<String>,
     #[command(flatten)]
     select: SelectArgs,
     /// Run only this test, by the runner's own name for it (repeatable).
@@ -190,19 +223,35 @@ fn catalog() -> Result<Catalog, CatalogError> {
     Catalog::en_us(&sources)
 }
 
+/// The statuses of the raw command line, for the exits that come before it is
+/// parsed.
+fn raw_statuses() -> ExitStatuses {
+    let flag = format!("--{DETAILED_EXITCODE}");
+    ExitStatuses::new(std::env::args().any(|a| a == flag))
+}
+
+/// The command line, and the statuses its `--detailed-exitcode` flag binds.
+fn parse() -> Result<(Cli, ExitStatuses), clap::Error> {
+    let matches = Cli::command()
+        .arg(detailed_exitcode_arg())
+        .try_get_matches()?;
+    let statuses = exit_statuses(&matches);
+    Ok((Cli::from_arg_matches(&matches)?, statuses))
+}
+
 fn main() -> ExitCode {
     let catalog = match catalog() {
         Ok(catalog) => catalog,
         Err(e) => {
             eprintln!("{PROG}: {e}");
-            return ExitCode::FAILURE;
+            return raw_statuses().process(Exit::FAILED);
         }
     };
-    let cli = match Cli::try_parse() {
-        Ok(cli) => cli,
+    let (cli, statuses) = match parse() {
+        Ok(parsed) => parsed,
         Err(e) => {
             let _ = e.print();
-            return ExitCode::from(usage_exit(&e).code(false));
+            return raw_statuses().process(usage_exit(&e));
         }
     };
     let (format, result) = match cli.command {
@@ -217,9 +266,15 @@ fn main() -> ExitCode {
                 in_diff,
             } = *args;
             let format = chosen(format);
-            let result = operator_sets(&operators).and_then(|sets| {
-                let selection = Selection::load(&dir, &select, &exclude)?;
-                plan(&dir, format, &sets, &selection, in_diff.as_deref(), names)
+            let result = Selection::load(&dir, &select, &exclude).and_then(|selection| {
+                plan(
+                    &dir,
+                    format,
+                    operators.as_deref(),
+                    &selection,
+                    in_diff.as_deref(),
+                    names,
+                )
             });
             (format, result)
         }
@@ -243,8 +298,7 @@ fn main() -> ExitCode {
                 no_viability_check,
             } = *args;
             let format = chosen(format);
-            let result = operator_sets(&operators).and_then(|sets| {
-                let selection = Selection::load(&dir, &select, &exclude)?;
+            let result = Selection::load(&dir, &select, &exclude).and_then(|selection| {
                 let cargo_args = [cargo_args, selection.cargo_args.clone()].concat();
                 run::run(
                     &dir,
@@ -261,7 +315,7 @@ fn main() -> ExitCode {
                         viability: !no_viability_check,
                         selection,
                     },
-                    &sets,
+                    operators.as_deref(),
                     &tests,
                     format,
                 )
@@ -276,13 +330,14 @@ fn main() -> ExitCode {
             mutations();
             (Format::Text, Ok(()))
         }
+        Command::Operators(args) => (Format::Text, operators(&args)),
     };
     match result {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(()) => statuses.process(Exit::OK),
         Err(error) => {
             let failure = Failure::of(error);
             let _ = failure.say(PROG, format, &catalog, &mut std::io::stderr());
-            ExitCode::from(failure.exit.code(false))
+            statuses.process(failure.exit)
         }
     }
 }
@@ -312,10 +367,34 @@ fn load_set(path: &str) -> Result<CustomSet, String> {
     toml::from_str(&text).map_err(|e| e.to_string())
 }
 
+/// The sets a run uses for `lang`: those asked for, else its default.
+pub(crate) fn operator_sets_for(
+    asked: Option<&str>,
+    lang: &str,
+) -> Result<Vec<OperatorSet>, CliError> {
+    operator_sets(asked.unwrap_or(cherenkov_core::operator_set::default_set_name(lang)))
+}
+
 /// The sets' names, as `run.started` and the operators line show them.
 pub(crate) fn set_names(sets: &[OperatorSet]) -> String {
     let names: Vec<&str> = sets.iter().map(|s| s.name).collect();
     names.join(",")
+}
+
+/// Each of `sets`, for each of `languages`: what `run.started` names.
+pub(crate) fn language_sets<'a>(
+    languages: impl IntoIterator<Item = &'a str>,
+    sets: &[OperatorSet],
+) -> Vec<LanguageSet> {
+    languages
+        .into_iter()
+        .flat_map(|language| {
+            sets.iter().map(move |s| LanguageSet {
+                language: language.to_string(),
+                set: s.name.to_string(),
+            })
+        })
+        .collect()
 }
 
 /// With several sets, how many mutants each produced and how many more than
@@ -347,29 +426,122 @@ pub(crate) fn provenance_line(
 }
 
 fn sets() {
-    for (i, s) in registry().iter().enumerate() {
-        let default = if i == 0 { " (default)" } else { "" };
+    use cherenkov_core::inventory::{Inventory, Spellings};
+    use cherenkov_core::operator_set::default_set_name;
+    for s in registry() {
+        let default = if s.name == default_set_name("rust") {
+            " (default for rust)"
+        } else if s.name == default_set_name("") {
+            " (default for the other languages)"
+        } else {
+            ""
+        };
         println!("{}{default}: {}", s.name, s.summary);
         println!("  source: {}", s.source);
-        let ids: Vec<&str> = s.operators().iter().map(|o| o.id()).collect();
-        println!("  operators: {}", ids.join(", "));
+        let inventory = Inventory::of_set(&s, &Spellings::none());
+        println!("  operators ({}):", inventory.operators.len());
+        for op in &inventory.operators {
+            let aliases = if op.aliases.is_empty() {
+                String::new()
+            } else {
+                format!(" ({})", op.aliases.join(", "))
+            };
+            let details: Vec<String> = op
+                .replacements
+                .iter()
+                .map(|r| {
+                    let own: Vec<&str> = r
+                        .aliases
+                        .iter()
+                        .filter(|a| !op.aliases.contains(a))
+                        .map(String::as_str)
+                        .collect();
+                    if own.is_empty() {
+                        r.detail.to_string()
+                    } else {
+                        format!("{} ({})", r.detail, own.join(", "))
+                    }
+                })
+                .collect();
+            println!("    {}{aliases}: {}", op.name, details.join(" "));
+        }
         for p in s.pending {
             println!("  pending: {p}");
         }
     }
 }
 
+/// The inventory as the options ask, printed.
+fn operators(args: &OperatorsArgs) -> Result<(), CliError> {
+    use cherenkov_core::inventory::{Inventory, Spellings};
+    let syntax = TreeSitterSyntax::builtin().map_err(|e| CliError::Syntax {
+        reason: e.to_string(),
+    })?;
+    let profiles = syntax.profiles();
+    let tables: Vec<(&str, &cherenkov_core::token::TokenTable)> = if args.no_spellings {
+        Vec::new()
+    } else {
+        profiles
+            .iter()
+            .map(|p| (p.lang.as_str(), &p.tokens))
+            .collect()
+    };
+    let spellings = Spellings::of(&tables);
+    let inventory = match &args.set {
+        None => Inventory::of_all(&spellings),
+        Some(name) => {
+            let set = operator_sets(name)?.remove(0);
+            Inventory::of_set(&set, &spellings)
+        }
+    };
+    match args.format {
+        DumpFormat::Markdown => print!("{}", inventory.markdown()),
+        DumpFormat::Json => println!(
+            "{}",
+            serde_json::to_string_pretty(&inventory).unwrap_or_default()
+        ),
+    }
+    Ok(())
+}
+
+/// The operators and, under each, its replacements with their origins.
 fn mutations() {
-    use cherenkov_core::operator_set::{Relation, mutations};
-    for m in mutations() {
-        println!("{}", m.name);
-        for o in m.origins {
-            let name = o.name.map(|n| format!(" {n}")).unwrap_or_default();
-            match o.relation {
-                Relation::Derived => println!("  derived from {}{name}", o.source),
-                Relation::Same => println!("  same as {}{name}", o.source),
-                Relation::Similar(note) => {
-                    println!("  similar to {}{name}: {note}", o.source)
+    use cherenkov_core::inventory::{Inventory, Spellings};
+    use cherenkov_core::operator_set::{Relation, families};
+    let all = families();
+    let inventory = Inventory::of_all(&Spellings::none());
+    println!("operators: {}", all.len());
+    for family in &all {
+        println!("\n{}: {}", family.id, family.definition);
+        let family_aliases = inventory
+            .operators
+            .iter()
+            .find(|o| o.name == family.id)
+            .map(|o| o.aliases.clone())
+            .unwrap_or_default();
+        if !family_aliases.is_empty() {
+            println!("  also called: {}", family_aliases.join(", "));
+        }
+        for m in &family.replacements {
+            println!("{}", m.name);
+            let aliases = inventory
+                .operators
+                .iter()
+                .flat_map(|o| &o.replacements)
+                .find(|r| r.name == m.name)
+                .map(|r| r.aliases.clone())
+                .unwrap_or_default();
+            if !aliases.is_empty() {
+                println!("  also called: {}", aliases.join(", "));
+            }
+            for o in m.origins {
+                let name = o.name.map(|n| format!(" {n}")).unwrap_or_default();
+                match o.relation {
+                    Relation::Derived => println!("  derived from {}{name}", o.source),
+                    Relation::Same => println!("  same as {}{name}", o.source),
+                    Relation::Similar(note) => {
+                        println!("  similar to {}{name}: {note}", o.source)
+                    }
                 }
             }
         }
@@ -378,25 +550,78 @@ fn mutations() {
 
 /// The dry run: `dir`'s mutants planned as a run with `set`, its events
 /// printed in `format`, and nothing run.
+/// `dir` planned with the sets asked for, or with each language's default
+/// when none were: the project, the sets used when one list was asked for,
+/// and the label that names what was used.
+fn plan_with(
+    dir: &Path,
+    syntax: &TreeSitterSyntax,
+    profiles: &[Profile],
+    operators: Option<&str>,
+    selection: &Selection,
+) -> Result<Planned, CliError> {
+    if let Some(spec) = operators {
+        let sets = operator_sets(spec)?;
+        let project = plan_selected(dir, syntax, profiles, &sets, selection)?;
+        let label = set_names(&sets);
+        let languages = language_sets(project.diagnostics.keys().map(|l| l.as_str()), &sets);
+        return Ok((project, sets, label, languages));
+    }
+    let mut project = ProjectPlan::default();
+    let mut used: Vec<(String, String)> = Vec::new();
+    let mut languages: Vec<LanguageSet> = Vec::new();
+    for profile in profiles {
+        let lang = profile.lang.as_str();
+        let sets = operator_sets_for(None, lang)?;
+        let part = plan_selected(dir, syntax, std::slice::from_ref(profile), &sets, selection)?;
+        if !part.diagnostics.is_empty() {
+            used.push((lang.to_string(), set_names(&sets)));
+            languages.extend(language_sets([lang], &sets));
+        }
+        project.plans.extend(part.plans);
+        project.diagnostics.extend(part.diagnostics);
+        project.problems.extend(part.problems);
+        project.provenance.extend(part.provenance);
+    }
+    project.plans.sort_by(|a, b| a.file.cmp(&b.file));
+    Ok((project, Vec::new(), default_label(&used), languages))
+}
+
+/// A planned project, the sets used when one list was asked for, the label
+/// that names what was used, and the set of each language.
+type Planned = (ProjectPlan, Vec<OperatorSet>, String, Vec<LanguageSet>);
+
+/// The default sets in use, named by language unless one set serves all.
+fn default_label(used: &[(String, String)]) -> String {
+    let mut sets: Vec<&str> = used.iter().map(|(_, set)| set.as_str()).collect();
+    sets.dedup();
+    if sets.len() == 1 {
+        return sets[0].to_string();
+    }
+    let pairs: Vec<String> = used.iter().map(|(l, s)| format!("{l}={s}")).collect();
+    pairs.join(",")
+}
+
 fn plan(
     dir: &Path,
     format: Format,
-    sets: &[OperatorSet],
+    operators: Option<&str>,
     selection: &Selection,
     in_diff: Option<&Path>,
     names: bool,
 ) -> Result<(), CliError> {
-    // Under JSON, run.started names the set.
-    if format == Format::Text && !names {
-        eprintln!("operators: {}", set_names(sets));
-    }
     let syntax = TreeSitterSyntax::builtin()
         .map_err(|e| CliError::Syntax {
             reason: e.to_string(),
         })?
         .with_skip_calls(selection.skip_calls.clone());
     let profiles = with_excludes(syntax.profiles(), &selection.exclude_globs);
-    let project = plan_selected(dir, &syntax, &profiles, sets, selection)?;
+    let (project, sets, label, languages) =
+        plan_with(dir, &syntax, &profiles, operators, selection)?;
+    // Under JSON, run.started names the set.
+    if format == Format::Text && !names {
+        eprintln!("operators: {label}");
+    }
     let plans = match in_diff {
         Some(file) => run::in_diff(project.plans.clone(), file, dir)?,
         None => project.plans.clone(),
@@ -408,11 +633,9 @@ fn plan(
         summarize(&project);
         return Ok(());
     }
-    let languages: Vec<&str> = project.diagnostics.keys().map(|l| l.as_str()).collect();
     let settings = Settings {
         root: dir.display().to_string(),
-        language: languages.join(","),
-        operators: set_names(sets),
+        operators: languages,
         jobs: 0,
     };
     let sink = output::sink(format, Listed::Planned, None);
@@ -425,7 +648,7 @@ fn plan(
     )
     .map_err(|e| CliError::run(&e))?;
     summarize(&project);
-    if let Some(line) = provenance_line(sets, &plans, &project.provenance) {
+    if let Some(line) = provenance_line(&sets, &plans, &project.provenance) {
         eprintln!("{line}");
     }
     Ok(())

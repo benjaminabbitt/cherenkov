@@ -417,7 +417,7 @@ breadth (default): the six prototype operators: one per action kind (design sect
   source: docs/design.md section 4.9
   operators: delete-statement, aor, ror, negate-condition, return-bool-flip, body-default
 cargo-mutants: what cargo-mutants generates, for a mutant-by-mutant comparison
-  source: cargo-mutants 26.2.0
+  source: cargo-mutants 27.1.0
   operators: ror, lcr, aor, shift, bitwise, unary, match-arm, match-guard, struct-field, fn-value
   pending: files: only those in a package's module tree, not behind #[cfg(test)] mod
   pending: `&&` inside let chains (cargo-mutants swaps it; the mutant never compiles)
@@ -438,7 +438,7 @@ sufficient: non-redundant sufficient sets plus operators real faults need
 | Set | Mutations | Skips | Notes |
 |---|---|---|---|
 | `breadth` | 12 | none | The six design operators as 12 named mutations. The default. |
-| `cargo-mutants` | 53 | all six `SkipKind`s | What cargo-mutants 26.2.0 generates, for comparison. |
+| `cargo-mutants` | 53 | all six `SkipKind`s | What cargo-mutants 27.1.0 generates, for comparison. |
 | `sufficient` | 36 | `test`, `annotated` | From the sufficient-mutation literature plus `fn-value` and call deletion. |
 
 `OperatorSet::operators()` turns the names into operators: all
@@ -657,7 +657,7 @@ mutant's stops, and at each hit runs an `Effect` (`native.rs:41`):
 |---|---|---|---|---|
 | Rust | GDB 14+ over its built-in DAP, plus Python helpers through the repl | yes | yes: the mature path, fidelity-checked | P, then B |
 | Go | Delve, one headless process serving DAP and JSON-RPC | yes | yes: earlier prototype | P only |
-| Python | none | yes | no: `cherenkov run` reports `py: no go.mod or Cargo.toml; only Go and Rust are executable so far` and exits 20 | none |
+| Python | none | yes | no: `cherenkov run` reports `py: no go.mod or Cargo.toml; only Go and Rust are executable so far` and exits 48 | none |
 
 Go details: memory read and write, disassembly and function entry go over
 Delve's JSON-RPC; DAP carries the session lifecycle and crash events
@@ -903,7 +903,7 @@ are in 8.3 (D31 onward).
 
 ### 8.2 From cargo-mutants
 
-The generation rules for the `cargo-mutants` set are cargo-mutants 26.2.0's,
+The generation rules for the `cargo-mutants` set are cargo-mutants 27.1.0's,
 read from its source and cited in `docs/operator-sets.md`. The catalogue of
 cargo-mutants' exact mutations is **pending**; the figures below are from
 the existing reports (`docs/operator-sets.md` for generation, a comparison
@@ -1004,7 +1004,7 @@ Verified against the profiles and `plan` output.
 |---|---|---|
 | D40 `README.md`, "Fidelity" | The refusal list names `struct-field/delete` and one `aor/rem->div`. | The list has 26 entries (section 8.2). |
 | D41 `docs/operator-sets.md:74` | "Set `sufficient` (Cherenkov's default)". | `cherenkov sets` marks `breadth` as the default; `--operators` defaults to `breadth` (`main.rs:66,97`). |
-| D42 `docs/rust-operator-evaluation.md` | Statuses ("done", "easy", "missing") as of the time written. | Unverified against current code; not rechecked here. |
+| D42 `docs/rust-operator-evaluation.md` | Statuses ("done", "easy", "missing") as of the time written, by numbered row. | The document is now one row for each operator (family), with the rows that are not operators or not implemented listed apart (docs/mutation-operators.md). Its codegen statuses are as of 2026-11-17 and unverified against current code. |
 
 ---
 

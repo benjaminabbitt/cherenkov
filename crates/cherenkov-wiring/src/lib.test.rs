@@ -13,8 +13,8 @@ use cherenkov_core::syntax::LanguageId;
 use cherenkov_run_application::covers::run_cover;
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::Settings;
-use cherenkov_run_domain::PlanRun;
 use cherenkov_run_domain::events::{RunEvent, run_event};
+use cherenkov_run_domain::{OperatorSet, PlanRun};
 use cherenkov_run_ports::Edge;
 use cherenkov_syntax::TreeSitterSyntax;
 
@@ -102,8 +102,10 @@ impl ProjectorHandler for Kept {
 fn a_dry_run_plans_and_does_not_finish() {
     let settings = Settings {
         root: ".".to_string(),
-        language: "rust".to_string(),
-        operators: "default".to_string(),
+        operators: vec![OperatorSet {
+            language: "rust".to_string(),
+            set: "default".to_string(),
+        }],
         jobs: 1,
     };
     let kept = Kept::default();

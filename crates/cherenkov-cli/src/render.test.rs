@@ -6,8 +6,8 @@ use serde_json::{Value, json};
 
 use super::*;
 use cherenkov_run_domain::{
-    DecisionRecorded, KilledBy, MutantsPlanned, ProgramFailed, RunStarted, RunStatus, Selection,
-    Tier, VerdictCount,
+    DecisionRecorded, KilledBy, MutantsPlanned, OperatorSet, ProgramFailed, RunStarted, RunStatus,
+    Selection, Tier, VerdictCount,
 };
 
 fn page(any: Any) -> EventPage {
@@ -83,8 +83,10 @@ fn one(any: Any) -> Value {
 fn test_every_document_names_its_event_its_run_and_when_it_was_recorded() {
     let doc = one(pack_message(&RunStarted {
         root: "/p".to_string(),
-        language: "rust".to_string(),
-        operators: "breadth".to_string(),
+        operators: vec![OperatorSet {
+            language: "rust".to_string(),
+            set: "breadth".to_string(),
+        }],
         jobs: 4,
         fast: false,
         mutants: 12,
@@ -95,8 +97,8 @@ fn test_every_document_names_its_event_its_run_and_when_it_was_recorded() {
         doc,
         json!({
             "event": "run.started", "run": "07070707-0707-0707-0707-070707070707", "at": "2025-11-18T15:00:00Z",
-            "root": "/p", "language": "rust", "operators": "breadth", "jobs": 4,
-            "fast": false, "mutants": 12,
+            "root": "/p", "jobs": 4, "fast": false, "mutants": 12,
+            "operators": [{"language": "rust", "set": "breadth"}],
         })
     );
 }

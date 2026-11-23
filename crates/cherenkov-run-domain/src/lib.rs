@@ -76,7 +76,7 @@ pub use mutant::{
 };
 pub use run::{
     AlreadyPlanned, DecisionRecorded, DecisionReported, Drive, Driven, DrivenKind, Drives,
-    MutantsPlanned, PlanRun, PreparationFailed, PreparationReported, ProgramFailed,
+    MutantsPlanned, OperatorSet, PlanRun, PreparationFailed, PreparationReported, ProgramFailed,
     ProgramPrepared, RunFinished, RunReady, RunSnapshot, RunStarted, RunStatus, Selection,
     TestList, VerdictCount,
 };
@@ -320,7 +320,6 @@ impl Run {
         }
         let started = RunStarted {
             root: cmd.root,
-            language: cmd.language,
             operators: cmd.operators,
             jobs: cmd.jobs,
             fast: cmd.fast,

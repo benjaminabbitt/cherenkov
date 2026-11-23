@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::dap::{DapClient, DapError, EventQueue};
-use crate::load::{Allowance, Scheduling};
+use crate::load::{Allowance, Scheduling, Within, within};
 use crate::native::{
     Effect, Evaluated, FunctionCode, Launcher, NativeSession, Recorded, RunEnd, TierPExecutor,
     kill_debuggee,
@@ -401,16 +401,6 @@ impl GdbSession {
             serde_json::from_value(stopped["body"].clone()).map_err(err("stopped event"))?;
         self.thread = body.thread_id.map_or(1, i64::from);
         Ok(())
-    }
-
-    /// [`GdbSession::repl`], waiting at most `limit` for GDB's answer.
-    fn repl_within(&mut self, command: &str, limit: Duration) -> Result<String, DapError> {
-        let seq = self.dap.send(
-            "evaluate",
-            json!({"expression": command, "context": "repl"}),
-        )?;
-        let body = self.dap.response(seq, limit)?;
-        Ok(body["result"].as_str().unwrap_or_default().to_string())
     }
 
     /// Run a GDB CLI command through the repl and return its output.
@@ -1337,23 +1327,35 @@ impl GdbSession {
                 refused,
             }))
         };
-        // The run's budget covers its evaluations too.
-        let left = allowance.left();
-        if left.is_zero() {
-            return done(RunEnd::TimedOut, None);
-        }
-        let limit = EVALUATION.min(left);
-        let out = match self.repl_within(call, limit) {
-            Ok(out) => out,
+        // The run's budget covers its evaluations too, and a machine that
+        // keeps the evaluation off the CPU does not make it late.
+        let seq = self
+            .dap
+            .send("evaluate", json!({"expression": call, "context": "repl"}));
+        let seq = seq.map_err(|e| ExecError(format!("evaluate: {e}")))?;
+        let answered = within(allowance, EVALUATION, |window| {
+            match self.dap.response(seq, window) {
+                Ok(body) => Ok(Some(
+                    body["result"].as_str().unwrap_or_default().to_string(),
+                )),
+                Err(DapError::Timeout(_)) => Ok(None),
+                Err(e) => Err(ExecError(format!("evaluate: {e}"))),
+            }
+        })?;
+        let out = match answered {
+            Within::Done(out) => out,
+            Within::Spent => {
+                self.stuck = true;
+                return done(RunEnd::TimedOut, None);
+            }
             // Evaluations run with the program's other threads stopped: one
             // waiting on them never returns. The mutated program would not
             // hang, so the mutant is refused, and GDB, stuck in the call, is
             // done.
-            Err(DapError::Timeout(_)) => {
+            Within::Unanswered => {
                 self.stuck = true;
-                return done(RunEnd::TimedOut, refusal_after(limit));
+                return done(RunEnd::TimedOut, Some(refusal_text()));
             }
-            Err(e) => return Err(ExecError(format!("evaluate: {e}"))),
         };
         // Stops from the evaluator's own calls are already queued.
         let _ = self.dap.take_events("stopped");
@@ -1364,18 +1366,16 @@ impl GdbSession {
     }
 }
 
-/// Why an evaluation that did not finish in `limit` is refused: it had all
-/// the time an evaluation is given, so it is waiting on a thread it stopped.
-/// An evaluation the run's own budget cut short is no refusal: the run timed
-/// out, and a busy machine only makes that more likely.
-fn refusal_after(limit: Duration) -> Option<String> {
-    (limit >= EVALUATION).then(|| {
-        format!(
-            "the evaluation did not finish within {} s with the program's \
-             other threads stopped",
-            limit.as_secs()
-        )
-    })
+/// Why an evaluation that did not finish is refused: it had all the time an
+/// evaluation is given, net of what the scheduler took, so it is waiting on a
+/// thread it stopped. An evaluation the run's own budget cut short is no
+/// refusal: the run timed out, and a busy machine only makes that likelier.
+fn refusal_text() -> String {
+    format!(
+        "the evaluation did not finish within {} s with the program's \
+         other threads stopped",
+        EVALUATION.as_secs()
+    )
 }
 
 /// What a run does after an event.
@@ -1401,19 +1401,11 @@ fn evaluator_answer(out: &str) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{EVALUATION, alive, refusal_after};
-    use std::time::Duration;
+    use super::{alive, refusal_text};
 
     #[test]
     fn test_an_evaluation_that_had_its_whole_time_and_did_not_finish_is_refused() {
-        let why = refusal_after(EVALUATION).unwrap();
-        assert!(why.contains("5 s"), "{why}");
-    }
-
-    #[test]
-    fn test_an_evaluation_cut_short_by_the_runs_budget_is_not_a_refusal() {
-        assert_eq!(refusal_after(EVALUATION - Duration::from_millis(1)), None);
-        assert_eq!(refusal_after(Duration::ZERO), None);
+        assert!(refusal_text().contains("5 s"), "{}", refusal_text());
     }
 
     #[test]

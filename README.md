@@ -95,19 +95,41 @@ Named operator sets select from the superset. Each set names its source and
 what it does not cover yet:
 
 ```console
-$ cherenkov sets
-breadth (default): the six prototype operators: one per action kind (design section 4.9)
+$ cherenkov sets   # abridged: long lines and the pending lists are cut
+breadth (default for the other languages): the six prototype operators: one per action kind (design section...
   source: docs/design.md section 4.9
-  operators: delete-statement, aor, ror, negate-condition, return-bool-flip, body-default
-cargo-mutants: what cargo-mutants generates, for a mutant-by-mutant comparison
+  operators (6):
+    delete-statement: call
+    aor (Mothra AOR): add->sub (Dextool AORS) sub->add (Dextool AORS) mul->div (Dextool AORS) div->mul (Dex...
+    ror (Mothra ROR): lt->le (PIT CONDITIONALS_BOUNDARY) le->lt (PIT CONDITIONALS_BOUNDARY) gt->ge (PIT CON...
+    negate-condition: negate-condition
+    return-bool-flip: return-bool-flip
+    body-default: body-default
+cargo-mutants (default for rust): what cargo-mutants generates, for a mutant-by-mutant comparison
   source: cargo-mutants 26.2.0
-  operators: ror, lcr, aor, shift, bitwise, unary, match-arm, match-guard, struct-field, fn-value
-  pending: files: only those in a package's module tree, not behind #[cfg(test)] mod
-  pending: `&&` inside let chains (cargo-mutants swaps it; the mutant never compiles)
+  operators (11):
+    ror (Mothra ROR): eq->ne (PIT NEGATE_CONDITIONALS) ne->eq (PIT NEGATE_CONDITIONALS) lt->eq lt->gt lt->l...
+    lcr: and->or (Mothra LCR) or->and (Mothra LCR)
+    aor (Mothra AOR): add->sub (Dextool AORS) add->mul sub->add (Dextool AORS) sub->div mul->add mul->div (...
+    shift: shl->shr shr->shl
+    bitwise: and->or and->xor or->and or->xor xor->or xor->and
+    compound-assign: add->sub (Dextool AORS, Mothra AOR) add->mul (Mothra AOR) sub->add (Dextool AORS, Moth...
+    unary (cargo-mutants UnaryOperator): delete-not (Dextool UOI) delete-neg
+    match-arm (cargo-mutants MatchArm): delete
+    match-guard (cargo-mutants MatchArmGuard): true false
+    struct-field (cargo-mutants StructField): delete
+    fn-value (cargo-mutants FnValue): fn-value
 sufficient: non-redundant sufficient sets plus operators real faults need
   source: docs/operator-sets.md (Kaminski 2013, Just & Schweiggert 2014, Just et al. 2014, mutest-rs 2026)
-  operators: ror, cor, aor, shift, bitwise, delete-statement, fn-value
-  pending: ...
+  operators (8):
+    ror (Mothra ROR): lt->le (PIT CONDITIONALS_BOUNDARY) lt->ne gt->ge (PIT CONDITIONALS_BOUNDARY) gt->ne l...
+    lcr: and->eq or->ne
+    aor (Mothra AOR): add->sub (Dextool AORS) sub->add (Dextool AORS) mul->div (Dextool AORS) div->mul (Dex...
+    shift: shl->shr shr->shl
+    bitwise: and->or or->and xor->and
+    compound-assign: add->sub (Dextool AORS, Mothra AOR) sub->add (Dextool AORS, Mothra AOR) mul->div (Dext...
+    delete-statement: call
+    fn-value (cargo-mutants FnValue): fn-value
 ```
 
 Each mutation records where it came from and which other tools have the same
@@ -161,7 +183,7 @@ target/release/cherenkov run path/to/project --operators cargo-mutants
 target/release/cherenkov run path/to/project --test calc::test_total
 ```
 
-`--operators` defaults to `breadth`. `--exclude GLOB` skips more files.
+`--operators` defaults to `cargo-mutants` for Rust and `breadth` for Go and Python. `--exclude GLOB` skips more files.
 
 Output is a stream of events, each written as it happens
 (`docs/output-events.md`): JSON Lines when stdout is not a terminal, text
@@ -181,14 +203,20 @@ cherenkov run . | jq 'select(.event == "mutant.decided" and .verdict == "survive
 ```
 
 An error is `{"code", "args", "message"}` on stderr under JSON (a line
-`cherenkov: message` under text), with exit code 10 when something broke
-and 20 when the request cannot be done (no project, no debugger, no such
-operator set).
+`cherenkov: message` under text), with exit code 32 when something broke
+and 48 when the request cannot be done (no project, no debugger, no such
+operator set). Every success exits 0, or 16 under the global
+`--detailed-exitcode` flag (failures and refusals keep 32 and 48, a usage
+error is 48); no success says more than "ok", so 17 ("would change") is
+never used.
 
 Development recipes (`justfile`):
 
 - `just check`: format check, clippy, and the fast tests
 - `just test-slow`: tests against real debuggers and toolchains (gdb, dlv, go)
+- `just test-determinism`: runs the Rust fixture twice under gdb and fails if
+  any mutant's verdict or tier differs between the runs (slow; not in
+  `just check`)
 - `just plan <dir>`: list planned mutants for a directory
 
 ## Fidelity

@@ -29,15 +29,14 @@ use crate::workers::{self, Explain, Failed, Preparation, Worker};
 use cherenkov_run_domain::events::{RunEvent, run_event};
 use cherenkov_run_domain::plan;
 use cherenkov_run_domain::{
-    ExecutableMutant, PlanRun, PlannedMutant, PreparationFailed, RunStatus,
+    ExecutableMutant, OperatorSet, PlanRun, PlannedMutant, PreparationFailed, RunStatus,
 };
 
 /// What a run is planned with.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
     pub root: String,
-    pub language: String,
-    pub operators: String,
+    pub operators: Vec<OperatorSet>,
     pub jobs: usize,
 }
 
@@ -297,7 +296,6 @@ fn plan_run(plans: &[MutantPlan], settings: &Settings, programs: usize) -> PlanR
     PlanRun {
         programs: u32::try_from(programs).unwrap_or(u32::MAX),
         root: settings.root.clone(),
-        language: settings.language.clone(),
         operators: settings.operators.clone(),
         jobs: u32::try_from(settings.jobs).unwrap_or(u32::MAX),
         fast: false,

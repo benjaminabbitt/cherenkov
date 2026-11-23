@@ -196,8 +196,10 @@ fn plan_for(ids: &[&str], programs: u32) -> PlanRun {
     PlanRun {
         programs,
         root: "/project".to_string(),
-        language: "rust".to_string(),
-        operators: "breadth".to_string(),
+        operators: vec![OperatorSet {
+            language: "rust".to_string(),
+            set: "breadth".to_string(),
+        }],
         jobs: 2,
         fast: false,
         mutants: ids.iter().map(|id| executable(id)).collect(),
@@ -256,7 +258,13 @@ async fn test_planning_a_run_records_its_start_then_its_mutants_in_plan_order() 
         panic!("{events:?}");
     };
     assert_eq!(started.mutants, 2);
-    assert_eq!(started.language, "rust");
+    assert_eq!(
+        started.operators,
+        vec![OperatorSet {
+            language: "rust".to_string(),
+            set: "breadth".to_string()
+        }]
+    );
     assert!(started.started_at.is_some());
     let ids: Vec<&str> = planned
         .mutants

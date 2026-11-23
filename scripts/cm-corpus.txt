@@ -14,3 +14,4 @@ edge   @repo/scripts/cm-edge/edge   @repo/scripts/cm-edge/edge
 edge2  @repo/scripts/cm-edge/edge2  @repo/scripts/cm-edge/edge2
 edge3  @repo/scripts/cm-edge/edge3  @repo/scripts/cm-edge/edge3
 edge5  @repo/scripts/cm-edge/edge5  @repo/scripts/cm-edge/edge5
+edge6  @repo/scripts/cm-edge/edge6  @repo/scripts/cm-edge/edge6
