@@ -586,6 +586,52 @@ mod tests {
         assert!(why.contains(&plan.id.to_string()), "{why}");
     }
 
+    /// `check` over the rust-ops fixture's first mutant with a debugger that
+    /// reaches nothing: how it ended and what it reported.
+    fn checked_with_a_debugger_that_ran_nothing() -> (Result<(), String>, Vec<Checked>) {
+        let plan = a_plan();
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/rust-ops");
+        let scratch = ScratchProject::copy(&root, Path::new("cargo")).unwrap();
+        let mut debugger = Debugger::new(vec![Box::new(Scripted {
+            raw: RawOutcome::NotReached {
+                reason: "elsewhere".into(),
+            },
+            output: "",
+            driven: None,
+        })])
+        .unwrap();
+        let profile = TreeSitterSyntax::builtin()
+            .unwrap()
+            .profiles()
+            .into_iter()
+            .find(|p| p.lang == LanguageId::new("rust"))
+            .unwrap();
+        let mut reported = Vec::new();
+        let ended = check(
+            &[plan],
+            &profile,
+            &|p| std::fs::read_to_string(root.join(&p.file)),
+            &mut debugger,
+            &scratch,
+            &[],
+            |_, c| reported.push(c.clone()),
+        );
+        (ended, reported)
+    }
+
+    #[test]
+    fn test_check_fails_naming_the_plan_when_the_debugger_ran_nothing_and_the_source_mutant_is_killed()
+     {
+        // The rust-ops fixture's first mutant (`compare` returning a value)
+        // is killed when compiled; a debugger that did not reach it is the
+        // false-survivor signature.
+        let (ended, reported) = checked_with_a_debugger_that_ran_nothing();
+        let why = ended.expect_err("a false survivor must fail the check");
+        assert!(reported.is_empty(), "{reported:?}");
+        assert!(why.contains("did not reach"), "{why}");
+        assert!(why.contains("compare"), "names the mutant's site: {why}");
+    }
+
     #[test]
     fn test_tier_is_the_one_that_applied_the_mutant_in_the_last_run() {
         let plan = a_plan();

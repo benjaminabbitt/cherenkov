@@ -163,11 +163,17 @@ fn test_a_run_whose_output_never_ends_is_an_error_naming_the_output() {
     );
     let (mut session, dir) = session("never", &play);
     session.set_last_output_wait(Duration::from_millis(500));
+    let started = std::time::Instant::now();
     let ended = session.run_reaching(&[], Duration::from_secs(30));
+    let waited = started.elapsed();
     let _ = std::fs::remove_dir_all(dir);
     let why = ended
         .expect_err("an exit with incomplete output must not be a verdict")
         .0;
+    assert!(
+        waited < Duration::from_secs(10),
+        "the set bound was ignored: {waited:?}"
+    );
     assert!(why.contains("output"), "{why}");
 }
 
@@ -203,8 +209,14 @@ fn test_a_caught_exit_whose_summary_never_comes_is_an_error_naming_the_output() 
     );
     let (mut session, dir) = session("syscall-never", &play);
     session.set_last_output_wait(Duration::from_millis(500));
+    let started = std::time::Instant::now();
     let ended = session.run_reaching(&[], Duration::from_secs(30));
+    let waited = started.elapsed();
     let _ = std::fs::remove_dir_all(dir);
+    assert!(
+        waited < Duration::from_secs(10),
+        "the bound that was set is not the one waited: {waited:?}"
+    );
     let why = ended
         .expect_err("a summary-less libtest exit has no verdict")
         .0;
@@ -217,7 +229,42 @@ fn test_a_caught_exit_whose_summary_never_comes_is_an_error_naming_the_output() 
 fn test_a_caught_exit_of_a_program_without_libtest_output_is_an_exit() {
     let play = format!(r#"[{}, {SYSCALL_EXIT}]"#, output("hello\n"));
     let (mut session, dir) = session("syscall-plain", &play);
+    session.set_last_output_wait(Duration::from_millis(300));
     let (end, _) = session.run_reaching(&[], Duration::from_secs(30)).unwrap();
     let _ = std::fs::remove_dir_all(dir);
     assert_eq!(end, RunEnd::Exited(101));
+}
+
+/// Output that merely resembles libtest's header is not libtest's: no
+/// summary is waited for, whichever half of the header is there.
+#[test]
+fn test_a_caught_exit_whose_output_only_half_resembles_libtests_is_an_exit() {
+    for (name, text) in [
+        ("half-running", "running fast\n"),
+        ("half-tests", "all tests\n"),
+    ] {
+        let play = format!(r#"[{}, {SYSCALL_EXIT}]"#, output(text));
+        let (mut session, dir) = session(name, &play);
+        session.set_last_output_wait(Duration::from_millis(300));
+        let (end, _) = session.run_reaching(&[], Duration::from_secs(30)).unwrap();
+        let _ = std::fs::remove_dir_all(dir);
+        assert_eq!(end, RunEnd::Exited(101), "{text:?}");
+    }
+}
+
+/// A libtest run whose summary is already in when the exit is caught ends
+/// at once, with that output.
+#[test]
+fn test_a_caught_exit_with_libtests_summary_already_in_is_an_exit_with_its_output() {
+    let play = format!(
+        r#"[{}, {SYSCALL_EXIT}]"#,
+        output("running 1 test\ntest a ... ok\n\ntest result: ok. 1 passed\n"),
+    );
+    let (mut session, dir) = session("syscall-complete", &play);
+    session.set_last_output_wait(Duration::from_millis(300));
+    let (end, _) = session.run_reaching(&[], Duration::from_secs(30)).unwrap();
+    let seen = session.take_output();
+    let _ = std::fs::remove_dir_all(dir);
+    assert_eq!(end, RunEnd::Exited(101));
+    assert!(seen.contains("test result: ok"), "{seen:?}");
 }
