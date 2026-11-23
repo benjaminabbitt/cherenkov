@@ -727,18 +727,26 @@ fn statement_stop(action: &Action, stop_at: Pos, insns: &[Insn]) -> Option<u64> 
 }
 
 impl<L: Launcher> TierPExecutor<L> {
+    /// The binary's line-table rows: read once they have been read, and
+    /// asked for again after a read that failed (a busy machine fails reads
+    /// a quiet one does not, and no column is a verdict on the mutant).
+    fn line_rows(&self) -> &[crate::lines::Row] {
+        if let Some(rows) = self.rows.get() {
+            return rows;
+        }
+        match self.launcher.binary().map(crate::lines::rows) {
+            Some(Ok(rows)) => self.rows.get_or_init(|| rows),
+            _ => &[],
+        }
+    }
+
     /// Give each instruction the column of the line-table row it falls in.
     /// Rows hold file addresses; a position-independent program runs at a
     /// load offset, found by aligning the function's instructions with rows
     /// of the same lines. Without a readable binary or a consistent offset
     /// the columns stay 0 (whole lines).
     fn with_columns(&self, mut code: FunctionCode) -> FunctionCode {
-        let rows = self.rows.get_or_init(|| {
-            self.launcher
-                .binary()
-                .and_then(|b| crate::lines::rows(b).ok())
-                .unwrap_or_default()
-        });
+        let rows = self.line_rows();
         let row_at = |addr: u64| {
             let at = rows.partition_point(|r| r.addr <= addr);
             at.checked_sub(1).map(|k| &rows[k])
@@ -1726,5 +1734,89 @@ mod tests {
                 Driven::Tests(names(&["slow"])),
             ]
         );
+    }
+
+    /// A launcher that never starts: only its binary is asked about.
+    struct BinaryOnly(PathBuf);
+
+    struct NoSession;
+
+    impl NativeSession for NoSession {
+        fn function_code(&mut self, _: &Path, _: u32) -> Result<Option<FunctionCode>, ExecError> {
+            unreachable!()
+        }
+        fn read(&mut self, _: u64, _: usize) -> Result<Vec<u8>, ExecError> {
+            unreachable!()
+        }
+        fn write(&mut self, _: u64, _: &[u8]) -> Result<(), ExecError> {
+            unreachable!()
+        }
+        fn run_reaching(&mut self, _: &[u64], _: Duration) -> Result<(RunEnd, bool), ExecError> {
+            unreachable!()
+        }
+    }
+
+    impl Launcher for BinaryOnly {
+        type Session = NoSession;
+        fn start(&self) -> Result<NoSession, ExecError> {
+            unreachable!()
+        }
+        fn abi(&self) -> &'static str {
+            "sysv"
+        }
+        fn binary(&self) -> Option<&Path> {
+            Some(&self.0)
+        }
+    }
+
+    /// Instructions at the first rows of this crate's `native.rs` in the
+    /// running test binary (load offset 0), without columns.
+    fn own_code(rows: &[crate::lines::Row]) -> FunctionCode {
+        let ours: Vec<&crate::lines::Row> = rows
+            .iter()
+            .filter(|r| r.file.ends_with("cherenkov-exec-dap/src/native.rs") && r.line != 0)
+            .take(40)
+            .collect();
+        FunctionCode {
+            file: ours[0].file.clone(),
+            insns: ours
+                .iter()
+                .map(|r| Insn {
+                    pc: r.addr,
+                    bytes: vec![0x90],
+                    file: r.file.clone(),
+                    line: r.line,
+                    column: 0,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn test_columns_found_after_the_binary_could_not_be_read_once() {
+        let exe = std::env::current_exe().unwrap();
+        let rows = crate::lines::rows(&exe).unwrap();
+        let code = own_code(&rows);
+        let dir = std::env::temp_dir().join(format!("cherenkov-columns-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let binary = dir.join("program");
+        let executor = TierPExecutor::new(BinaryOnly(binary.clone()), Isa::amd64());
+        // The first look finds no binary (a rebuild, a descriptor limit, a
+        // busy disk): no columns now...
+        assert!(
+            executor
+                .with_columns(code.clone())
+                .insns
+                .iter()
+                .all(|i| i.column == 0)
+        );
+        // ...but not for the rest of the run: once it reads, they come.
+        std::fs::copy(&exe, &binary).unwrap();
+        let columned = executor.with_columns(code);
+        assert!(
+            columned.insns.iter().any(|i| i.column != 0),
+            "a failed read of the line table was remembered for good"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
