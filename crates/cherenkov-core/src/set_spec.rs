@@ -13,6 +13,7 @@
 
 use serde::Deserialize;
 
+use crate::inventory::canonical_names;
 use crate::operator_set::{OperatorSet, mutation_named, mutations, named};
 use crate::syntax::SkipKind;
 
@@ -26,6 +27,12 @@ pub enum SetError {
     Invalid { path: String, reason: String },
     /// The custom set names a mutation `cherenkov mutations` does not list.
     UnknownMutation(String),
+    /// The custom set names another tool's name for mutations: the canonical
+    /// names it stands for.
+    Alias {
+        alias: String,
+        canonical: Vec<String>,
+    },
     /// The custom set names a skip kind that does not exist.
     UnknownSkip(String),
 }
@@ -35,6 +42,10 @@ impl SetError {
     pub fn reason(&self) -> String {
         match self {
             SetError::UnknownMutation(m) => format!("no mutation named {m}"),
+            SetError::Alias { alias, canonical } => format!(
+                "{alias} is another tool's name for {}",
+                canonical.join(", ")
+            ),
             SetError::UnknownSkip(k) => format!("no skip kind named {k}"),
             SetError::Invalid { reason, .. } | SetError::Unreadable { reason, .. } => {
                 reason.clone()
@@ -127,10 +138,17 @@ fn expand(entry: &str) -> Result<Vec<&'static str>, SetError> {
         .filter(|m| m.family == entry)
         .map(|m| m.name)
         .collect();
-    if table.is_empty() {
+    if !table.is_empty() {
+        return Ok(table);
+    }
+    let canonical = canonical_names(entry);
+    if canonical.is_empty() {
         Err(SetError::UnknownMutation(entry.to_string()))
     } else {
-        Ok(table)
+        Err(SetError::Alias {
+            alias: entry.to_string(),
+            canonical: canonical.into_iter().map(str::to_string).collect(),
+        })
     }
 }
 

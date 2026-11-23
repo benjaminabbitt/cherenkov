@@ -545,3 +545,14 @@ fn test_every_family_has_a_definition_and_the_inventory_holds_every_replacement(
     let total: usize = all.iter().map(|f| f.replacements.len()).sum();
     assert_eq!(total, mutations().len());
 }
+
+#[test]
+fn test_the_default_set_is_cargo_mutants_for_rust_and_breadth_for_the_other_languages() {
+    use cherenkov_core::operator_set::default_set_name;
+    assert_eq!(default_set_name("rust"), "cargo-mutants");
+    assert_eq!(default_set_name("go"), "breadth");
+    assert_eq!(default_set_name("python"), "breadth");
+    for lang in ["rust", "go", "python"] {
+        assert!(named(default_set_name(lang)).is_some(), "{lang}");
+    }
+}

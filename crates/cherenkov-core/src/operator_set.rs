@@ -1853,7 +1853,16 @@ fn family_operator(family: &'static str, rules: &[Rule]) -> Box<dyn Operator> {
 /// each token occurs in only one of them.
 const BINARY: &[Concept] = &[Concept::Binary, Concept::CompoundAssign];
 
-/// Every named set; the first is the default.
+/// The set a run uses for `lang` when none is asked for: cargo-mutants'
+/// for Rust (parity with it), the prototype's `breadth` for the others.
+pub fn default_set_name(lang: &str) -> &'static str {
+    match lang {
+        "rust" => "cargo-mutants",
+        _ => "breadth",
+    }
+}
+
+/// Every named set.
 pub fn registry() -> Vec<OperatorSet> {
     vec![breadth(), cargo_mutants(), sufficient()]
 }

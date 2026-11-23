@@ -148,19 +148,60 @@ fn test_every_canonical_name_in_the_dump_is_accepted_by_a_custom_set() {
     }
 }
 
-#[test]
-fn test_a_custom_set_does_not_accept_a_tools_alias_as_a_name() {
-    let err = custom_set(CustomSet {
+fn alias_error(alias: &str) -> String {
+    custom_set(CustomSet {
         name: "t".into(),
         summary: None,
         source: None,
-        mutations: vec!["PIT CONDITIONALS_BOUNDARY".into()],
+        mutations: vec![alias.into()],
         skips: vec![],
     })
     .err()
-    .unwrap();
-    assert_eq!(err.reason(), "no mutation named PIT CONDITIONALS_BOUNDARY");
+    .unwrap_or_else(|| panic!("{alias} was accepted"))
+    .reason()
+}
+
+#[test]
+fn test_a_custom_set_does_not_accept_a_tools_alias_and_names_what_it_maps_to() {
+    let reason = alias_error("PIT CONDITIONALS_BOUNDARY");
+    assert!(
+        reason.starts_with("PIT CONDITIONALS_BOUNDARY is another tool's name for "),
+        "{reason}"
+    );
+    for canonical in ["ror/lt->le", "ror/le->lt", "ror/gt->ge", "ror/ge->gt"] {
+        assert!(reason.contains(canonical), "{reason}");
+    }
+    assert!(!reason.contains("ror/lt->eq"), "{reason}");
+    // An operator-level alias names the operator, not its replacements.
+    assert_eq!(
+        alias_error("Mothra ROR"),
+        "Mothra ROR is another tool's name for ror"
+    );
+    // A name nobody uses is still just unknown.
+    assert_eq!(alias_error("nonsense"), "no mutation named nonsense");
     assert!(named("breadth").is_some());
+}
+
+#[test]
+fn test_canonical_names_of_an_alias_are_empty_for_a_canonical_name() {
+    assert!(cherenkov_core::inventory::canonical_names("ror/lt->le").is_empty());
+    assert_eq!(
+        cherenkov_core::inventory::canonical_names("cargo-mutants MatchArm"),
+        ["match-arm"]
+    );
+}
+
+#[test]
+fn test_markdown_lists_a_replacements_own_aliases_beside_its_name() {
+    let md = Inventory::of_all(&without_spellings()).markdown();
+    let row = md
+        .lines()
+        .find(|l| l.starts_with("| `ror/lt->le`"))
+        .unwrap();
+    let also = row.split('|').nth(4).unwrap();
+    assert!(also.contains("PIT CONDITIONALS_BOUNDARY"), "{row}");
+    // The operator's own alias is not repeated on each of its replacements.
+    assert!(!also.contains("Mothra ROR"), "{row}");
 }
 
 #[test]

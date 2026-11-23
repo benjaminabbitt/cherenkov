@@ -204,6 +204,26 @@ fn family_aliases(table: &[&Mutation]) -> Vec<String> {
         .collect()
 }
 
+/// The canonical names a tool's `alias` is for: an operator's name when the
+/// alias names the operator as a whole, else each replacement's. Empty for
+/// anything that is not an alias.
+pub fn canonical_names(alias: &str) -> Vec<&'static str> {
+    let mut names = Vec::new();
+    for f in families() {
+        if family_aliases(&f.replacements).iter().any(|a| a == alias) {
+            names.push(f.id);
+            continue;
+        }
+        names.extend(
+            f.replacements
+                .iter()
+                .filter(|m| aliases_of(m).iter().any(|a| a == alias))
+                .map(|m| m.name),
+        );
+    }
+    names
+}
+
 fn replacement_entry(m: &'static Mutation, spellings: &Spellings<'_>) -> ReplacementEntry {
     ReplacementEntry {
         name: m.name,
@@ -384,7 +404,7 @@ fn spelled(r: &ReplacementEntry) -> String {
     cell(&parts.join("; "))
 }
 
-fn replacement_row(r: &ReplacementEntry, with_spelling: bool) -> String {
+fn replacement_row(r: &ReplacementEntry, own_aliases: &[&String], with_spelling: bool) -> String {
     let sources: Vec<String> = r
         .origins
         .iter()
@@ -398,11 +418,13 @@ fn replacement_row(r: &ReplacementEntry, with_spelling: bool) -> String {
     } else {
         String::new()
     };
+    let aliases: Vec<&str> = own_aliases.iter().map(|a| a.as_str()).collect();
     format!(
-        "| `{}` | {} | {} | {} |{spelling}\n",
+        "| `{}` | {} | {} | {} | {} |{spelling}\n",
         r.name,
         cell(&r.definition),
         cell(&sources.join("; ")),
+        cell(&aliases.join("; ")),
         r.sets.join(", ")
     )
 }
@@ -415,11 +437,17 @@ fn operator_section(o: &OperatorEntry) -> String {
         ("", "")
     };
     let mut out = format!(
-        "\n### `{}`\n\n| Replacement | Definition | Sources | Sets |{head}\n|---|---|---|---|{rule}\n",
+        "\n### `{}`\n\n| Replacement | Definition | Sources | Also called | Sets |{head}\n|---|---|---|---|---|{rule}\n",
         o.name
     );
     for r in &o.replacements {
-        out.push_str(&replacement_row(r, with_spelling));
+        // The operator's own aliases are on the operator, not repeated here.
+        let own: Vec<&String> = r
+            .aliases
+            .iter()
+            .filter(|a| !o.aliases.contains(a))
+            .collect();
+        out.push_str(&replacement_row(r, &own, with_spelling));
     }
     out
 }
