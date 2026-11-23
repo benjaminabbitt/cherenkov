@@ -80,11 +80,23 @@ impl ProjectorHandler for Printing {
 /// reader never sees half a file.
 pub struct JsonVerdictFile {
     path: PathBuf,
+    /// Leave out the mutants no test called (an `--in-diff` run's file).
+    without_not_called: bool,
 }
 
 impl JsonVerdictFile {
     pub fn new(path: PathBuf) -> JsonVerdictFile {
-        JsonVerdictFile { path }
+        JsonVerdictFile {
+            path,
+            without_not_called: false,
+        }
+    }
+
+    /// The file of an `--in-diff` run: no line for a mutant that was not
+    /// called.
+    pub fn without_not_called(mut self) -> JsonVerdictFile {
+        self.without_not_called = true;
+        self
     }
 
     fn unwritable(&self, reason: &dyn std::fmt::Display) -> Report {
@@ -97,7 +109,10 @@ impl JsonVerdictFile {
 impl VerdictFile for JsonVerdictFile {
     fn write(&self, lines: &[VerdictLine]) -> Result<(), Report> {
         let mut text = String::new();
-        for line in lines {
+        for line in lines
+            .iter()
+            .filter(|l| !(self.without_not_called && l.verdict() == Verdict::NotCalled))
+        {
             text.push_str(&serde_json::to_string(line).map_err(|e| self.unwritable(&e))?);
             text.push('\n');
         }
@@ -153,6 +168,50 @@ pub fn exit_code(status: RunStatus) -> i32 {
         RunStatus::Failed => Exit::FAILED,
     };
     i32::from(exit.code(false))
+}
+
+/// The sink of an `--in-diff` run: the mutants no test called (many, since
+/// the changed tests are matched against everything they can reach) are not
+/// listed, one `mutant.decided` each; `run.finished` still counts them. A
+/// text run says so, and who judged the mutants of changed tests, after its
+/// summary.
+pub struct InDiff {
+    inner: Box<dyn Sink>,
+    note: Box<dyn Write + Send>,
+    text: bool,
+    skipped: u32,
+}
+
+impl InDiff {
+    pub fn new(inner: Box<dyn Sink>, note: Box<dyn Write + Send>, text: bool) -> Self {
+        InDiff {
+            inner,
+            note,
+            text,
+            skipped: 0,
+        }
+    }
+}
+
+impl Sink for InDiff {
+    fn document(&mut self, doc: &Document) {
+        match &doc.event {
+            Some(Event::Decided(d)) if d.verdict() == Verdict::NotCalled => self.skipped += 1,
+            Some(Event::Finished(_)) => {
+                self.inner.document(doc);
+                if self.text {
+                    let _ = writeln!(
+                        self.note,
+                        "cherenkov: --in-diff: {} not-called mutants not listed (counted above); \
+                         changed-test mutants are judged by the changed tests alone, so a survivor \
+                         means those tests do not catch it",
+                        self.skipped
+                    );
+                }
+            }
+            _ => self.inner.document(doc),
+        }
+    }
 }
 
 /// Accepts and logs what could not be run: counts each `unsupported`

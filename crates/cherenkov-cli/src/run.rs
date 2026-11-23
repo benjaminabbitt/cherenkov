@@ -441,10 +441,16 @@ fn on_run_layer(
         }
         None => None,
     };
-    let sink = Box::new(Phases::new(
-        output::sink(asked.format, Listed::Decided, log),
-        Box::new(std::io::stderr()),
-    ));
+    let in_diff = asked.tools.in_diff.is_some();
+    let mut sink = output::sink(asked.format, Listed::Decided, log);
+    if in_diff {
+        sink = Box::new(output::InDiff::new(
+            sink,
+            Box::new(std::io::stderr()),
+            asked.format == Format::Text,
+        ));
+    }
+    let sink = Box::new(Phases::new(sink, Box::new(std::io::stderr())));
     cherenkov_wiring::run(
         cherenkov_run_store::open(),
         plans,
@@ -452,11 +458,15 @@ fn on_run_layer(
         Some(workers),
         Readers {
             output: output::printing(sink),
-            verdicts: asked
-                .tools
-                .verdict_file
-                .clone()
-                .map(|path| Arc::new(output::JsonVerdictFile::new(path)) as Arc<dyn VerdictFile>),
+            verdicts: asked.tools.verdict_file.clone().map(|path| {
+                let file = output::JsonVerdictFile::new(path);
+                let file = if in_diff {
+                    file.without_not_called()
+                } else {
+                    file
+                };
+                Arc::new(file) as Arc<dyn VerdictFile>
+            }),
         },
     )
     .map(drop)

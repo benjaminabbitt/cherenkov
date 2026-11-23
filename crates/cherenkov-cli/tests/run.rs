@@ -490,23 +490,22 @@ fn test_run_of_a_changed_test_runs_the_mutants_it_calls_with_that_test_alone() {
         &["--format", "json", "--in-diff", diff.to_str().unwrap()],
     );
     let _ = std::fs::remove_file(&diff);
-    let mut called = std::collections::BTreeSet::new();
-    let mut skipped = std::collections::BTreeSet::new();
-    for d in decided(&out.stdout) {
-        let function = d["function"].as_str().unwrap().to_string();
-        if d["verdict"] == "not-called" {
-            skipped.insert(function);
-        } else {
-            called.insert(function);
-        }
-    }
+    let called: std::collections::BTreeSet<String> = decided(&out.stdout)
+        .iter()
+        .map(|d| d["function"].as_str().unwrap().to_string())
+        .collect();
     // The changed test calls run, is_even and double; nothing calls triple
-    // but core's own test, which did not change.
+    // but core's own test, which did not change: its mutants are counted,
+    // not listed.
     assert_eq!(
         called,
         ["double", "is_even", "run"].map(String::from).into()
     );
-    assert_eq!(skipped, ["triple"].map(String::from).into());
+    let finished = documents(&out.stdout)
+        .into_iter()
+        .find(|d| d["event"] == "run.finished")
+        .unwrap();
+    assert_eq!(finished["counts"]["not-called"], 5);
     let stderr = documents(&out.stdout)
         .iter()
         .filter(|d| d["event"] == "program.prepared")

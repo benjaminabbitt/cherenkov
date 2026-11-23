@@ -68,8 +68,19 @@ For each package with a changed test:
 
 A changed test is matched to libtest names by its path in its file
 (`tests::test_a`): a same-named test in another module of the package is
-judged too. The not-called mutants are still decided and printed one line
-each; see the ruling pending on a count.
+judged too.
+
+What readers see of an `--in-diff` run:
+
+- A mutant no test called is decided `not-called` as ever, but no
+  `mutant.decided` line is printed for it, and the verdict file has no line
+  for it; `run.finished`'s `counts["not-called"]` holds how many there were.
+  A run without `--in-diff` lists them as before. `plan` and its
+  `mutant.planned` lines are unchanged.
+- `survived` remains the verdict of a mutant only the changed tests judge,
+  and means that the changed tests do not catch it, not that the package's
+  tests do not. The text summary says so: "changed-test mutants are judged
+  by the changed tests alone".
 
 ## Phase times
 

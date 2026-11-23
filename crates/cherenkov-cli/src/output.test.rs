@@ -496,3 +496,112 @@ mod verdict_file {
         assert!(error.to_string().contains("verdicts.jsonl"), "{error}");
     }
 }
+
+/// A sink that keeps what it is given.
+#[derive(Clone, Default)]
+struct Gathered(std::sync::Arc<Mutex<Vec<Document>>>);
+
+impl Sink for Gathered {
+    fn document(&mut self, doc: &Document) {
+        self.0.lock().unwrap().push(doc.clone());
+    }
+}
+
+#[derive(Clone, Default)]
+struct Note(std::sync::Arc<Mutex<Vec<u8>>>);
+
+impl Write for Note {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn verdicts_of(kept: &Gathered) -> Vec<Verdict> {
+    kept.0
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|d| match &d.event {
+            Some(Event::Decided(d)) => Some(d.verdict()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn feed(sink: &mut dyn Sink) {
+    sink.document(&mutant(Verdict::Killed, |_| {}));
+    sink.document(&mutant(Verdict::NotCalled, |_| {}));
+    sink.document(&mutant(Verdict::Survived, |_| {}));
+    sink.document(&Document {
+        event: Some(Event::Finished(finished(
+            &[("killed", 1), ("not-called", 1), ("survived", 1)],
+            &[],
+        ))),
+    });
+}
+
+#[test]
+fn test_an_in_diff_run_lists_no_not_called_mutant_and_the_run_finished_count_is_intact() {
+    let kept = Gathered::default();
+    let mut sink = InDiff::new(Box::new(kept.clone()), Box::new(Note::default()), false);
+    feed(&mut sink);
+    assert_eq!(verdicts_of(&kept), [Verdict::Killed, Verdict::Survived]);
+    let docs = kept.0.lock().unwrap();
+    let Some(Event::Finished(done)) = &docs.last().unwrap().event else {
+        panic!("no run.finished");
+    };
+    assert_eq!(done.counts.get("not-called"), Some(&1));
+}
+
+#[test]
+fn test_a_text_in_diff_run_says_who_judged_changed_test_mutants_and_how_many_were_not_listed() {
+    let note = Note::default();
+    let mut sink = InDiff::new(Box::new(Gathered::default()), Box::new(note.clone()), true);
+    feed(&mut sink);
+    let text = String::from_utf8(note.0.lock().unwrap().clone()).unwrap();
+    assert!(text.contains("1 not-called mutants not listed"), "{text}");
+    assert!(
+        text.contains("changed-test mutants are judged by the changed tests alone"),
+        "{text}"
+    );
+}
+
+#[test]
+fn test_a_json_in_diff_run_writes_no_note() {
+    let note = Note::default();
+    let mut sink = InDiff::new(Box::new(Gathered::default()), Box::new(note.clone()), false);
+    feed(&mut sink);
+    assert!(note.0.lock().unwrap().is_empty());
+}
+
+#[test]
+fn test_the_verdict_file_of_an_in_diff_run_has_no_not_called_line() {
+    let dir = std::env::temp_dir().join(format!("cherenkov-vf-{}", std::process::id()));
+    let _ = std::fs::create_dir_all(&dir);
+    let line = |id: &str, verdict: Verdict| VerdictLine {
+        id: id.to_string(),
+        verdict: verdict.into(),
+        ..VerdictLine::default()
+    };
+    let lines = [
+        line("a", Verdict::Killed),
+        line("b", Verdict::NotCalled),
+        line("c", Verdict::Survived),
+    ];
+    let all = dir.join("all.jsonl");
+    JsonVerdictFile::new(all.clone()).write(&lines).unwrap();
+    assert_eq!(std::fs::read_to_string(&all).unwrap().lines().count(), 3);
+    let some = dir.join("some.jsonl");
+    JsonVerdictFile::new(some.clone())
+        .without_not_called()
+        .write(&lines)
+        .unwrap();
+    let text = std::fs::read_to_string(&some).unwrap();
+    assert_eq!(text.lines().count(), 2, "{text}");
+    assert!(!text.contains("\"b\""), "{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
