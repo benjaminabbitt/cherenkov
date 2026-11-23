@@ -598,6 +598,20 @@ fn recorded() -> Option<Timestamp> {
     })
 }
 
+/// The operator sets of the printed run: two languages, one set each.
+fn output_operators() -> Vec<output::OperatorSet> {
+    vec![
+        output::OperatorSet {
+            language: "go".to_string(),
+            set: "breadth".to_string(),
+        },
+        output::OperatorSet {
+            language: "rust".to_string(),
+            set: "cargo-mutants".to_string(),
+        },
+    ]
+}
+
 /// One document of every kind, the run's documents of a killed and a
 /// surviving mutant among them.
 fn documents() -> Vec<output::Document> {
@@ -625,16 +639,7 @@ fn documents() -> Vec<output::Document> {
             run: run.clone(),
             at,
             root: "/work/calc".to_string(),
-            operators: vec![
-                output::OperatorSet {
-                    language: "go".to_string(),
-                    set: "breadth".to_string(),
-                },
-                output::OperatorSet {
-                    language: "rust".to_string(),
-                    set: "cargo-mutants".to_string(),
-                },
-            ],
+            operators: output_operators(),
             jobs: 4,
             fast: false,
             mutants: 2,
