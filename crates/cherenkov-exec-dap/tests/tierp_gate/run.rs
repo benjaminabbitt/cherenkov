@@ -26,9 +26,27 @@ fn parse(stdout: &str) -> Vec<(usize, Outcome)> {
         .collect()
 }
 
-/// Run `exe` over `ids`; a case that kills the process is `Crashed` and the
-/// rest are run again without it.
+/// Run `exe` over `ids`, split among as many threads as the machine has
+/// cores; each case's outcome is its own, so the result does not depend on
+/// the split.
 pub fn sweep(exe: &Path, ids: &[usize]) -> BTreeMap<usize, Outcome> {
+    let workers = std::thread::available_parallelism().map_or(1, usize::from);
+    let size = ids.len().div_ceil(workers).max(1);
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = ids
+            .chunks(size)
+            .map(|chunk| scope.spawn(move || sweep_chunk(exe, chunk)))
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().expect("a sweep thread"))
+            .collect()
+    })
+}
+
+/// Run `exe` over `ids` in turn; a case that kills the process is `Crashed`
+/// and the rest are run again without it.
+fn sweep_chunk(exe: &Path, ids: &[usize]) -> BTreeMap<usize, Outcome> {
     let mut out = BTreeMap::new();
     let mut todo: Vec<usize> = ids.to_vec();
     while !todo.is_empty() {

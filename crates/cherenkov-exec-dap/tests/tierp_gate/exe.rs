@@ -14,6 +14,8 @@ use object::{Object, ObjectSection};
 pub struct Exe {
     pub bytes: Vec<u8>,
     rows: Vec<Row>,
+    /// The indices of the rows of each source file, by its last path part.
+    by_module: std::collections::HashMap<String, Vec<usize>>,
     /// (address, size, file offset) of each section.
     sections: Vec<(u64, u64, usize)>,
 }
@@ -28,6 +30,25 @@ fn is_module(file: &str, module: &str) -> bool {
     file.rsplit('/').next() == Some(module)
 }
 
+impl Function {
+    /// The instructions with their line:column, for `TIERP_GATE_DUMP`.
+    pub fn listing(&self) -> String {
+        let mut out = String::new();
+        for i in &self.insns {
+            let insn = Decoder::with_ip(64, &i.bytes, i.pc, DecoderOptions::NONE).decode();
+            let hex: String = i.bytes.iter().map(|b| format!("{b:02x}")).collect();
+            out.push_str(&format!(
+                "{:x} {}:{:<3} {:?} {hex}\n",
+                i.pc,
+                i.line,
+                i.column,
+                insn.mnemonic()
+            ));
+        }
+        out
+    }
+}
+
 impl Exe {
     pub fn read(path: &Path) -> Exe {
         let bytes = std::fs::read(path).expect("read the executable");
@@ -36,9 +57,16 @@ impl Exe {
             .sections()
             .filter_map(|s| Some((s.address(), s.size(), s.file_range()?.0 as usize)))
             .collect();
+        let rows = lines::rows(path).expect("a line table");
+        let mut by_module: std::collections::HashMap<String, Vec<usize>> = Default::default();
+        for (k, row) in rows.iter().enumerate() {
+            let name = row.file.rsplit('/').next().unwrap_or_default();
+            by_module.entry(name.to_string()).or_default().push(k);
+        }
         Exe {
             bytes,
-            rows: lines::rows(path).expect("a line table"),
+            rows,
+            by_module,
             sections,
         }
     }
@@ -54,9 +82,7 @@ impl Exe {
     /// The code of module `module` (`s_3.rs`): from its first row to the
     /// row that follows its last.
     pub fn function(&self, module: &str) -> Option<Function> {
-        let mine: Vec<usize> = (0..self.rows.len())
-            .filter(|&k| is_module(&self.rows[k].file, module))
-            .collect();
+        let mine = self.by_module.get(module)?;
         let (first, last) = (*mine.first()?, *mine.last()?);
         let (start, end) = (self.rows[first].addr, self.rows.get(last + 1)?.addr);
         let at = self.offset(start)?;

@@ -621,9 +621,9 @@ write unless memory still holds every `original` (`native.rs:191`), and
 | Action and edit | Patch (amd64) |
 |---|---|
 | `EvalBranch` with `WrapNot` | Invert the condition code of the single conditional jump on the condition. |
-| `EvalBranch` with `ReplaceToken` on a comparison | Rewrite the jump's condition code. Polarity (does the jump go to the then-block?) and operand order are derived from where the jump lands; signedness from the condition code. |
+| `EvalBranch` with `ReplaceToken` on a comparison | Rewrite the jump's condition code. For Rust code (and any code with columns) the jump is the last instruction that reads flags inside the comparison's own span, as for a value; polarity, operand order and signedness come from the condition code (see "Tier P comparisons"). Without columns, the one conditional jump on the condition's line; the condition code is read the same way. |
 | `EvalBranch` with `ReplaceWithLiteral(Bool)` | Replace the jump with an unconditional jump to its target, or to the next instruction, padded to length. |
-| Any `ReplaceToken` on a comparison whose result is a value | The `setcc` that makes the bool, its condition code rewritten (`compared_value`). |
+| Any `ReplaceToken` on a comparison whose result is a value | The `setcc` or the conditional jump (a bool made by `&&`/`||`, or a closure's result) that reads the comparison's flags, its condition code rewritten, found by column. See "Tier P comparisons". |
 | `JumpOnly` with `DeleteStatement` | `JMP` over the statement, ending at its last call instruction; refused if the statement branches before it. |
 | `EvalThenJump` with `+` to `-` or `-` to `+` | The add or sub opcode (or `inc`/`dec`) swapped in place. Tried by line first, then by column. |
 | An arithmetic `ReplaceToken` (plain or compound) in any other action | The operation's instruction, found by the line-table column of its expression (an argument, a field, a returned value, a condition, a compound assignment): add/sub with its overflow check, scalar float `+ - * /`, and the bitwise compound assignments. See "Tier P arithmetic: the shapes gate". |
@@ -647,8 +647,11 @@ source instruction's encoding and whether its second operand is in memory
 (`int w32 of add->sub 83/0 reg`).
 
 - **The gate** (`crates/cherenkov-exec-dap/tests/tierp_gate`, in `just test`,
-  alone as `just tierp-gate`): for every arithmetic or bitwise operator
-  replacement the planner makes (all operator sets) in a one-function snippet
+  alone as `just tierp-gate`; `TIERP_GATE_ONLY=cond` runs the comparison
+  cases only and `TIERP_GATE_DUMP=<case or "label type mutation">` prints a
+  case's code with its columns): for every arithmetic or bitwise operator
+  replacement, and every comparison replacement (see "Tier P comparisons"),
+  the planner makes (all operator sets) in a one-function snippet
   of each integer and float type and each operand form (register pair,
   literal on either side, field, call argument, chain, `&mut`, hash-map entry,
   index, compound assignment), it compiles the original and the mutated source
@@ -682,6 +685,35 @@ source instruction's encoding and whether its second operand is in memory
 - **Not covered:** arm64 has no arithmetic rules; optimised builds were not
   harvested; the operands the gate runs are scalars, so a shape is shown
   right on straight-line snippets, not in every enclosing function.
+
+### Tier P comparisons
+
+A comparison operator swap (`ror`: `<`, `<=`, `>`, `>=`, `==`, `!=` to each
+other) is the condition code of the instruction that reads the flags of the
+`cmp` (or `ucomis`) of its operands: the last `jcc` or `setcc` positioned
+inside the comparison's span (`plan.operands`, from the left operand's start
+to the right operand's end), however many other jumps its line holds (an
+`&&` chain, a call in an operand, a closure). Which of the eight readings of
+a code (signed or unsigned, operands in either order, jump when it holds or
+when it fails) the instruction has follows from the code and the operator:
+at most one does, and the mutated code is the same reading of the new
+operator. The gate (`tests/tierp_gate/conds.rs`) covers each comparison in an
+`if`, as a returned bool and in a closure, over `Vec`, `Option`, `BTreeMap`,
+field, user-call and local operands of signed, unsigned and float types; a
+shape is `cmp jcc|setcc int|float <from>-><with> <cc>` in the table.
+
+Declined, because the swap would not be exact:
+
+- `==` or `!=` to an ordering (`==` to `<=`): `e` is the code for signed and
+  unsigned operands in either order, so the ordering is a guess. (Before the
+  gate, the rules of before it gave wrong results on the gate's first
+  cases for 312 of these on unsigned operands and 546 float swaps.)
+- A float swap that changes the operand order (`<` to `>`), or reads the
+  parity flag (`==`, `!=`): an unordered result sets the carry flag, so only
+  `ja`/`jae` are false for a NaN.
+- A comparison whose flags are not set by the instruction before the jump,
+  and `&&`/`||` swaps themselves, which are not byte patches (tier B, steered
+  at the program's own jumps, see "Tier B").
 
 ### Tier B: stop, evaluate, set the PC or return
 
