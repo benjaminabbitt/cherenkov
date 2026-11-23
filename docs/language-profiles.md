@@ -721,6 +721,7 @@ offset 0 and whose `None`/`Ok` variant has an explicit tag and no payload.
   (`test_trivial_value_stubs_run_on_tier_p_and_are_faithful_to_their_source`),
   and one per declined kind that must still be faithful on tier B.
 - The zero stub (`zero_bits`) is unchanged and needs no table entry.
+
 ### Tier P comparisons
 
 A comparison operator swap (`ror`: `<`, `<=`, `>`, `>=`, `==`, `!=` to each
