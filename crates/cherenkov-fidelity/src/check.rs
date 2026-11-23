@@ -8,7 +8,7 @@ use cherenkov_core::profile::Profile;
 
 use crate::judge::{Judgement, Run, judge};
 use crate::source::ScratchProject;
-use cherenkov_exec_dap::libtest;
+use cherenkov_exec_dap::libtest::{self, TestOutcome};
 
 /// What checking one mutant found.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,6 +18,44 @@ pub enum Checked {
     Unsupported(String),
     /// The mutant has no source form to compile (an unknown default value).
     NoSourceForm,
+}
+
+/// What the debugger established for one mutant, across the test programs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Observed {
+    /// Every program that ran the mutant reported complete, consistent results.
+    Ran(Run),
+    /// The executor refuses this mutant, with its reason.
+    Unsupported(String),
+    /// No program contains the mutated code.
+    NotReached(String),
+    /// No test calls the mutated function.
+    NotCalled,
+    /// The output cannot give a verdict; what was missing.
+    Incomplete(String),
+}
+
+impl Observed {
+    /// The run to judge, or why this mutant cannot be judged.
+    fn into_run(self, plan: &MutantPlan) -> Result<Result<Run, String>, String> {
+        let id = plan.id.to_string();
+        match self {
+            Observed::Ran(run) => Ok(Ok(run)),
+            Observed::Unsupported(reason) => Ok(Err(reason)),
+            Observed::NotReached(reason) => Err(format!(
+                "{id} {}: the debugger did not reach the mutated code: {reason}",
+                plan.site()
+            )),
+            Observed::NotCalled => Err(format!(
+                "{id} {}: no test calls the mutated function, so the debugger run says nothing",
+                plan.site()
+            )),
+            Observed::Incomplete(why) => Err(format!(
+                "{id} {}: the debugger run cannot be judged, its output is incomplete: {why}",
+                plan.site()
+            )),
+        }
+    }
 }
 
 /// The debugger side: one executor per test program, with its baseline.
@@ -82,42 +120,112 @@ impl Debugger {
         self.tiers.get(&plan.id.to_string()).copied()
     }
 
-    /// Every test program's outcome under the run-time mutant.
-    fn run(&mut self, plan: &MutantPlan) -> Result<Result<Run, String>, String> {
+    /// Every test program's outcome under the run-time mutant. A program
+    /// that was not reached or not called leaves its tests at baseline, but
+    /// if every program is so, the mutant ran nowhere and says nothing.
+    fn run(&mut self, plan: &MutantPlan) -> Result<Observed, String> {
         let mut tests = std::collections::BTreeMap::new();
+        let mut reached = false;
+        let mut not_reached = None;
         for ((ex, budget, baseline), drives) in self.executors.iter_mut().zip(&self.drives) {
             let drive = drives
                 .as_ref()
                 .and_then(|d| d.get(&plan.id.to_string()).cloned())
                 .unwrap_or(Driven::Every);
-            if let Run::Tests(t) = baseline {
-                tests.extend(t.clone());
-            }
-            match drive {
+            let baseline_tests = match baseline {
+                Run::Tests(t) => t.clone(),
+                _ => Default::default(),
+            };
+            tests.extend(baseline_tests.clone());
+            let expected: Vec<String> = match &drive {
                 Driven::NotCalled => continue,
-                Driven::Tests(t) => ex.select_tests(Some(&t)),
-                Driven::Every => ex.select_tests(None),
-            }
+                Driven::Tests(t) => {
+                    ex.select_tests(Some(t));
+                    t.clone()
+                }
+                Driven::Every => {
+                    ex.select_tests(None);
+                    baseline_tests.keys().cloned().collect()
+                }
+            };
             let (raw, output) = ex
                 .run_with_output(plan, *budget)
                 .map_err(|e| format!("{} {}: {e}", plan.id, plan.site()))?;
             if let Some(tier) = classify(&raw).tier {
                 self.tiers.insert(plan.id.to_string(), tier);
             }
-            let run = match raw {
-                RawOutcome::Unsupported { reason } => return Ok(Err(reason)),
-                RawOutcome::Unviable { .. } => return Ok(Ok(Run::Unviable)),
-                RawOutcome::TimedOut { .. } => return Ok(Ok(Run::TimedOut)),
-                RawOutcome::Crashed { kind, .. } => return Ok(Ok(Run::Crashed(kind))),
-                // Not in this program: its tests run as unmutated.
-                RawOutcome::NotReached { .. } if output.is_empty() => baseline.clone(),
-                _ => Run::Tests(libtest::parse(&output)),
-            };
-            if let Run::Tests(t) = run {
-                tests.extend(t);
+            match program_run(&raw, &output, &expected) {
+                Program::Ends(observed) => return Ok(observed),
+                Program::NotReached(reason) => not_reached = Some(reason),
+                Program::Tests(t) => {
+                    reached = true;
+                    tests.extend(t);
+                }
             }
         }
-        Ok(Ok(Run::Tests(tests)))
+        Ok(match (reached, not_reached) {
+            (true, _) => Observed::Ran(Run::Tests(tests)),
+            (false, Some(reason)) => Observed::NotReached(reason),
+            (false, None) => Observed::NotCalled,
+        })
+    }
+}
+
+/// What one test program made of a mutant.
+enum Program {
+    /// The mutant's whole outcome is decided by this program.
+    Ends(Observed),
+    /// The mutated code is not in this program.
+    NotReached(String),
+    /// The program ran and reported these tests, completely.
+    Tests(std::collections::BTreeMap<String, TestOutcome>),
+}
+
+/// One program's run: its ending, its output, and the tests that were
+/// to run. Output that does not agree with the ending, or does not cover
+/// the tests, is incomplete, never a verdict.
+fn program_run(raw: &RawOutcome, output: &str, expected: &[String]) -> Program {
+    match raw {
+        RawOutcome::Unsupported { reason } => Program::Ends(Observed::Unsupported(reason.clone())),
+        RawOutcome::Unviable { .. } => Program::Ends(Observed::Ran(Run::Unviable)),
+        RawOutcome::TimedOut { .. } => Program::Ends(Observed::Ran(Run::TimedOut)),
+        RawOutcome::Crashed { kind, .. } => {
+            Program::Ends(Observed::Ran(Run::Crashed(kind.clone())))
+        }
+        RawOutcome::NotReached { reason } => Program::NotReached(reason.clone()),
+        RawOutcome::Exited { code, .. } => {
+            let parsed = libtest::parse(output);
+            match incomplete(*code, &parsed, expected) {
+                Some(why) => Program::Ends(Observed::Incomplete(why)),
+                None => Program::Tests(parsed),
+            }
+        }
+    }
+}
+
+/// Why the parsed tests cannot be trusted for a program that exited with
+/// `code`, if they cannot.
+fn incomplete(
+    code: i32,
+    parsed: &std::collections::BTreeMap<String, TestOutcome>,
+    expected: &[String],
+) -> Option<String> {
+    let missing: Vec<&str> = expected
+        .iter()
+        .filter(|t| !parsed.contains_key(*t))
+        .map(String::as_str)
+        .collect();
+    if !missing.is_empty() {
+        return Some(format!(
+            "exit code {code}, but no result for test(s) {}",
+            missing.join(", ")
+        ));
+    }
+    let failed = parsed.values().any(|o| *o == TestOutcome::Failed);
+    match (code, failed) {
+        (0, true) => Some("exit code 0, but a test reported FAILED".into()),
+        (0, false) | (_, true) => None,
+        (code, false) => Some(format!("exit code {code}, but no test reported FAILED")),
     }
 }
 
@@ -147,7 +255,7 @@ pub fn check(
         let original = source_of(plan).map_err(|e| format!("{}: {e}", plan.file.display()))?;
         let checked = match render_source(&original, plan, profile) {
             None => Checked::NoSourceForm,
-            Some(mutated) => match debugger.run(plan)? {
+            Some(mutated) => match debugger.run(plan)?.into_run(plan)? {
                 Err(reason) => Checked::Unsupported(reason),
                 Ok(at_runtime) => {
                     let compiled = scratch
@@ -213,6 +321,180 @@ mod tests {
         Debugger::new(vec![Box::new(Fixed(mutant_ends))]).unwrap()
     }
 
+    const BASELINE_OUTPUT: &str = "test a ... ok\ntest b ... ok\n";
+
+    fn exited(code: i32) -> RawOutcome {
+        RawOutcome::Exited {
+            code,
+            tier: Tier::B,
+            wall: Duration::from_millis(1),
+        }
+    }
+
+    /// An executor with two tests whose mutant run ends as `raw` with
+    /// `output`, and which says `driven` of the plans.
+    struct Scripted {
+        raw: RawOutcome,
+        output: &'static str,
+        driven: Option<Driven>,
+    }
+
+    impl MutantExecutor for Scripted {
+        fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+            Ok(self.raw.clone())
+        }
+
+        fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+            Ok(exited(0))
+        }
+
+        fn run_with_output(
+            &mut self,
+            _: &MutantPlan,
+            _: Budget,
+        ) -> Result<(RawOutcome, String), ExecError> {
+            Ok((self.raw.clone(), self.output.to_string()))
+        }
+
+        fn baseline_with_output(&mut self, _: Budget) -> Result<(RawOutcome, String), ExecError> {
+            Ok((exited(0), BASELINE_OUTPUT.to_string()))
+        }
+
+        fn driven(
+            &mut self,
+            plans: &[MutantPlan],
+            _: Budget,
+        ) -> Result<Option<Vec<Driven>>, ExecError> {
+            Ok(self.driven.clone().map(|d| vec![d; plans.len()]))
+        }
+    }
+
+    fn observe(raw: RawOutcome, output: &'static str, driven: Option<Driven>) -> Observed {
+        let plan = a_plan();
+        let mut debugger = Debugger::new(vec![Box::new(Scripted {
+            raw,
+            output,
+            driven,
+        })])
+        .unwrap();
+        debugger.record(std::slice::from_ref(&plan)).unwrap();
+        debugger.run(&plan).unwrap()
+    }
+
+    fn tests_of(pairs: &[(&str, TestOutcome)]) -> Run {
+        Run::Tests(pairs.iter().map(|(n, o)| (n.to_string(), *o)).collect())
+    }
+
+    #[test]
+    fn test_run_reports_the_tests_when_output_is_complete_and_consistent() {
+        let seen = observe(exited(0), BASELINE_OUTPUT, None);
+        assert_eq!(
+            seen,
+            Observed::Ran(tests_of(&[("a", TestOutcome::Ok), ("b", TestOutcome::Ok)]))
+        );
+    }
+
+    #[test]
+    fn test_run_reports_a_failure_when_the_exit_code_and_a_failed_test_agree() {
+        let seen = observe(exited(101), "test a ... ok\ntest b ... FAILED\n", None);
+        assert_eq!(
+            seen,
+            Observed::Ran(tests_of(&[
+                ("a", TestOutcome::Ok),
+                ("b", TestOutcome::Failed)
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_run_is_incomplete_when_a_test_is_missing_from_the_output() {
+        let seen = observe(exited(0), "test a ... ok\n", None);
+        let Observed::Incomplete(why) = seen else {
+            panic!("a test missing from the output must not count as a pass: {seen:?}");
+        };
+        assert!(why.contains('b'), "names the missing test: {why}");
+    }
+
+    #[test]
+    fn test_run_is_incomplete_when_the_exit_code_fails_but_no_test_failed() {
+        let seen = observe(exited(101), BASELINE_OUTPUT, None);
+        let Observed::Incomplete(why) = seen else {
+            panic!("exit 101 with every test ok must not be judged: {seen:?}");
+        };
+        assert!(why.contains("101"), "names the exit code: {why}");
+    }
+
+    #[test]
+    fn test_run_is_incomplete_when_the_exit_code_passes_but_a_test_failed() {
+        let seen = observe(exited(0), "test a ... ok\ntest b ... FAILED\n", None);
+        assert!(matches!(seen, Observed::Incomplete(_)), "{seen:?}");
+    }
+
+    #[test]
+    fn test_run_is_incomplete_when_the_selected_tests_are_missing_from_the_output() {
+        let seen = observe(exited(0), "", Some(Driven::Tests(vec!["b".into()])));
+        let Observed::Incomplete(why) = seen else {
+            panic!("{seen:?}");
+        };
+        assert!(why.contains('b'), "{why}");
+    }
+
+    #[test]
+    fn test_run_takes_unselected_tests_from_the_baseline() {
+        let seen = observe(
+            exited(101),
+            "test b ... FAILED\n",
+            Some(Driven::Tests(vec!["b".into()])),
+        );
+        assert_eq!(
+            seen,
+            Observed::Ran(tests_of(&[
+                ("a", TestOutcome::Ok),
+                ("b", TestOutcome::Failed)
+            ]))
+        );
+    }
+
+    #[test]
+    fn test_run_reports_not_reached_even_when_the_program_printed_results() {
+        let seen = observe(
+            RawOutcome::NotReached {
+                reason: "not called".into(),
+            },
+            BASELINE_OUTPUT,
+            None,
+        );
+        assert_eq!(seen, Observed::NotReached("not called".into()));
+    }
+
+    #[test]
+    fn test_run_reports_not_called_when_no_test_calls_the_function() {
+        let seen = observe(exited(0), BASELINE_OUTPUT, Some(Driven::NotCalled));
+        assert_eq!(seen, Observed::NotCalled);
+    }
+
+    #[test]
+    fn test_run_reports_a_refusal_as_unsupported_with_its_reason() {
+        let seen = observe(
+            RawOutcome::Unsupported {
+                reason: "no way".into(),
+            },
+            "",
+            None,
+        );
+        assert_eq!(seen, Observed::Unsupported("no way".into()));
+    }
+
+    #[test]
+    fn test_check_fails_loudly_naming_what_is_missing_for_an_unjudgeable_run() {
+        let plan = a_plan();
+        let why = Observed::Incomplete("test b missing".into())
+            .into_run(&plan)
+            .unwrap_err();
+        assert!(why.contains("test b missing"), "{why}");
+        assert!(why.contains(&plan.id.to_string()), "{why}");
+    }
+
     #[test]
     fn test_tier_is_the_one_that_applied_the_mutant_in_the_last_run() {
         let plan = a_plan();
@@ -222,7 +504,7 @@ mod tests {
             wall: Duration::from_millis(1),
         });
         assert_eq!(debugger.tier(&plan), None, "before any run");
-        debugger.run(&plan).unwrap().unwrap();
+        debugger.run(&plan).unwrap();
         assert_eq!(debugger.tier(&plan), Some(Tier::P));
     }
 
@@ -232,7 +514,7 @@ mod tests {
         let mut debugger = debugger_of(RawOutcome::NotReached {
             reason: "not called".into(),
         });
-        debugger.run(&plan).unwrap().unwrap();
+        debugger.run(&plan).unwrap();
         assert_eq!(debugger.tier(&plan), None);
     }
 }
