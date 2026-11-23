@@ -1,4 +1,4 @@
-//! Rust function-body replacement values, matching cargo-mutants 26.2.0
+//! Rust function-body replacement values, matching cargo-mutants 27.1.0
 //! `src/fnvalue.rs`. The expectations are that file's own unit tests.
 
 use cherenkov_syntax::rust_values::return_values;
@@ -42,6 +42,24 @@ fn test_nonzero_integers() {
         &[],
         &["1.try_into().unwrap()"],
     );
+}
+
+#[test]
+fn test_generic_nonzero_of_an_unsigned_type_is_only_positive() {
+    for t in ["NonZero<u32>", "std::num::NonZero<usize>", "NonZero<u8>"] {
+        check(Some(t), &[], &["1.try_into().unwrap()"]);
+    }
+}
+
+#[test]
+fn test_generic_nonzero_of_a_signed_or_unknown_type_is_either_sign() {
+    for t in ["NonZero<i64>", "NonZero<T>", "NonZero<std::primitive::u8>", "NonZero<&u8>"] {
+        check(
+            Some(t),
+            &[],
+            &["1.try_into().unwrap()", "(-1).try_into().unwrap()"],
+        );
+    }
 }
 
 #[test]

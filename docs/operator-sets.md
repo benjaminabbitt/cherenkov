@@ -23,7 +23,7 @@ work, and `sufficient` is the Rust-only start of it.
 
 ## Set `cargo-mutants`
 
-What cargo-mutants 26.2.0 generates, read from its source (crate tarball
+What cargo-mutants 27.1.0 generates, read from its source (crate tarball
 from crates.io, `src/visit.rs` and `src/fnvalue.rs`). The point of this set
 is a mutant-by-mutant comparison, so where cargo-mutants' docs and source
 differ, the source wins. (The docs summary omits `<` → `<=` and `>` → `>=`.)

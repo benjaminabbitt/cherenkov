@@ -417,7 +417,7 @@ breadth (default): the six prototype operators: one per action kind (design sect
   source: docs/design.md section 4.9
   operators: delete-statement, aor, ror, negate-condition, return-bool-flip, body-default
 cargo-mutants: what cargo-mutants generates, for a mutant-by-mutant comparison
-  source: cargo-mutants 26.2.0
+  source: cargo-mutants 27.1.0
   operators: ror, lcr, aor, shift, bitwise, unary, match-arm, match-guard, struct-field, fn-value
   pending: files: only those in a package's module tree, not behind #[cfg(test)] mod
   pending: `&&` inside let chains (cargo-mutants swaps it; the mutant never compiles)
@@ -438,7 +438,7 @@ sufficient: non-redundant sufficient sets plus operators real faults need
 | Set | Mutations | Skips | Notes |
 |---|---|---|---|
 | `breadth` | 12 | none | The six design operators as 12 named mutations. The default. |
-| `cargo-mutants` | 53 | all six `SkipKind`s | What cargo-mutants 26.2.0 generates, for comparison. |
+| `cargo-mutants` | 53 | all six `SkipKind`s | What cargo-mutants 27.1.0 generates, for comparison. |
 | `sufficient` | 36 | `test`, `annotated` | From the sufficient-mutation literature plus `fn-value` and call deletion. |
 
 `OperatorSet::operators()` turns the names into operators: all
@@ -903,7 +903,7 @@ are in 8.3 (D31 onward).
 
 ### 8.2 From cargo-mutants
 
-The generation rules for the `cargo-mutants` set are cargo-mutants 26.2.0's,
+The generation rules for the `cargo-mutants` set are cargo-mutants 27.1.0's,
 read from its source and cited in `docs/operator-sets.md`. The catalogue of
 cargo-mutants' exact mutations is **pending**; the figures below are from
 the existing reports (`docs/operator-sets.md` for generation, a comparison
