@@ -215,6 +215,16 @@ const ACCEPTED_REFUSALS: &[(&str, &str, &str)] = &[
         "an async block's poll returns Poll<Result<u32, String>>: GDB returns only scalars",
     ),
     (
+        "tally_w",
+        compound!("add->sub"),
+        "`s.w += k` to `-=` on a float: rustc loads `s.w` from memory, so an opcode swap would compute `k - s.w` (declined), and GDB cannot evaluate a float target",
+    ),
+    (
+        "tally_w",
+        compound!("mul->div"),
+        "`s.w *= k` to `/=` on a float: the same operand reversal, declined, and GDB cannot evaluate a float target",
+    ),
+    (
         "tally_guarded",
         compound!("add->mul"),
         "`+=` to `*=` on an integer has no tier P rule, and GDB cannot call a guard's Deref",
@@ -304,10 +314,8 @@ const BY_COLUMN: &[(&str, &str)] = &[
     ("tally_down", compound!("sub->add")),
     ("tally_guarded", compound!("add->sub")),
     ("tally_seen", compound!("add->sub")),
-    ("tally_w", compound!("add->sub")),
     ("tally_w", compound!("add->mul")),
     ("tally_w", compound!("mul->add")),
-    ("tally_w", compound!("mul->div")),
     ("tally_bits", compound!("or->and")),
     ("tally_bits", compound!("and->or")),
     ("blend", "aor/sub->add"),
