@@ -55,14 +55,19 @@ installs tools and calls just recipes only; actions are pinned to SHAs.
 # Co-developing the angzarr backends
 
 The angzarr git dependencies are pinned by full commit in `Cargo.toml`. To
-build against the backends' working trees instead, link the shared dev module
-(rust-support's `tools/dev/install.sh <this checkout>`, once per clone; `mod? dev '.dev'` in the
-justfile, `/.dev` gitignored) and run `just dev::local`: it writes the
-gitignored `.cargo/config.toml` `[patch]`, one path per crate, found through
-`~/.config/angzarr-dev/repos.toml` (name or URL to checkout) or the usual
-places under `~/workspace`. `just dev::local-off` undoes it and restores
-`Cargo.lock`, which cargo rewrites while the patch is on: never commit it
-that way. `just dev::doctor` says what was found. After a backend commit,
+build against the backends' working trees instead, run `cargo local-pins`
+(optionally naming repositories or crates; `--pick LABEL` chooses when there
+are several checkouts, `--dry-run` shows what it would write, `cargo
+local-pins scan` lists the checkouts it finds). It writes the gitignored
+`.cargo/local-pins.toml` `[patch]`, one path per crate, adds an optional
+include of it to `.cargo/config.toml`, and checks that cargo uses each patch.
+Nothing refreshes it: rerun it after the pins or the checkouts move. `cargo
+local-pins clear` removes the patch and restores `Cargo.lock`, which cargo
+rewrites while the patch is on: never commit it that way.
+
+The pin workflow is the shared dev module (rust-support's `tools/dev/install.sh
+<this checkout>`, once per clone; `mod? dev '.dev'` in the justfile, `/.dev`
+gitignored). `just dev::doctor` says what was found. After a backend commit,
 `just dev::repin` sets the pins to its HEAD (`cargo update -p` for those only),
 `just dev::land` prints the push order across repositories (`--go` pushes, each
 repository's own hooks run), `just dev::pins-check` (pre-commit) and `just

@@ -10,7 +10,10 @@ crates/*/fixtures/*/Cargo.lock
 .ctxloom/sessions/
 __pycache__/
 .claude/settings.local.json
-# Development against the angzarr checkouts: the dev module's generated cargo
-# [patch] (just dev::local) and the link to the module (tools/dev/install.sh).
+# Development against the angzarr checkouts: the machine-local cargo [patch]
+# written by `cargo local-pins`, and the link to the dev module
+# (tools/dev/install.sh). .cargo/config.toml stays ignored: local-pins adds
+# only an optional include of local-pins.toml to it.
 /.cargo/config.toml
+/.cargo/local-pins.toml
 /.dev
