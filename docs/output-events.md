@@ -105,7 +105,9 @@ writes just those documents to a file, one a line, as they are decided.
 ## Scoping to a diff
 `--in-diff FILE` (on `plan` and `run`) takes a unified diff, as
 cargo-mutants does, and keeps the mutants whose span touches a line the
-diff adds. Paths in the diff are from the repository's root.
+diff adds. Paths in the diff are from the repository's root. On a Rust
+workspace only the test programs of the packages that judge those mutants
+are built and recorded (`docs/test-scope.md`).
 
 ## Text mode
 The same events rendered for a person on stdout, one line per mutant as
