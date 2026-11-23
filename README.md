@@ -213,6 +213,12 @@ never used.
 Development recipes (`justfile`):
 
 - `just check`: format check, clippy, and the fast tests
+- `just tierp-gate`: the tier P arithmetic gate alone (compiles and runs
+  natively every arithmetic patch against rustc's own mutant; about 40 s, in
+  `just check` too)
+- `just tierp-harvest`: rewrites `isa/tierp-shapes.toml` (the arithmetic
+  shapes tier P may patch in Rust code) with the toolchain in use and fails
+  if it differs from the committed one; run it after a rustc bump
 - `just test-slow`: tests against real debuggers and toolchains (gdb, dlv, go)
 - `just test-determinism`: runs the Rust fixture twice under gdb and fails if
   any mutant's verdict or tier differs between the runs (slow; not in

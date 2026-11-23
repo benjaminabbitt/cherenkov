@@ -625,15 +625,63 @@ write unless memory still holds every `original` (`native.rs:191`), and
 | `EvalBranch` with `ReplaceWithLiteral(Bool)` | Replace the jump with an unconditional jump to its target, or to the next instruction, padded to length. |
 | Any `ReplaceToken` on a comparison whose result is a value | The `setcc` that makes the bool, its condition code rewritten (`compared_value`). |
 | `JumpOnly` with `DeleteStatement` | `JMP` over the statement, ending at its last call instruction; refused if the statement branches before it. |
-| `EvalThenJump` with `+` to `-` or `-` to `+` | The add or sub opcode (or `inc`/`dec`) swapped in place. |
+| `EvalThenJump` with `+` to `-` or `-` to `+` | The add or sub opcode (or `inc`/`dec`) swapped in place. Tried by line first, then by column. |
+| An arithmetic `ReplaceToken` (plain or compound) in any other action | The operation's instruction, found by the line-table column of its expression (an argument, a field, a returned value, a condition, a compound assignment): add/sub with its overflow check, scalar float `+ - * /`, and the bitwise compound assignments. See "Tier P arithmetic: the shapes gate". |
 | `EvalReturn` with a bool flip | The immediate of the store of the returned constant, or `xor eax,eax` to `mov al,1`. |
 | `ReturnDefault` with `zero_bits` | An entry stub written over the function's first bytes: zero the result registers, `RET`. The stub is per calling convention (`sysv`, `go`). |
 | `Redirect` | A `JMP` over the first instructions of the deleted arm's body to the catch-all body, found by exact line and column. |
 | `==` to `!=` or back, `!` deletion (`negatable`) | Negate the bool where the program consumes it: invert the consuming jump, `and`/`xor` on `al`, or `setcc`. |
 
 Everything else in the tier P column is `UnsupportedEdit`. In particular:
-`*`, `/`, `%` swaps, shifts, bitwise operators, `InPlace`, and non-zero
-body values have no patch.
+integer `*`, `/`, `%` swaps, shifts, plain (non-compound) bitwise operators,
+`+`/`-` to `*`/`/` on integers, and non-zero body values have no patch.
+
+### Tier P arithmetic: the shapes gate
+
+An in-place opcode swap is right only where the compiler's instruction
+selection makes it so, and a compiler upgrade can change that. So arithmetic
+of Rust code is patched only for a *shape* the gate has shown right with the
+pinned rustc. A shape is the kind of operation (integer with its overflow
+check `of` or `carry`, float, bitwise), the operand width, the swap, the
+source instruction's encoding and whether its second operand is in memory
+(`int w32 of add->sub 83/0 reg`).
+
+- **The gate** (`crates/cherenkov-exec-dap/tests/tierp_gate`, in `just test`,
+  alone as `just tierp-gate`): for every arithmetic or bitwise operator
+  replacement the planner makes (all operator sets) in a one-function snippet
+  of each integer and float type and each operand form (register pair,
+  literal on either side, field, call argument, chain, `&mut`, hash-map entry,
+  index, compound assignment), it compiles the original and the mutated source
+  with rustc (debug, overflow checks on), derives the real patch from the
+  original's line table (`tierp::derive_shaped`, over the instructions and
+  columns `lines::rows` reads), patches the original's machine code and runs
+  both natively: edge values (0, 1, -1, MIN, MAX and their neighbours, NaN,
+  infinities, signed zeros), seeded random inputs, and every value of an
+  8-bit type. The results and the inputs that panic must be the same.
+  Cases whose original and mutant agree on every input are no evidence and
+  do not pass a shape.
+- **The table** (`isa/tierp-shapes.toml`): the shapes that passed, and every
+  other shape the rules can make, for one rustc (`rustc -vV` release and
+  commit). `just tierp-harvest` regenerates it with the toolchain in use and
+  fails on any difference, so a toolchain bump shows as a diff to review
+  (`just check` fails on a stale table too). Tier P declines an arithmetic
+  shape of Rust code that is not in `pass` (`no harvested rustc shape ...`);
+  Go code is not covered by it. A test fails when the rules (`isa/amd64.toml`)
+  can make a shape the table has not decided.
+- **Hand rules the table does not replace:** a commutative source (`+`, `*`)
+  swapped to `-` or `/` is declined when the instruction's second operand is
+  in memory (rustc folds the left operand of `a += b`, `s.x + k`, `*m += k`,
+  `v[i] += k` from memory and puts the right one in the register, so the
+  swap would compute `b - a`), and when the left operand is a literal; an
+  unsigned check loses its compare when swapped, so `inc`/`dec` (which leave
+  the carry flag alone) are declined under it; integer `*` has no rule.
+- **The panic call** of a patched overflow check is kept (`panic_call =
+  "kept"` in the table): after an add to sub patch the panic still says
+  "attempt to add with overflow". The verdict of a test is the compiled
+  mutant's; a `#[should_panic(expected = ...)]` on the message could differ.
+- **Not covered:** arm64 has no arithmetic rules; optimised builds were not
+  harvested; the operands the gate runs are scalars, so a shape is shown
+  right on straight-line snippets, not in every enclosing function.
 
 ### Tier B: stop, evaluate, set the PC or return
 

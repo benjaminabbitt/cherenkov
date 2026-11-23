@@ -19,10 +19,10 @@ use cherenkov_fs::FsSourceReader;
 use cherenkov_syntax::TreeSitterSyntax;
 
 /// The mutation name of a compound assignment's operator swap: the one
-/// place that names its operator id (`aor` today).
+/// place that names its operator id (`compound-assign` today).
 macro_rules! compound {
     ($swap:literal) => {
-        concat!("aor/", $swap)
+        concat!("compound-assign/", $swap)
     };
 }
 
@@ -216,12 +216,12 @@ const ACCEPTED_REFUSALS: &[(&str, &str, &str)] = &[
     ),
     (
         "tally_guarded",
-        compound!("add_assign->mul_assign"),
+        compound!("add->mul"),
         "`+=` to `*=` on an integer has no tier P rule, and GDB cannot call a guard's Deref",
     ),
     (
         "tally_seen",
-        compound!("add_assign->mul_assign"),
+        compound!("add->mul"),
         "`+=` to `*=` on an integer has no tier P rule, and GDB cannot call the map's entry",
     ),
     (
@@ -299,17 +299,17 @@ const BY_COLUMN: &[(&str, &str)] = &[
     ("lifted_loose", "aor/add->sub"),
     ("inc", "aor/add->sub"),
     ("twice_plus", "aor/add->sub"),
-    ("tally_x", compound!("add_assign->sub_assign")),
-    ("tally_u", compound!("add_assign->sub_assign")),
-    ("tally_down", compound!("sub_assign->add_assign")),
-    ("tally_guarded", compound!("add_assign->sub_assign")),
-    ("tally_seen", compound!("add_assign->sub_assign")),
-    ("tally_w", compound!("add_assign->sub_assign")),
-    ("tally_w", compound!("add_assign->mul_assign")),
-    ("tally_w", compound!("mul_assign->add_assign")),
-    ("tally_w", compound!("mul_assign->div_assign")),
-    ("tally_bits", "bitwise/or_assign->and_assign"),
-    ("tally_bits", "bitwise/and_assign->or_assign"),
+    ("tally_x", compound!("add->sub")),
+    ("tally_u", compound!("add->sub")),
+    ("tally_down", compound!("sub->add")),
+    ("tally_guarded", compound!("add->sub")),
+    ("tally_seen", compound!("add->sub")),
+    ("tally_w", compound!("add->sub")),
+    ("tally_w", compound!("add->mul")),
+    ("tally_w", compound!("mul->add")),
+    ("tally_w", compound!("mul->div")),
+    ("tally_bits", compound!("or->and")),
+    ("tally_bits", compound!("and->or")),
     ("blend", "aor/sub->add"),
     ("area", "aor/mul->div"),
 ];
