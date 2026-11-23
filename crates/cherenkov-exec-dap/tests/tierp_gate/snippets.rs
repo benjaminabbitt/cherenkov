@@ -23,6 +23,8 @@ pub enum Form {
     MutRef,
     Entry,
     Idx,
+    /// A condition (a comparison or `&&`/`||`): see `conds`.
+    Cond,
 }
 
 impl Form {
@@ -39,6 +41,7 @@ impl Form {
             Form::MutRef => "mutref",
             Form::Entry => "entry",
             Form::Idx => "idx",
+            Form::Cond => "cond",
         }
     }
 
@@ -58,6 +61,15 @@ pub struct Snippet {
     pub form: Form,
     pub compound: bool,
     pub source: String,
+    /// The function's result type (the operand type for arithmetic).
+    pub ret: &'static str,
+    /// What the snippet is, for a report.
+    pub label: String,
+    /// Whether the function takes one input of `ty` (else two).
+    pub one_input: bool,
+    /// The body of the driver's shim over inputs `a` and `b`, where the
+    /// function does not take them as they are.
+    pub shim: Option<String>,
 }
 
 fn literal(ty: &str, form: Form) -> String {
@@ -142,6 +154,10 @@ fn snippet(ty: &'static str, form: Form, op: &'static str, compound: bool) -> Op
         form,
         compound,
         source: format!("use crate::support::*;\n#[inline(never)]\n{body}\n"),
+        ret: ty,
+        label: form.name().to_string(),
+        one_input: form.unary(),
+        shim: None,
     })
 }
 
@@ -169,5 +185,6 @@ pub fn all() -> Vec<Snippet> {
     for ty in FLOATS {
         out.extend(of_type(ty, &["+", "-", "*", "/"]));
     }
+    out.extend(crate::conds::all());
     out
 }

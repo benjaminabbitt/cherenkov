@@ -28,6 +28,25 @@ fn is_module(file: &str, module: &str) -> bool {
     file.rsplit('/').next() == Some(module)
 }
 
+impl Function {
+    /// The instructions with their line:column, for `TIERP_GATE_DUMP`.
+    pub fn listing(&self) -> String {
+        let mut out = String::new();
+        for i in &self.insns {
+            let insn = Decoder::with_ip(64, &i.bytes, i.pc, DecoderOptions::NONE).decode();
+            let hex: String = i.bytes.iter().map(|b| format!("{b:02x}")).collect();
+            out.push_str(&format!(
+                "{:x} {}:{:<3} {:?} {hex}\n",
+                i.pc,
+                i.line,
+                i.column,
+                insn.mnemonic()
+            ));
+        }
+        out
+    }
+}
+
 impl Exe {
     pub fn read(path: &Path) -> Exe {
         let bytes = std::fs::read(path).expect("read the executable");

@@ -555,6 +555,7 @@ impl Isa {
                 out.extend(form_shapes(Kind::Bitwise, &source, from, with));
             }
         }
+        out.extend(crate::tierp::compare_universe(self));
         for (from, with) in ordered_pairs(&[Token::Add, Token::Sub, Token::Mul, Token::Div]) {
             for width in [32, 64] {
                 for memory in [false, true] {

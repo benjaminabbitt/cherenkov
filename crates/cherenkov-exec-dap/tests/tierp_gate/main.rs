@@ -8,6 +8,7 @@
 
 mod cases;
 mod compile;
+mod conds;
 mod driver;
 mod exe;
 mod run;
@@ -23,6 +24,7 @@ use cherenkov_exec_dap::shapes::Shape;
 use cherenkov_exec_dap::tierp::{Patch, Unpatchable, derive_shaped};
 use exe::Exe;
 use run::Outcome;
+use snippets::Form;
 
 /// What the gate found for one case.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,6 +98,39 @@ struct Findings {
     shapes: BTreeMap<usize, Shape>,
 }
 
+/// `TIERP_GATE_DUMP=3,7`: those cases' source and original code, then stop.
+fn dump_requested(cases: &[Case], exe: &Exe) {
+    let Ok(ids) = std::env::var("TIERP_GATE_DUMP") else {
+        return;
+    };
+    // Each item is a case number or text of "label type mutation".
+    for item in ids.split(',') {
+        let named = |c: &&Case| {
+            let name = format!(
+                "{} {} {}",
+                c.snippet.label,
+                c.snippet.ty,
+                c.plan.mutation.unwrap_or("?")
+            );
+            item.parse::<usize>()
+                .map_or(name.contains(item), |n| n == c.id)
+        };
+        let Some(c) = cases.iter().find(named) else {
+            continue;
+        };
+        let id = c.id;
+        let code = exe.function(&format!("s_{id}.rs")).map(|f| f.listing());
+        eprintln!(
+            "== case {id} {} {}\n{}{}",
+            c.plan.mutation.unwrap_or("?"),
+            c.plan.operator,
+            c.snippet.source,
+            code.unwrap_or_default()
+        );
+    }
+    std::process::exit(0);
+}
+
 fn gate(cases: &[Case]) -> Findings {
     let work = Scratch::new();
     let started = std::time::Instant::now();
@@ -108,6 +143,7 @@ fn gate(cases: &[Case]) -> Findings {
         shapes: BTreeMap::new(),
     };
     let mut patched_ids = Vec::new();
+    dump_requested(cases, &patched_exe);
     for case in cases {
         match derived(&patched_exe, case, &isa) {
             Err(why) => {
@@ -153,17 +189,31 @@ fn report(cases: &[Case], found: &Findings) -> BTreeMap<String, usize> {
     let mut summary: BTreeMap<String, usize> = BTreeMap::new();
     for c in cases {
         let v = &found.verdicts[&c.id];
-        let key = match v {
+        let kind = if c.snippet.form == Form::Cond {
+            "cond"
+        } else {
+            "arith"
+        };
+        let outcome = match v {
             Verdict::Declined(_) => "declined".to_string(),
             other => format!("{other:?}"),
         };
-        *summary.entry(key).or_default() += 1;
+        *summary.entry(format!("{kind} {outcome}")).or_default() += 1;
+        if let Verdict::Declined(why) = v {
+            eprintln!(
+                "declined {kind} {} {} {} #{}: {why}",
+                c.snippet.label,
+                c.snippet.ty,
+                c.plan.mutation.unwrap_or("?"),
+                c.id
+            );
+        }
         if v.wrong() {
             eprintln!(
                 "{v:?} case {} {} {} {} {:?}",
                 c.id,
                 c.snippet.ty,
-                c.snippet.form.name(),
+                c.snippet.label,
                 c.plan.mutation.unwrap_or("?"),
                 c.snippet.source.lines().nth(2).unwrap_or("")
             );
@@ -189,6 +239,16 @@ fn evidence(found: &Findings) -> table::Evidence {
 #[test]
 fn test_tier_p_patches_behave_like_the_rustc_mutants_they_stand_for() {
     let cases = cases::all();
+    // `TIERP_GATE_ONLY=cond` (or `arith`): a faster look at one family; the
+    // table is not compared then.
+    let only = std::env::var("TIERP_GATE_ONLY").ok();
+    let cases: Vec<Case> = match only.as_deref() {
+        Some(family) => cases
+            .into_iter()
+            .filter(|c| (c.snippet.form == Form::Cond) == (family == "cond"))
+            .collect(),
+        None => cases,
+    };
     let started = std::time::Instant::now();
     let found = gate(&cases);
     let summary = report(&cases, &found);
@@ -203,6 +263,9 @@ fn test_tier_p_patches_behave_like_the_rustc_mutants_they_stand_for() {
         found.verdicts.values().all(|v| !v.wrong()),
         "patches that do not behave like their mutants"
     );
+    if only.is_some() {
+        return;
+    }
     assert_eq!(table::unlisted(&by_shape), Vec::<String>::new());
     let text = table::render(&compile::rustc_identity(), &by_shape);
     if std::env::var("TIERP_HARVEST").is_ok_and(|v| v == "write") {

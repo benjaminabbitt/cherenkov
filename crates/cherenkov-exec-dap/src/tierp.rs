@@ -13,6 +13,13 @@ use crate::shapes::{Check, Kind, Shape};
 use crate::x86;
 
 mod column;
+mod compare;
+
+/// Every shape of comparison patch the rules can make.
+pub(crate) fn compare_universe(isa: &Isa) -> Vec<Shape> {
+    compare::universe(isa)
+}
+
 use column::{Shaped, arithmetic_at, is_rust, memory_source, shape_of};
 
 /// One instruction of the function under mutation.
@@ -201,6 +208,9 @@ pub fn derive_shaped(
     if let Some(done) = arithmetic_route(plan, &ours, isa) {
         return done.map(|s| (s.patch, Some(s.shape)));
     }
+    if let Some(done) = comparison_route(plan, &ours, isa) {
+        return done.map(|s| (s.patch, Some(s.shape)));
+    }
     derive_other(plan, file, insns, isa).map(|patch| (patch, None))
 }
 
@@ -224,6 +234,26 @@ fn arithmetic_route(
             Some(arithmetic_at(plan, *from, *with, ours, isa))
         }
         _ => None,
+    }
+}
+
+/// A comparison operator replacement, found by the column of its operands.
+/// `None` where its code is not found that way: another rule may place it.
+fn comparison_route(
+    plan: &MutantPlan,
+    ours: &[&Insn],
+    isa: &Isa,
+) -> Option<Result<Shaped, Unpatchable>> {
+    let Edit::ReplaceToken { from, with, .. } = &plan.edit else {
+        return None;
+    };
+    if !(compare::is_comparison(*from) && compare::is_comparison(*with)) {
+        return None;
+    }
+    match compare::comparison_at(plan, *from, *with, ours, isa) {
+        Ok(shaped) => Some(Ok(shaped)),
+        Err(compare::Refused::Elsewhere) => None,
+        Err(compare::Refused::Declined(why)) => Some(Err(why)),
     }
 }
 
@@ -743,6 +773,11 @@ fn branch_site<'a>(
 /// The condition code for `lhs with rhs`, given the code `holds` that
 /// implements `lhs from rhs` in either operand order and signedness.
 fn mutated_condition(isa: &Isa, holds: u8, from: Token, with: Token) -> Option<u8> {
+    // `e` and `ne` are the same code for signed and unsigned operands and
+    // for either operand order: an ordering made of them is a guess.
+    if matches!(from, Token::Eq | Token::Ne) && !matches!(with, Token::Eq | Token::Ne) {
+        return None;
+    }
     [Signedness::Signed, Signedness::Unsigned]
         .into_iter()
         .find_map(|s| {
