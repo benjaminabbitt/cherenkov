@@ -128,6 +128,34 @@ fn test_run_gives_the_rust_fixture_s_hand_labelled_verdicts_as_json_lines() {
     );
 }
 
+/// A mutant's verdict is a fact about the mutant, not about how busy the
+/// machine was: the same corpus run twice decides every mutant the same way,
+/// each by the same tier. Slow (two runs of the fixture), outside `just
+/// check`; run it under load to mean something (`just test-determinism`).
+#[test]
+#[ignore = "slow: needs gdb and cargo; two runs of the rust fixture"]
+fn test_run_twice_decides_every_mutant_of_the_rust_fixture_the_same_way() {
+    let first = run(&fixtures().join("rust"), &["--operators", "breadth"]);
+    let second = run(&fixtures().join("rust"), &["--operators", "breadth"]);
+    let (a, b) = (decided_lines(&first.stdout), decided_lines(&second.stdout));
+    assert!(!a.is_empty(), "the fixture decided no mutant");
+    let differing: Vec<String> = a
+        .iter()
+        .filter(|l| !b.contains(l))
+        .map(|l| format!("first only: {l}"))
+        .chain(
+            b.iter()
+                .filter(|l| !a.contains(l))
+                .map(|l| format!("second only: {l}")),
+        )
+        .collect();
+    assert!(
+        differing.is_empty(),
+        "verdicts differ between identical runs:\n{}",
+        differing.join("\n")
+    );
+}
+
 #[test]
 #[ignore = "slow: needs gdb and cargo"]
 fn test_run_as_text_gives_the_rust_fixture_s_hand_labelled_verdicts() {
