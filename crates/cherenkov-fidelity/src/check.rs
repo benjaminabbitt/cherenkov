@@ -161,3 +161,78 @@ pub fn check(
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use std::sync::Arc;
+
+    use cherenkov_core::execution::ExecError;
+    use cherenkov_core::operator_set::named;
+    use cherenkov_core::plan::plan_file;
+    use cherenkov_core::ports::SyntaxPort;
+    use cherenkov_core::syntax::LanguageId;
+    use cherenkov_syntax::TreeSitterSyntax;
+
+    use super::*;
+
+    /// An executor whose baseline passes and whose mutants all end as `raw`.
+    struct Fixed(RawOutcome);
+
+    impl MutantExecutor for Fixed {
+        fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+            Ok(self.0.clone())
+        }
+
+        fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+            Ok(RawOutcome::Exited {
+                code: 0,
+                tier: Tier::A,
+                wall: Duration::from_millis(1),
+            })
+        }
+    }
+
+    fn a_plan() -> MutantPlan {
+        let syntax = TreeSitterSyntax::builtin().unwrap();
+        let rust = LanguageId::new("rust");
+        let profile = syntax
+            .profiles()
+            .into_iter()
+            .find(|p| p.lang == rust)
+            .unwrap();
+        let src = include_str!("../fixtures/rust-ops/src/lib.rs");
+        let file = syntax
+            .analyze(&rust, Path::new("src/lib.rs"), Arc::from(src))
+            .unwrap();
+        let ops = named("cargo-mutants").unwrap().operators();
+        plan_file(&file, &profile, &ops).plans.remove(0)
+    }
+
+    fn debugger_of(mutant_ends: RawOutcome) -> Debugger {
+        Debugger::new(vec![Box::new(Fixed(mutant_ends))]).unwrap()
+    }
+
+    #[test]
+    fn test_tier_is_the_one_that_applied_the_mutant_in_the_last_run() {
+        let plan = a_plan();
+        let mut debugger = debugger_of(RawOutcome::Exited {
+            code: 101,
+            tier: Tier::P,
+            wall: Duration::from_millis(1),
+        });
+        assert_eq!(debugger.tier(&plan), None, "before any run");
+        debugger.run(&plan).unwrap().unwrap();
+        assert_eq!(debugger.tier(&plan), Some(Tier::P));
+    }
+
+    #[test]
+    fn test_tier_is_none_for_a_mutant_no_tier_applied() {
+        let plan = a_plan();
+        let mut debugger = debugger_of(RawOutcome::NotReached {
+            reason: "not called".into(),
+        });
+        debugger.run(&plan).unwrap().unwrap();
+        assert_eq!(debugger.tier(&plan), None);
+    }
+}
