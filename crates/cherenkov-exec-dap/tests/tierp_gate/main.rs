@@ -143,6 +143,7 @@ fn gate(cases: &[Case]) -> Findings {
         shapes: BTreeMap::new(),
     };
     let mut patched_ids = Vec::new();
+    let derive_started = std::time::Instant::now();
     dump_requested(cases, &patched_exe);
     for case in cases {
         match derived(&patched_exe, case, &isa) {
@@ -159,6 +160,10 @@ fn gate(cases: &[Case]) -> Findings {
             }
         }
     }
+    eprintln!(
+        "derived and applied the patches in {:?}",
+        derive_started.elapsed()
+    );
     let patched_path = work.0.join("patched.exe");
     write_patched(&built.original, &patched_exe, &patched_path);
     let all: Vec<usize> = cases.iter().map(|c| c.id).collect();
