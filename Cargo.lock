@@ -644,7 +644,7 @@ checksum = "e0921b3876b3a1df8a1c9f912e7f94342458022c2e84288015893d83c4d62a79"
 [[package]]
 name = "cli-support"
 version = "0.2.0"
-source = "git+https://github.com/benjaminabbitt/rust-support?rev=fea46b99ab2b44beeb3d76c05a9f0d4239844451#fea46b99ab2b44beeb3d76c05a9f0d4239844451"
+source = "git+https://github.com/benjaminabbitt/rust-support?rev=5bc1d60f1a10d4902b2daad36c348e9bc39c15fa#5bc1d60f1a10d4902b2daad36c348e9bc39c15fa"
 dependencies = [
  "angzarr-diagnostic",
  "angzarr-presentation",
@@ -872,7 +872,7 @@ dependencies = [
 [[package]]
 name = "exit-code"
 version = "0.2.0"
-source = "git+https://github.com/benjaminabbitt/rust-support?rev=fea46b99ab2b44beeb3d76c05a9f0d4239844451#fea46b99ab2b44beeb3d76c05a9f0d4239844451"
+source = "git+https://github.com/benjaminabbitt/rust-support?rev=5bc1d60f1a10d4902b2daad36c348e9bc39c15fa#5bc1d60f1a10d4902b2daad36c348e9bc39c15fa"
 
 [[package]]
 name = "fastrand"
