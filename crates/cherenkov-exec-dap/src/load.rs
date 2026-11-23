@@ -421,6 +421,32 @@ mod tests {
         assert_eq!(got, Ok(Within::Spent));
     }
 
+    // The first window fits the allowance; the scheduler then takes 200 ms,
+    // but by the time it is credited the run's own 10 ms budget is already
+    // passed, so less than the credit is left. The extra window that follows
+    // is cut short by the allowance, and an answer that does not come in it
+    // is the run's budget spent, not an evaluation that went unanswered.
+    // Elapsed time only grows, so overshooting the sleep still gives Spent.
+    #[test]
+    fn test_a_later_window_cut_short_by_the_budget_is_spent_not_unanswered() {
+        let fake = Fake::default();
+        let mut a = Allowance::new(Duration::from_millis(10), Box::new(fake.clone()));
+        let mut n = 0;
+        let got = within(
+            &mut a,
+            Duration::from_nanos(1),
+            |_| -> Result<Option<u8>, ()> {
+                n += 1;
+                if n == 1 {
+                    std::thread::sleep(Duration::from_millis(20));
+                    fake.set(Duration::from_millis(200));
+                }
+                Ok(None)
+            },
+        );
+        assert_eq!(got, Ok(Within::Spent));
+    }
+
     #[test]
     fn test_waiting_keeps_being_given_until_the_machine_stops_taking_it() {
         let fake = Fake::default();
