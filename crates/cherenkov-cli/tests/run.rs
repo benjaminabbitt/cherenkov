@@ -377,10 +377,25 @@ fn workspace_fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/rust-workspace")
 }
 
+/// A path for a diff of this test alone.
+fn unique_diff(tag: &str) -> PathBuf {
+    static COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    std::env::temp_dir().join(format!("cherenkov-{tag}-{}-{n}.diff", std::process::id()))
+}
+
+/// `cherenkov run` on the fixture workspace, one run at a time: they share
+/// its target directory and the viability check's scratch copy in it.
+fn run_workspace(args: &[&str]) -> Output {
+    static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _one = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    run(&workspace_fixture(), args)
+}
+
 /// A diff that changes `double`'s body line (line 4) in the fixture
 /// workspace's `core` package and nothing else.
 fn core_diff() -> PathBuf {
-    let path = std::env::temp_dir().join(format!("cherenkov-core-{}.diff", std::process::id()));
+    let path = unique_diff("core");
     std::fs::write(
         &path,
         "--- a/crates/cherenkov-cli/fixtures/rust-workspace/core/src/lib.rs\n\
@@ -412,10 +427,7 @@ fn prepared_packages(stderr: &[u8]) -> Vec<String> {
 #[ignore = "slow: needs gdb and cargo"]
 fn test_run_of_a_diff_in_one_package_prepares_only_that_package_s_programs() {
     let diff = core_diff();
-    let out = run(
-        &workspace_fixture(),
-        &["--format", "text", "--in-diff", diff.to_str().unwrap()],
-    );
+    let out = run_workspace(&["--format", "text", "--in-diff", diff.to_str().unwrap()]);
     let _ = std::fs::remove_file(&diff);
     assert_eq!(prepared_packages(&out.stderr), ["ws_core"]);
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -436,17 +448,14 @@ fn test_run_of_a_diff_in_one_package_prepares_only_that_package_s_programs() {
 #[ignore = "slow: needs gdb and cargo"]
 fn test_run_of_a_diff_with_test_workspace_prepares_every_package_s_programs() {
     let diff = core_diff();
-    let out = run(
-        &workspace_fixture(),
-        &[
-            "--format",
-            "text",
-            "--in-diff",
-            diff.to_str().unwrap(),
-            "--test-workspace",
-            "true",
-        ],
-    );
+    let out = run_workspace(&[
+        "--format",
+        "text",
+        "--in-diff",
+        diff.to_str().unwrap(),
+        "--test-workspace",
+        "true",
+    ]);
     let _ = std::fs::remove_file(&diff);
     assert_eq!(
         prepared_packages(&out.stderr),
@@ -458,17 +467,14 @@ fn test_run_of_a_diff_with_test_workspace_prepares_every_package_s_programs() {
 #[ignore = "slow: needs gdb and cargo"]
 fn test_run_of_a_diff_with_test_package_judges_by_that_package_s_tests_alone() {
     let diff = core_diff();
-    let out = run(
-        &workspace_fixture(),
-        &[
-            "--format",
-            "text",
-            "--in-diff",
-            diff.to_str().unwrap(),
-            "--test-package",
-            "ws-app",
-        ],
-    );
+    let out = run_workspace(&[
+        "--format",
+        "text",
+        "--in-diff",
+        diff.to_str().unwrap(),
+        "--test-package",
+        "ws-app",
+    ]);
     let _ = std::fs::remove_file(&diff);
     assert_eq!(prepared_packages(&out.stderr), ["ws_app"]);
 }
@@ -476,7 +482,7 @@ fn test_run_of_a_diff_with_test_package_judges_by_that_package_s_tests_alone() {
 /// A diff that changes `app`'s test `test_run_doubles_an_even_number` only
 /// (its body line, line 13).
 fn app_test_diff() -> PathBuf {
-    let path = std::env::temp_dir().join(format!("cherenkov-app-{}.diff", std::process::id()));
+    let path = unique_diff("app");
     std::fs::write(
         &path,
         "--- a/crates/cherenkov-cli/fixtures/rust-workspace/app/src/lib.rs\n\
@@ -491,10 +497,7 @@ fn app_test_diff() -> PathBuf {
 #[ignore = "slow: needs gdb and cargo"]
 fn test_run_of_a_changed_test_runs_the_mutants_it_calls_with_that_test_alone() {
     let diff = app_test_diff();
-    let out = run(
-        &workspace_fixture(),
-        &["--format", "json", "--in-diff", diff.to_str().unwrap()],
-    );
+    let out = run_workspace(&["--format", "json", "--in-diff", diff.to_str().unwrap()]);
     let _ = std::fs::remove_file(&diff);
     let called: std::collections::BTreeSet<String> = decided(&out.stdout)
         .iter()
@@ -511,7 +514,8 @@ fn test_run_of_a_changed_test_runs_the_mutants_it_calls_with_that_test_alone() {
         .into_iter()
         .find(|d| d["event"] == "run.finished")
         .unwrap();
-    assert_eq!(finished["counts"]["not-called"], 5);
+    // `triple`'s five mutants and `id_of`'s one.
+    assert_eq!(finished["counts"]["not-called"], 6);
     let stderr = documents(&out.stdout)
         .iter()
         .filter(|d| d["event"] == "program.prepared")
@@ -521,7 +525,7 @@ fn test_run_of_a_changed_test_runs_the_mutants_it_calls_with_that_test_alone() {
 
 /// A diff that changes `id_of`'s body (line 16 of core).
 fn id_diff() -> PathBuf {
-    let path = std::env::temp_dir().join(format!("cherenkov-id-{}.diff", std::process::id()));
+    let path = unique_diff("id");
     std::fs::write(
         &path,
         "--- a/crates/cherenkov-cli/fixtures/rust-workspace/core/src/lib.rs\n\
@@ -538,17 +542,14 @@ fn test_run_of_a_diff_has_rustc_reject_the_mutant_it_cannot_compile_and_writes_a
     let diff = id_diff();
     let verdicts =
         std::env::temp_dir().join(format!("cherenkov-verdicts-{}.jsonl", std::process::id()));
-    let out = run(
-        &workspace_fixture(),
-        &[
-            "--format",
-            "text",
-            "--in-diff",
-            diff.to_str().unwrap(),
-            "--verdicts",
-            verdicts.to_str().unwrap(),
-        ],
-    );
+    let out = run_workspace(&[
+        "--format",
+        "text",
+        "--in-diff",
+        diff.to_str().unwrap(),
+        "--verdicts",
+        verdicts.to_str().unwrap(),
+    ]);
     let _ = std::fs::remove_file(&diff);
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains(" id_of "), "{stdout}");
