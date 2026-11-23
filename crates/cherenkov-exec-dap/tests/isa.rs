@@ -163,3 +163,112 @@ fn test_abi_selects_a_return_stub_and_unknown_abis_are_rejected() {
     );
     assert!(isa.with_abi("vax").unwrap_err().0.contains("vax"));
 }
+
+// --- Floating-point and bitwise swaps.
+
+#[test]
+fn test_float_swap_changes_only_the_opcode_of_double_and_single_scalar_arithmetic() {
+    let isa = Isa::amd64();
+    // addsd xmm0, xmm1 / addss, and with a REX prefix after the F2.
+    assert_eq!(
+        isa.float_swap(&[0xf2, 0x0f, 0x58, 0xc1], Token::Add, Token::Sub),
+        Some(vec![0xf2, 0x0f, 0x5c, 0xc1])
+    );
+    assert_eq!(
+        isa.float_swap(&[0xf3, 0x0f, 0x59, 0xc1], Token::Mul, Token::Div),
+        Some(vec![0xf3, 0x0f, 0x5e, 0xc1])
+    );
+    assert_eq!(
+        isa.float_swap(&[0xf2, 0x44, 0x0f, 0x5e, 0xc1], Token::Div, Token::Add),
+        Some(vec![0xf2, 0x44, 0x0f, 0x58, 0xc1])
+    );
+    assert_eq!(
+        isa.float_swap(&[0xf2, 0x0f, 0x5c, 0x45, 0xf8], Token::Sub, Token::Mul),
+        Some(vec![0xf2, 0x0f, 0x59, 0x45, 0xf8])
+    );
+}
+
+#[test]
+fn test_float_swap_leaves_other_instructions_and_operators_alone() {
+    let isa = Isa::amd64();
+    // movsd, packed addpd, an addsd read as a sub, and non-arithmetic tokens.
+    assert_eq!(
+        isa.float_swap(&[0xf2, 0x0f, 0x10, 0xc1], Token::Add, Token::Sub),
+        None
+    );
+    assert_eq!(
+        isa.float_swap(&[0x66, 0x0f, 0x58, 0xc1], Token::Add, Token::Sub),
+        None
+    );
+    assert_eq!(
+        isa.float_swap(&[0xf2, 0x0f, 0x58, 0xc1], Token::Sub, Token::Add),
+        None
+    );
+    assert_eq!(
+        isa.float_swap(&[0xf2, 0x0f, 0x58, 0xc1], Token::Add, Token::Rem),
+        None
+    );
+    assert_eq!(
+        isa.float_swap(&[0xf2, 0x0f, 0x58, 0xc1], Token::Rem, Token::Add),
+        None
+    );
+    assert_eq!(
+        isa.float_swap(&[0xf2, 0x0f, 0x58], Token::Add, Token::Sub),
+        None
+    );
+    assert_eq!(isa.float_swap(&[], Token::Add, Token::Sub), None);
+}
+
+#[test]
+fn test_bitwise_swap_changes_the_opcode_or_the_modrm_reg_field() {
+    let isa = Isa::amd64();
+    // or rax, rcx (09 /r) as and and xor.
+    assert_eq!(
+        isa.bitwise_swap(&[0x48, 0x09, 0xc8], Token::BitOr, Token::BitAnd),
+        Some(vec![0x48, 0x21, 0xc8])
+    );
+    assert_eq!(
+        isa.bitwise_swap(&[0x48, 0x09, 0xc8], Token::BitOr, Token::BitXor),
+        Some(vec![0x48, 0x31, 0xc8])
+    );
+    // or dword [rsp+8], 4 (83 /1 ib) as and (83 /4 ib).
+    assert_eq!(
+        isa.bitwise_swap(&[0x83, 0x4c, 0x24, 0x08, 0x04], Token::BitOr, Token::BitAnd),
+        Some(vec![0x83, 0x64, 0x24, 0x08, 0x04])
+    );
+    // or eax, imm32 (0d id) as xor (35 id): no ModRM byte.
+    assert_eq!(
+        isa.bitwise_swap(&[0x0d, 0x00, 0x01, 0x00, 0x00], Token::BitOr, Token::BitXor),
+        Some(vec![0x35, 0x00, 0x01, 0x00, 0x00])
+    );
+}
+
+#[test]
+fn test_bitwise_swap_is_only_for_the_source_operation_and_not_for_zeroing() {
+    let isa = Isa::amd64();
+    assert_eq!(
+        isa.bitwise_swap(&[0x48, 0x21, 0xc8], Token::BitOr, Token::BitAnd),
+        None
+    );
+    // xor eax, eax zeroes: it is no operation of the program's.
+    assert_eq!(
+        isa.bitwise_swap(&[0x31, 0xc0], Token::BitXor, Token::BitOr),
+        None
+    );
+    // xor with two registers is one.
+    assert_eq!(
+        isa.bitwise_swap(&[0x31, 0xc8], Token::BitXor, Token::BitOr),
+        Some(vec![0x09, 0xc8])
+    );
+    // xor esi, 1 (83 /6): the reg field is the opcode's extension, the rm
+    // field the register, and they may be equal.
+    assert_eq!(
+        isa.bitwise_swap(&[0x83, 0xf6, 0x01], Token::BitXor, Token::BitOr),
+        Some(vec![0x83, 0xce, 0x01])
+    );
+    assert_eq!(
+        isa.bitwise_swap(&[0x48, 0x09, 0xc8], Token::BitOr, Token::Add),
+        None
+    );
+    assert_eq!(isa.bitwise_swap(&[], Token::BitOr, Token::BitAnd), None);
+}

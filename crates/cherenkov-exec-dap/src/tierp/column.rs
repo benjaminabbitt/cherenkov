@@ -94,7 +94,9 @@ pub(super) fn arithmetic_at(
             with.name()
         ))
     };
-    let lhs = plan.operands.first().ok_or_else(unsupported)?;
+    // The expression starts at its left operand; a compound assignment
+    // has none of its own, and starts where its statement does.
+    let start = plan.operands.first().map_or(plan.stop_at, |s| s.start);
     let swaps = swaps(from, with);
     if swaps.is_empty() {
         return Err(unsupported());
@@ -106,7 +108,7 @@ pub(super) fn arithmetic_at(
     if commutes_in_source && needs_order && literal_first {
         return Err(unsupported());
     }
-    let at = (lhs.start.line, lhs.start.col);
+    let at = (start.line, start.col);
     let here: Vec<usize> = (0..ours.len())
         .filter(|&k| ours[k].column != 0 && (ours[k].line, ours[k].column) == at)
         .collect();

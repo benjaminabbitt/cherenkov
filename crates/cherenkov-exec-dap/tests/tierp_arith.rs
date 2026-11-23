@@ -599,3 +599,66 @@ fn test_a_zeroing_xor_at_the_column_is_not_a_bitwise_operation() {
         Err(Unpatchable::ArithmeticInstructions { line: 9, found: 0 })
     );
 }
+
+// --- Where the plan's action is not `InPlace`, and where it has no operands.
+
+#[test]
+fn test_a_compound_assignment_has_no_operands_and_starts_where_its_statement_does() {
+    let mut p = arith_plan(
+        Token::AddAssign,
+        Token::SubAssign,
+        588,
+        5,
+        "g.x",
+        statement(588),
+    );
+    p.operands.clear();
+    assert_eq!(
+        derive(&p, FILE, &guard(), &isa()),
+        Ok(patch(vec![region(0xba84d, "48ffc0", "48ffc8")]))
+    );
+}
+
+#[test]
+fn test_a_returned_value_and_a_condition_find_their_operator_by_column_too() {
+    let returned = Action::EvalReturn {
+        value_text: String::new(),
+    };
+    let p = arith_plan(Token::Add, Token::Sub, 568, 10, "a", returned);
+    assert_eq!(
+        derive(&p, FILE, &call_arg(), &isa()),
+        Ok(patch(vec![region(0xbb279, "48ffc7", "48ffcf")]))
+    );
+    let branch = Action::EvalBranch {
+        cond_text: String::new(),
+        if_true: cherenkov_core::plan::Target::BlockStart(Span {
+            start: Pos {
+                byte: 0,
+                line: 568,
+                col: 1,
+            },
+            end: Pos {
+                byte: 0,
+                line: 568,
+                col: 2,
+            },
+        }),
+        if_false: cherenkov_core::plan::Target::AfterStatement(Span {
+            start: Pos {
+                byte: 0,
+                line: 568,
+                col: 1,
+            },
+            end: Pos {
+                byte: 0,
+                line: 568,
+                col: 2,
+            },
+        }),
+    };
+    let p = arith_plan(Token::Add, Token::Sub, 568, 10, "a", branch);
+    assert_eq!(
+        derive(&p, FILE, &call_arg(), &isa()),
+        Ok(patch(vec![region(0xbb279, "48ffc7", "48ffcf")]))
+    );
+}

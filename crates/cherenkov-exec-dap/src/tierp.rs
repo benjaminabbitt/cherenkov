@@ -357,6 +357,14 @@ fn derive_in_context(
             let cc = isa.inverse(site.jcc.cc);
             Ok(site.patch(isa, cc))
         }
+        // An operator inside a call argument, a field, a method chain, a
+        // returned value or a condition: its instruction is found by the
+        // column. A statement tries its line first (`arithmetic_swap`).
+        (action, Edit::ReplaceToken { from, with, .. })
+            if is_arithmetic(*from) && !matches!(action, Action::EvalThenJump { .. }) =>
+        {
+            arithmetic_at(plan, *from, *with, &ours, isa)
+        }
         (
             Action::EvalBranch {
                 if_true: Target::BlockStart(then),
@@ -392,10 +400,6 @@ fn derive_in_context(
             },
             _,
         ) => return_default(value_text.as_deref(), *zero_bits, &ours, isa),
-        // An operator inside a call argument, a field or a method chain.
-        (Action::InPlace { .. }, Edit::ReplaceToken { from, with, .. }) if is_arithmetic(*from) => {
-            arithmetic_at(plan, *from, *with, &ours, isa)
-        }
         // A comparison whose result is a value: the `setcc` that makes the
         // bool, its condition code swapped as a branch's would be.
         (_, Edit::ReplaceToken { from, with, .. })
