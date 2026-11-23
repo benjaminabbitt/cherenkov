@@ -317,3 +317,22 @@ fn test_the_table_shipped_with_the_isa_passes_the_stubs_of_scalars() {
     let patch = derive_returning(&plan, FILE, &body(12), &isa, Some(&int(4, false))).unwrap();
     assert_eq!(patch.regions[0].replacement.last(), Some(&0xc3));
 }
+
+#[test]
+fn test_derive_returning_a_go_plan_never_gets_a_rust_stub() {
+    let mut plan = u32_one();
+    plan.file = std::path::PathBuf::from("calc.go");
+    let isa = isa(&[(ONE, &ONE_BYTES)]);
+    assert_eq!(
+        derive_returning(&plan, FILE, &body(12), &isa, Some(&int(4, false))),
+        Err(Unpatchable::NonZeroValue("1".into()))
+    );
+}
+
+#[test]
+fn test_an_isa_names_the_calling_convention_it_was_given() {
+    let plain = Isa::amd64_unfiltered();
+    assert_eq!(plain.abi(), None);
+    assert_eq!(plain.with_abi("sysv").unwrap().abi(), Some("sysv"));
+    assert_eq!(plain.with_abi("go").unwrap().abi(), Some("go"));
+}

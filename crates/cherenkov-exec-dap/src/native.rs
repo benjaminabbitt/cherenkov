@@ -334,6 +334,11 @@ fn judge<S: NativeSession>(
     outcome_judged(tier, end, wall, judged, budget)
 }
 
+/// Whether a result is an integer wider than one register (`i128`).
+fn is_wide(result: Option<&crate::layouts::Layout>) -> bool {
+    matches!(result, Some(crate::layouts::Layout::Int { size, .. }) if *size > 8)
+}
+
 /// Mutants applied as tier P patches, one fresh debuggee per run.
 pub struct TierPExecutor<L: Launcher> {
     launcher: L,
@@ -1077,14 +1082,6 @@ impl<L: Launcher> TierPExecutor<L> {
         layouts.result_of(entry.wrapping_sub(bias))
     }
 
-    /// Whether the function returns an integer wider than one register.
-    fn wide_result(&self, code: &FunctionCode) -> bool {
-        matches!(
-            self.result_layout(code),
-            Some(crate::layouts::Layout::Int { size, .. }) if size > 8
-        )
-    }
-
     /// The tier P patch of `plan` over one copy of its function. A body
     /// replaced by a trivial value is a stub from the shapes table, chosen
     /// by the layout of the copy's result.
@@ -1184,7 +1181,7 @@ impl<L: Launcher> TierPExecutor<L> {
             // wider integer result (i128, u128) would keep its upper half.
             Ok(_)
                 if matches!(plan.action, Action::ReturnDefault { .. })
-                    && self.wide_result(code) =>
+                    && is_wide(self.result_layout(code).as_ref()) =>
             {
                 Err(Unpatchable::UnsupportedEdit(
                     "a return stub for a result wider than a register".into(),
@@ -1831,5 +1828,139 @@ mod tests {
             "a failed read of the line table was remembered for good"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[inline(never)]
+    fn probe_u32_result() -> u32 {
+        std::hint::black_box(7)
+    }
+
+    #[inline(never)]
+    fn probe_u128_result() -> u128 {
+        std::hint::black_box(7)
+    }
+
+    #[inline(never)]
+    fn probe_option_result() -> Option<u32> {
+        std::hint::black_box(Some(7))
+    }
+
+    /// The file address of the test binary's function whose symbol holds `name`.
+    fn entry_of(name: &str) -> u64 {
+        use object::{Object, ObjectSymbol};
+        let exe = std::env::current_exe().unwrap();
+        let data = std::fs::read(exe).unwrap();
+        let file = object::File::parse(&*data).unwrap();
+        file.symbols()
+            .find(|s| s.name().is_ok_and(|n| n.contains(name)))
+            .map(|s| s.address())
+            .unwrap_or_else(|| panic!("no symbol {name}"))
+    }
+
+    /// A function's code in the test binary: one instruction at its entry.
+    fn code_at(name: &str) -> FunctionCode {
+        // Keep the probes linked in.
+        std::hint::black_box((
+            probe_u32_result(),
+            probe_u128_result(),
+            probe_option_result(),
+        ));
+        FunctionCode {
+            file: "src/lib.rs".into(),
+            insns: vec![Insn {
+                pc: entry_of(name),
+                bytes: vec![0x90; 8],
+                file: "src/lib.rs".into(),
+                line: 1,
+                column: 0,
+            }],
+        }
+    }
+
+    fn own_executor() -> TierPExecutor<BinaryOnly> {
+        let exe = std::env::current_exe().unwrap();
+        TierPExecutor::new(BinaryOnly(exe), Isa::amd64())
+    }
+
+    #[test]
+    fn test_the_result_layout_of_a_function_is_read_from_the_binarys_dwarf() {
+        use crate::layouts::Layout;
+        let executor = own_executor();
+        assert!(matches!(
+            executor.result_layout(&code_at("probe_u32_result")),
+            Some(Layout::Int {
+                size: 4,
+                signed: false
+            })
+        ));
+        assert!(matches!(
+            executor.result_layout(&code_at("probe_u128_result")),
+            Some(Layout::Int { size: 16, .. })
+        ));
+        assert!(matches!(
+            executor.result_layout(&code_at("probe_option_result")),
+            Some(Layout::Enum { .. })
+        ));
+    }
+
+    #[test]
+    fn test_only_an_integer_wider_than_a_register_is_wide() {
+        use crate::layouts::Layout;
+        let int = |size| Layout::Int {
+            size,
+            signed: false,
+        };
+        assert!(is_wide(Some(&int(16))));
+        assert!(!is_wide(Some(&int(8))));
+        assert!(!is_wide(Some(&Layout::Float { size: 16 })));
+        assert!(!is_wide(None));
+    }
+
+    fn return_plan(source: &str, value: &str) -> MutantPlan {
+        use cherenkov_core::ports::SyntaxPort;
+        let syntax = cherenkov_syntax::TreeSitterSyntax::builtin().unwrap();
+        let rust = cherenkov_core::syntax::LanguageId::new("rust");
+        let profile = syntax
+            .profiles()
+            .into_iter()
+            .find(|p| p.lang == rust)
+            .unwrap();
+        let file = syntax
+            .analyze(&rust, Path::new("src/lib.rs"), std::sync::Arc::from(source))
+            .unwrap();
+        let set = cherenkov_core::operator_set::named("cargo-mutants").unwrap();
+        cherenkov_core::plan::plan_file(&file, &profile, &set.operators())
+            .plans
+            .into_iter()
+            .find(|p| {
+                matches!(&p.action, Action::ReturnDefault { value_text: Some(v), .. } if v == value)
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn test_a_body_replaced_by_a_trivial_value_is_patched_with_the_stub_of_its_results_layout() {
+        let executor = own_executor();
+        let one = return_plan("pub fn f(a: u32) -> u32 { a + 2 }\n", "1");
+        let patch = executor
+            .derive_copy(&one, &code_at("probe_u32_result"))
+            .unwrap();
+        assert_eq!(patch.regions[0].replacement, [0xb8, 1, 0, 0, 0, 0xc3]);
+        let none = return_plan("pub fn f(a: u32) -> Option<u32> { Some(a) }\n", "None");
+        let patch = executor
+            .derive_copy(&none, &code_at("probe_option_result"))
+            .unwrap();
+        assert_eq!(patch.regions[0].replacement, [0x31, 0xc0, 0xc3]);
+    }
+
+    #[test]
+    fn test_a_zero_body_takes_the_zero_stub_whatever_the_result_layout() {
+        let executor = own_executor();
+        let zero = return_plan("pub fn f(a: u32) -> u32 { a + 2 }\n", "0");
+        // A zero body takes the zero stub whatever the layout.
+        let patch = executor
+            .derive_copy(&zero, &code_at("probe_u32_result"))
+            .unwrap();
+        assert_eq!(patch.regions[0].replacement.last(), Some(&0xc3));
     }
 }
