@@ -144,3 +144,47 @@ fn test_every_name_in_the_dump_is_accepted_in_a_custom_set_file() {
     std::fs::remove_dir_all(&dir).unwrap();
     assert!(out.status.success(), "{err}");
 }
+
+/// Every `<!-- generated: cherenkov ARGS -->` ... `<!-- /generated -->`
+/// block of the docs: the arguments and the text between the markers.
+fn generated_blocks(doc: &str) -> Vec<(Vec<String>, String)> {
+    let mut blocks = Vec::new();
+    let mut rest = doc;
+    while let Some(start) = rest.find("<!-- generated: cherenkov ") {
+        let after = &rest[start + "<!-- generated: cherenkov ".len()..];
+        let (args, body) = after.split_once(" -->\n").unwrap();
+        let (text, tail) = body.split_once("<!-- /generated -->").unwrap();
+        blocks.push((
+            args.split_whitespace().map(str::to_string).collect(),
+            text.to_string(),
+        ));
+        rest = tail;
+    }
+    blocks
+}
+
+#[test]
+fn test_the_generated_blocks_of_the_docs_equal_the_dump() {
+    let docs = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs");
+    let mut found = 0;
+    for file in [
+        "mutation-operators.md",
+        "operator-sets.md",
+        "rust-operator-evaluation.md",
+    ] {
+        let doc = std::fs::read_to_string(docs.join(file)).unwrap();
+        for (args, text) in generated_blocks(&doc) {
+            let args: Vec<&str> = args.iter().map(String::as_str).collect();
+            let out = cherenkov(&args);
+            assert!(out.status.success(), "{file}: {args:?}");
+            assert_eq!(
+                text,
+                String::from_utf8(out.stdout).unwrap(),
+                "{file}: `cherenkov {}` differs: run `just docs`",
+                args.join(" ")
+            );
+            found += 1;
+        }
+    }
+    assert!(found >= 4, "{found} generated blocks");
+}

@@ -187,6 +187,8 @@ fn aliases_of(m: &Mutation) -> Vec<String> {
     m.origins
         .iter()
         .filter(|o| o.source != "Cherenkov design")
+        // A similar mutation is another mutation, not another name.
+        .filter(|o| !matches!(o.relation, Relation::Similar(_)))
         .filter_map(|o| o.name.map(|n| format!("{} {n}", o.source)))
         .collect()
 }
@@ -311,8 +313,11 @@ impl Inventory {
         if let Some(set) = &self.set {
             out.push_str(&format!("Set `{}`: {}\n\n", set.name, set.summary));
         }
-        out.push_str(NAMING);
-        out.push_str(&format!("\n{} operators.\n\n", self.operators.len()));
+        if self.set.is_none() {
+            out.push_str(NAMING);
+            out.push('\n');
+        }
+        out.push_str(&format!("{} operators.\n\n", self.operators.len()));
         out.push_str("| Operator | Definition | Derived from | Also called |\n|---|---|---|---|\n");
         for o in &self.operators {
             out.push_str(&operator_row(o));
@@ -357,27 +362,64 @@ fn operator_row(o: &OperatorEntry) -> String {
     )
 }
 
+/// The languages that spell a replacement the same way, grouped:
+/// "`<` -> `<=` (go, python, rust)".
+fn spelled(r: &ReplacementEntry) -> String {
+    let mut groups: Vec<(String, Vec<&str>)> = Vec::new();
+    for (lang, s) in &r.spellings {
+        let text = match (&s.from, &s.with) {
+            (Some(f), Some(w)) => format!("`{f}` -> `{w}`"),
+            (Some(f), None) => format!("delete `{f}`"),
+            _ => continue,
+        };
+        match groups.iter_mut().find(|(t, _)| *t == text) {
+            Some((_, langs)) => langs.push(lang),
+            None => groups.push((text, vec![lang])),
+        }
+    }
+    let parts: Vec<String> = groups
+        .iter()
+        .map(|(t, langs)| format!("{t} ({})", langs.join(", ")))
+        .collect();
+    cell(&parts.join("; "))
+}
+
+fn replacement_row(r: &ReplacementEntry, with_spelling: bool) -> String {
+    let sources: Vec<String> = r
+        .origins
+        .iter()
+        .map(|s| {
+            let name = s.name.map(|n| format!(" {n}")).unwrap_or_default();
+            format!("{} {}{name}", s.relation, s.source)
+        })
+        .collect();
+    let spelling = if with_spelling {
+        format!(" {} |", spelled(r))
+    } else {
+        String::new()
+    };
+    format!(
+        "| `{}` | {} | {} | {} |{spelling}\n",
+        r.name,
+        cell(&r.definition),
+        cell(&sources.join("; ")),
+        r.sets.join(", ")
+    )
+}
+
 fn operator_section(o: &OperatorEntry) -> String {
+    let with_spelling = o.replacements.iter().any(|r| !r.spellings.is_empty());
+    let (head, rule) = if with_spelling {
+        (" Spelling |", "---|")
+    } else {
+        ("", "")
+    };
     let mut out = format!(
-        "\n### `{}`\n\n| Replacement | Definition | Sources | Sets |\n|---|---|---|---|\n",
+        "\n### `{}`\n\n| Replacement | Definition | Sources | Sets |{head}\n|---|---|---|---|{rule}\n",
         o.name
     );
     for r in &o.replacements {
-        let sources: Vec<String> = r
-            .origins
-            .iter()
-            .map(|s| {
-                let name = s.name.map(|n| format!(" {n}")).unwrap_or_default();
-                format!("{} {}{name}", s.relation, s.source)
-            })
-            .collect();
-        out.push_str(&format!(
-            "| `{}` | {} | {} | {} |\n",
-            r.name,
-            cell(&r.definition),
-            cell(&sources.join("; ")),
-            r.sets.join(", ")
-        ));
+        out.push_str(&replacement_row(r, with_spelling));
     }
     out
 }
