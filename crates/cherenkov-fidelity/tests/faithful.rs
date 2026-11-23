@@ -18,6 +18,14 @@ use cherenkov_fidelity::source::ScratchProject;
 use cherenkov_fs::FsSourceReader;
 use cherenkov_syntax::TreeSitterSyntax;
 
+/// The mutation name of a compound assignment's operator swap: the one
+/// place that names its operator id (`aor` today).
+macro_rules! compound {
+    ($swap:literal) => {
+        concat!("aor/", $swap)
+    };
+}
+
 /// A shared fixture (`fixtures/`) or one of this crate's own.
 fn fixture(name: &str) -> PathBuf {
     let here = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -208,12 +216,12 @@ const ACCEPTED_REFUSALS: &[(&str, &str, &str)] = &[
     ),
     (
         "tally_guarded",
-        "aor/add_assign->mul_assign",
+        compound!("add_assign->mul_assign"),
         "`+=` to `*=` on an integer has no tier P rule, and GDB cannot call a guard's Deref",
     ),
     (
         "tally_seen",
-        "aor/add_assign->mul_assign",
+        compound!("add_assign->mul_assign"),
         "`+=` to `*=` on an integer has no tier P rule, and GDB cannot call the map's entry",
     ),
     (
@@ -291,15 +299,15 @@ const BY_COLUMN: &[(&str, &str)] = &[
     ("lifted_loose", "aor/add->sub"),
     ("inc", "aor/add->sub"),
     ("twice_plus", "aor/add->sub"),
-    ("tally_x", "aor/add_assign->sub_assign"),
-    ("tally_u", "aor/add_assign->sub_assign"),
-    ("tally_down", "aor/sub_assign->add_assign"),
-    ("tally_guarded", "aor/add_assign->sub_assign"),
-    ("tally_seen", "aor/add_assign->sub_assign"),
-    ("tally_w", "aor/add_assign->sub_assign"),
-    ("tally_w", "aor/add_assign->mul_assign"),
-    ("tally_w", "aor/mul_assign->add_assign"),
-    ("tally_w", "aor/mul_assign->div_assign"),
+    ("tally_x", compound!("add_assign->sub_assign")),
+    ("tally_u", compound!("add_assign->sub_assign")),
+    ("tally_down", compound!("sub_assign->add_assign")),
+    ("tally_guarded", compound!("add_assign->sub_assign")),
+    ("tally_seen", compound!("add_assign->sub_assign")),
+    ("tally_w", compound!("add_assign->sub_assign")),
+    ("tally_w", compound!("add_assign->mul_assign")),
+    ("tally_w", compound!("mul_assign->add_assign")),
+    ("tally_w", compound!("mul_assign->div_assign")),
     ("tally_bits", "bitwise/or_assign->and_assign"),
     ("tally_bits", "bitwise/and_assign->or_assign"),
     ("blend", "aor/sub->add"),
