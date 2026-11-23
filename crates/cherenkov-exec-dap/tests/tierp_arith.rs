@@ -838,3 +838,119 @@ fn test_an_unsigned_increment_is_not_swapped_for_a_decrement_because_dec_leaves_
         Ok(patch(vec![region(0x100, "48ffc0", "48ffc8")]))
     );
 }
+
+// --- The statement's own line rule, before the column's.
+
+/// A statement of one line holding a single unchecked `op` (no check
+/// follows) at no column the plan names, so only the line rule can find it.
+fn lone(hex: &'static str) -> Vec<Insn> {
+    insns(&[(0x100, hex, 20, 0), (0x103, "c3", 21, 2)])
+}
+
+#[test]
+fn test_a_statement_sub_with_no_code_at_its_column_is_swapped_to_add_by_its_line() {
+    let p = arith_plan(Token::Sub, Token::Add, 20, 5, "a", statement(20));
+    assert_eq!(
+        derive(&p, FILE, &lone("4829c8"), &isa()),
+        Ok(patch(vec![region(0x100, "4829c8", "4801c8")]))
+    );
+}
+
+#[test]
+fn test_a_statement_add_with_no_code_at_its_column_is_swapped_to_sub_by_its_line() {
+    let p = arith_plan(Token::Add, Token::Sub, 20, 5, "a", statement(20));
+    assert_eq!(
+        derive(&p, FILE, &lone("4801c8"), &isa()),
+        Ok(patch(vec![region(0x100, "4801c8", "4829c8")]))
+    );
+}
+
+#[test]
+fn test_a_statement_add_whose_left_operand_is_in_memory_is_refused_for_sub() {
+    // `add rax, [rbp-8]`: a `sub` there computes `b - a`.
+    let p = arith_plan(Token::Add, Token::Sub, 20, 5, "a", statement(20));
+    let refused = derive(&p, FILE, &lone("48034df8"), &isa())
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("loaded from memory"), "{refused}");
+}
+
+#[test]
+fn test_a_statement_sub_with_its_second_operand_in_memory_is_swapped_to_add() {
+    // `sub rcx, [rbp-8]` -> `add rcx, [rbp-8]` keeps the operand order.
+    let p = arith_plan(Token::Sub, Token::Add, 20, 5, "a", statement(20));
+    assert_eq!(
+        derive(&p, FILE, &lone("482b4df8"), &isa()),
+        Ok(patch(vec![region(0x100, "482b4df8", "48034df8")]))
+    );
+}
+
+#[test]
+fn test_a_statements_line_swap_follows_the_shapes_table() {
+    let p = arith_plan(Token::Add, Token::Sub, 20, 5, "a", statement(20));
+    let shape = "int w64 none add->sub 01 reg";
+    let admitted = Isa::amd64_unfiltered().with_shapes(table(&[shape]));
+    assert_eq!(
+        derive(&p, FILE, &lone("4801c8"), &admitted),
+        Ok(patch(vec![region(0x100, "4801c8", "4829c8")]))
+    );
+    let declined = Isa::amd64_unfiltered().with_shapes(table(&[]));
+    let refused = derive(&p, FILE, &lone("4801c8"), &declined)
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains(shape), "{refused}");
+}
+
+// --- Which swaps an edit asks for.
+
+#[test]
+fn test_a_plain_operator_swapped_for_a_compound_one_is_not_patched() {
+    // `s + 1` -> `s -= 1` is no swap of one instruction.
+    let p = arith_plan(Token::Add, Token::SubAssign, 605, 8, "s", in_place());
+    assert!(matches!(
+        derive(&p, FILE, &seq(), &isa()),
+        Err(Unpatchable::UnsupportedEdit(_))
+    ));
+}
+
+#[test]
+fn test_an_edit_from_an_operator_to_itself_is_not_patched() {
+    let p = arith_plan(
+        Token::AddAssign,
+        Token::AddAssign,
+        640,
+        5,
+        "s.u",
+        in_place(),
+    );
+    assert!(matches!(
+        derive(&p, FILE, &subassign(), &isa()),
+        Err(Unpatchable::UnsupportedEdit(_))
+    ));
+}
+
+// --- The overflow check must follow its operation directly.
+
+#[test]
+fn test_a_check_on_another_line_than_its_operation_is_not_the_operations() {
+    // `add rdi, 1; seto cl; jo`, the `seto` and the `jo` on line 8.
+    let rows = insns(&[
+        (0x100, "4883c701", 7, 8),
+        (0x104, "0f90c1", 8, 8),
+        (0x107, "700f", 8, 8),
+    ]);
+    let p = arith_plan(Token::Add, Token::Sub, 7, 8, "x", in_place());
+    assert!(derive(&p, FILE, &rows, &isa()).is_err());
+}
+
+#[test]
+fn test_a_check_after_a_gap_in_the_code_is_not_the_operations() {
+    // The `seto; jo` of the same line, but not where the add ends.
+    let rows = insns(&[
+        (0x100, "4883c701", 7, 8),
+        (0x110, "0f90c1", 7, 8),
+        (0x113, "700f", 7, 8),
+    ]);
+    let p = arith_plan(Token::Add, Token::Sub, 7, 8, "x", in_place());
+    assert!(derive(&p, FILE, &rows, &isa()).is_err());
+}
