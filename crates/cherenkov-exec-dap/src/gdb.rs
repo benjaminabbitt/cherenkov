@@ -43,6 +43,11 @@ pub struct GdbConfig {
 
 const REQUEST: Duration = Duration::from_secs(60);
 
+/// How long after `exited` GDB may take to forward the rest of the program's
+/// output (it says `terminated` when all is in): a loaded machine delays it
+/// by seconds.
+const LAST_OUTPUT: Duration = Duration::from_secs(30);
+
 fn err<E: std::fmt::Display>(context: &str) -> impl Fn(E) -> ExecError + '_ {
     move |e| ExecError(format!("{context}: {e}"))
 }
@@ -80,6 +85,9 @@ pub struct GdbSession {
     /// Each function's instructions by its start and the requested file:
     /// a large function has many mutated lines.
     functions: HashMap<(u64, String), FunctionCode>,
+    /// How long after the program's `exited` event GDB may still be
+    /// forwarding its output.
+    last_output_wait: Duration,
 }
 
 impl GdbSession {
@@ -118,6 +126,7 @@ impl GdbSession {
             located: HashMap::new(),
             disassembled: 0,
             functions: HashMap::new(),
+            last_output_wait: LAST_OUTPUT,
         };
         session.launch(config)?;
         // An exit is caught alive, so the session stays stopped and can start
@@ -126,6 +135,11 @@ impl GdbSession {
         session.repl("catch syscall exit_group")?;
         session.record_inferior();
         Ok(session)
+    }
+
+    /// Bound the wait for the output GDB forwards after the program exits.
+    pub fn set_last_output_wait(&mut self, wait: Duration) {
+        self.last_output_wait = wait;
     }
 
     /// What stopped the program, naming the signal when it was one (GDB's
@@ -246,7 +260,7 @@ impl GdbSession {
                 Ok(event) if event["event"] == "exited" => {
                     let body: ExitedEventBody = serde_json::from_value(event["body"].clone())
                         .map_err(err("exited event"))?;
-                    self.await_last_output();
+                    self.await_last_output()?;
                     return Ok(self.exit_end(body.exit_code));
                 }
                 Ok(event) => {
@@ -257,7 +271,7 @@ impl GdbSession {
                     // before it kills the process.
                     if body.reason.contains("syscall") {
                         let code = self.exit_status()?;
-                        self.settle_output();
+                        self.settle_output()?;
                         return Ok(RunEnd::Exited(code));
                     }
                     if *watching && body.reason.contains("breakpoint") {
@@ -333,20 +347,30 @@ impl GdbSession {
     }
 
     /// The program is stopped at its caught exit: its output is all written,
-    /// but GDB may still be forwarding it.
-    fn settle_output(&mut self) {
-        // libtest's summary is its last line; without one (a crash, another
-        // runner), wait until GDB has gone quiet.
-        let summary = |events: &EventQueue| {
-            events.named("output").any(|e| {
-                e["body"]["output"]
-                    .as_str()
-                    .is_some_and(|o| o.contains("test result:"))
-            })
-        };
+    /// but GDB may still be forwarding it. libtest's summary is its last
+    /// line: a run that began libtest's output is waited for until the
+    /// summary, and without it the output is incomplete, an error. Another
+    /// runner has no summary to wait for: its output has settled once GDB
+    /// has gone quiet.
+    fn settle_output(&mut self) -> Result<(), ExecError> {
+        let summary = |events: &EventQueue| output_contains(events, |o| o.contains("test result:"));
         if !summary(self.dap.queued()) {
             self.dap.settle_until(Duration::from_millis(30), summary);
         }
+        let libtest = output_contains(self.dap.queued(), |o| {
+            o.contains("running ") && (o.contains(" test\n") || o.contains(" tests\n"))
+        });
+        if libtest && !summary(self.dap.queued()) {
+            self.dap.settle_until(self.last_output_wait, summary);
+            if !summary(self.dap.queued()) {
+                return Err(ExecError(format!(
+                    "the program exited but its output has no libtest summary after {:?}: \
+                     the run's output is incomplete",
+                    self.last_output_wait
+                )));
+            }
+        }
+        Ok(())
     }
 
     fn launch(&mut self, config: &GdbConfig) -> Result<(), ExecError> {
@@ -439,6 +463,13 @@ impl GdbSession {
     pub fn pid(&self) -> u32 {
         self.child.id()
     }
+}
+
+/// Whether any output the program has forwarded so far satisfies `has`.
+fn output_contains(events: &EventQueue, has: impl Fn(&str) -> bool) -> bool {
+    events
+        .named("output")
+        .any(|e| e["body"]["output"].as_str().is_some_and(&has))
 }
 
 /// The bounds of the function holding a source line, from GDB's Python API.
@@ -969,9 +1000,19 @@ impl GdbSession {
     }
 
     /// GDB can forward the program's last output after `exited`; it is all
-    /// in once `terminated` arrives.
-    fn await_last_output(&mut self) {
-        let _ = self.dap.wait_event("terminated", Duration::from_secs(1));
+    /// in once `terminated` arrives. Without it the output cannot be taken
+    /// as complete, and the run has no verdict to give.
+    fn await_last_output(&mut self) -> Result<(), ExecError> {
+        self.dap
+            .wait_event("terminated", self.last_output_wait)
+            .map(|_| ())
+            .map_err(|e| {
+                ExecError(format!(
+                    "the program exited but its output did not end within {:?} ({e}): \
+                     the run's output is incomplete",
+                    self.last_output_wait
+                ))
+            })
     }
 
     /// Replace the instruction breakpoints with one at each address.
@@ -1260,7 +1301,7 @@ impl GdbSession {
             Ok(event) if event["event"] == "exited" => {
                 let body: ExitedEventBody =
                     serde_json::from_value(event["body"].clone()).map_err(err("exited event"))?;
-                self.await_last_output();
+                self.await_last_output()?;
                 Ok(Step::Ended(self.exit_end(body.exit_code)))
             }
             Ok(event) => {
@@ -1294,7 +1335,7 @@ impl GdbSession {
         }
         if body.reason.contains("syscall") {
             let code = self.exit_status()?;
-            self.settle_output();
+            self.settle_output()?;
             return Ok(Step::Done(Evaluated {
                 end: RunEnd::Exited(code),
                 reached: *reached,
