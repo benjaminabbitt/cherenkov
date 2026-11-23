@@ -621,7 +621,7 @@ write unless memory still holds every `original` (`native.rs:191`), and
 | Action and edit | Patch (amd64) |
 |---|---|
 | `EvalBranch` with `WrapNot` | Invert the condition code of the single conditional jump on the condition. |
-| `EvalBranch` with `ReplaceToken` on a comparison | Rewrite the jump's condition code. For Rust code (and any code with columns) the jump is the last instruction that reads flags inside the comparison's own span, as for a value; polarity, operand order and signedness come from the condition code (see "Tier P comparisons"). Without columns, the one conditional jump on the condition's line, with polarity from where it lands. |
+| `EvalBranch` with `ReplaceToken` on a comparison | Rewrite the jump's condition code. For Rust code (and any code with columns) the jump is the last instruction that reads flags inside the comparison's own span, as for a value; polarity, operand order and signedness come from the condition code (see "Tier P comparisons"). Without columns, the one conditional jump on the condition's line; the condition code is read the same way. |
 | `EvalBranch` with `ReplaceWithLiteral(Bool)` | Replace the jump with an unconditional jump to its target, or to the next instruction, padded to length. |
 | Any `ReplaceToken` on a comparison whose result is a value | The `setcc` or the conditional jump (a bool made by `&&`/`||`, or a closure's result) that reads the comparison's flags, its condition code rewritten, found by column. See "Tier P comparisons". |
 | `JumpOnly` with `DeleteStatement` | `JMP` over the statement, ending at its last call instruction; refused if the statement branches before it. |

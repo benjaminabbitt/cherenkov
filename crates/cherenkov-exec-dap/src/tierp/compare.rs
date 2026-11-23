@@ -166,6 +166,13 @@ fn compared(ours: &[&Insn], k: usize) -> Option<Domain> {
     x86::decode(before.pc, &before.bytes)?.compare_domain()
 }
 
+/// What the instruction before `insn` compares (integers when it compares
+/// nothing: code without that shape is read as it always was).
+pub(super) fn domain_before(ours: &[&Insn], insn: &Insn) -> Domain {
+    let at = ours.iter().position(|i| i.pc == insn.pc);
+    at.and_then(|k| compared(ours, k)).unwrap_or(Domain::Int)
+}
+
 /// The swap of the comparison `from` -> `with` of `plan`, in the
 /// instruction positioned in its span that reads its flags.
 pub(super) fn comparison_at(

@@ -151,3 +151,82 @@ fn test_derive_float_equality_is_declined_for_it_reads_the_parity_flag() {
     ]);
     assert!(derived(src, "ror/eq->ne", &insns).is_err());
 }
+
+// The line-based rules, for code whose line table has no columns (a row's
+// column is 0): the one conditional jump on the condition's line, or the
+// `setcc` of a comparison made into a value.
+
+/// Instructions without columns, on the given lines of the file.
+fn lines(rows: &[(u64, &str, u32)]) -> Vec<Insn> {
+    code(&[])
+        .into_iter()
+        .chain(rows.iter().map(|&(pc, hex, line)| {
+            let mut i = code(&[(pc, hex, 0)]).remove(0);
+            i.line = line;
+            i
+        }))
+        .collect()
+}
+
+const IF_EQ: &str = "pub fn f(a: u32, b: u32) -> u8 {\n    if a == b {\n        1\n    } else {\n        2\n    }\n}";
+const IF_LT_FLOAT: &str = "pub fn f(a: f64, b: f64) -> u8 {\n    if a < b {\n        1\n    } else {\n        2\n    }\n}";
+
+/// `cmp edi, esi; jne else`, the then-store, `jmp end`, the else-store.
+fn eq_branch() -> Vec<Insn> {
+    lines(&[
+        (0x5000, "39f7", 4),
+        (0x5002, "7507", 4),
+        (0x5004, "c64424f701", 5),
+        (0x5009, "eb05", 5),
+        (0x500b, "c64424f702", 7),
+        (0x5010, "c3", 9),
+    ])
+}
+
+fn declined(got: Result<(u64, String), Unpatchable>) {
+    assert!(
+        matches!(got, Err(Unpatchable::ConditionMismatch { .. })),
+        "{got:?}"
+    );
+}
+
+#[test]
+fn test_derive_by_line_equality_to_an_ordering_is_declined_for_its_signedness_is_unknown() {
+    declined(derived(IF_EQ, "ror/eq->le", &eq_branch()));
+    declined(derived(IF_EQ, "ror/eq->ge", &eq_branch()));
+}
+
+#[test]
+fn test_derive_by_line_equality_to_inequality_still_inverts_the_jump() {
+    let got = derived(IF_EQ, "ror/eq->ne", &eq_branch()).unwrap();
+    assert_eq!(got, (0x5002, "7407".to_string()));
+}
+
+#[test]
+fn test_derive_by_line_float_less_than_to_greater_than_is_declined() {
+    // `ucomisd; ja else-less`: `jbe` over the then-store when `b > a` fails.
+    let insns = lines(&[
+        (0x6000, "660f2ec8", 4),
+        (0x6004, "7607", 4),
+        (0x6006, "c64424f701", 5),
+        (0x600b, "eb05", 5),
+        (0x600d, "c64424f702", 7),
+        (0x6012, "c3", 9),
+    ]);
+    declined(derived(IF_LT_FLOAT, "ror/lt->gt", &insns));
+}
+
+#[test]
+fn test_derive_by_line_float_less_than_to_less_or_equal_swaps_above_for_above_or_equal() {
+    let insns = lines(&[
+        (0x6000, "660f2ec8", 4),
+        (0x6004, "7607", 4),
+        (0x6006, "c64424f701", 5),
+        (0x600b, "eb05", 5),
+        (0x600d, "c64424f702", 7),
+        (0x6012, "c3", 9),
+    ]);
+    // `jbe` (taken when `b > a` fails) becomes `jb`.
+    let got = derived(IF_LT_FLOAT, "ror/lt->le", &insns).unwrap();
+    assert_eq!(got, (0x6004, "7207".to_string()));
+}

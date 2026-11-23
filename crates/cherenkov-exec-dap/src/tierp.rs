@@ -565,23 +565,13 @@ fn branch_token_swap(
     isa: &Isa,
 ) -> Result<Patch, Unpatchable> {
     let site = branch_site(&plan.stop_at, then, guard_arm(plan), ours, isa)?;
-    // The condition code that holds when the source condition does.
-    let holds = if site.taken_when_true {
-        site.jcc.cc
-    } else {
-        isa.inverse(site.jcc.cc)
-    };
-    let mutated = mutated_condition(isa, holds, from, with).ok_or_else(|| {
+    let domain = compare::domain_before(ours, site.insn);
+    let cc = compare::mutated_cc(isa, domain, from, with, site.jcc.cc).ok_or_else(|| {
         Unpatchable::ConditionMismatch {
             cc: isa.cc_name(site.jcc.cc).unwrap_or("?").to_string(),
             token: from.name().to_string(),
         }
     })?;
-    let cc = if site.taken_when_true {
-        mutated
-    } else {
-        isa.inverse(mutated)
-    };
     Ok(site.patch(isa, cc))
 }
 
@@ -658,7 +648,8 @@ fn compared_value(
         ));
     };
     let holds = d.setcc_condition().unwrap_or_default();
-    let mutated = mutated_condition(isa, holds, from, with).ok_or_else(|| {
+    let domain = compare::domain_before(ours, insn);
+    let mutated = compare::mutated_cc(isa, domain, from, with, holds).ok_or_else(|| {
         Unpatchable::ConditionMismatch {
             cc: isa.cc_name(holds).unwrap_or("?").to_string(),
             token: from.name().to_string(),
@@ -768,28 +759,6 @@ fn branch_site<'a>(
         jcc,
         taken_when_true,
     })
-}
-
-/// The condition code for `lhs with rhs`, given the code `holds` that
-/// implements `lhs from rhs` in either operand order and signedness.
-fn mutated_condition(isa: &Isa, holds: u8, from: Token, with: Token) -> Option<u8> {
-    // `e` and `ne` are the same code for signed and unsigned operands and
-    // for either operand order: an ordering made of them is a guess.
-    if matches!(from, Token::Eq | Token::Ne) && !matches!(with, Token::Eq | Token::Ne) {
-        return None;
-    }
-    [Signedness::Signed, Signedness::Unsigned]
-        .into_iter()
-        .find_map(|s| {
-            if isa.relational(s, from) == Some(holds) {
-                return isa.relational(s, with);
-            }
-            let (from_sw, with_sw) = (isa.swapped(from)?, isa.swapped(with)?);
-            if isa.relational(s, from_sw) == Some(holds) {
-                return isa.relational(s, with_sw);
-            }
-            None
-        })
 }
 
 /// Jump from the statement's first byte to just past the last call on
