@@ -230,3 +230,25 @@ fn test_derive_by_line_float_less_than_to_less_or_equal_swaps_above_for_above_or
     let got = derived(IF_LT_FLOAT, "ror/lt->le", &insns).unwrap();
     assert_eq!(got, (0x6004, "7207".to_string()));
 }
+
+// A short-circuit swap is not a comparison: the column rule leaves it to the
+// line rules, which refuse an `&&` chain with its two jumps.
+
+#[test]
+fn test_derive_logical_swap_is_not_read_as_a_comparison() {
+    let got = derived(AND_CHAIN, "lcr/and->or", &and_chain());
+    assert!(
+        matches!(got, Err(Unpatchable::ConditionalJumps { found: 2, .. })),
+        "{got:?}"
+    );
+}
+
+#[test]
+fn test_derive_logical_to_equality_swap_is_not_read_as_a_comparison() {
+    // `&&` to `==`: only the new operator is a comparison.
+    let got = derived(AND_CHAIN, "lcr/and->eq", &and_chain());
+    assert!(
+        matches!(got, Err(Unpatchable::ConditionalJumps { found: 2, .. })),
+        "{got:?}"
+    );
+}
