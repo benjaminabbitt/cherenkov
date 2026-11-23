@@ -181,3 +181,108 @@ fn test_markdown_has_a_table_row_for_each_family_naming_its_sources_and_tables()
     }
     assert!(md.contains("sufficient"));
 }
+
+fn replacement<'a>(
+    inv: &'a Inventory,
+    name: &str,
+) -> &'a cherenkov_core::inventory::ReplacementEntry {
+    inv.operators
+        .iter()
+        .flat_map(|o| &o.replacements)
+        .find(|r| r.name == name)
+        .unwrap_or_else(|| panic!("{name}"))
+}
+
+#[test]
+fn test_a_similar_origin_carries_its_note_and_a_derived_one_has_none() {
+    let inv = Inventory::of_all(&without_spellings());
+    let call = replacement(&inv, "delete-statement/call");
+    let similar = call
+        .origins
+        .iter()
+        .find(|o| o.relation == "similar")
+        .unwrap();
+    assert_eq!(similar.note, Some("removes calls to void methods only"));
+    let derived = call
+        .origins
+        .iter()
+        .find(|o| o.relation == "derived")
+        .unwrap();
+    assert_eq!(derived.note, None);
+}
+
+#[test]
+fn test_deletions_and_guards_are_defined_by_what_they_delete_or_set() {
+    let inv = Inventory::of_all(&without_spellings());
+    assert_eq!(
+        replacement(&inv, "unary/delete-not").definition,
+        "Delete the logical not operator, keeping its operand."
+    );
+    assert_eq!(
+        replacement(&inv, "unary/delete-neg").definition,
+        "Delete the negation operator, keeping its operand."
+    );
+    assert_eq!(
+        replacement(&inv, "match-guard/false").definition,
+        "Replace a match arm's guard with the constant false."
+    );
+    // A family with one replacement is defined as the family is.
+    let single = replacement(&inv, "negate-condition");
+    assert_eq!(single.definition, "Negate the condition of an if or loop.");
+    assert_eq!(
+        cherenkov_core::operator_set::family_definition("lcr"),
+        families()
+            .iter()
+            .find(|f| f.id == "lcr")
+            .map(|f| f.definition)
+    );
+    assert_eq!(
+        cherenkov_core::operator_set::family_definition("nope"),
+        None
+    );
+}
+
+/// Tokens spelled as Rust spells them, including the unary ones.
+fn rust_like() -> cherenkov_core::token::TokenTable {
+    use cherenkov_core::token::Token::*;
+    let spell = [
+        (Lt, "<"),
+        (Le, "<="),
+        (Shl, "<<"),
+        (Shr, ">>"),
+        (Not, "!"),
+        (Neg, "-"),
+    ];
+    cherenkov_core::token::TokenTable::new(spell.map(|(t, s)| (t, s.to_string())), "!{}").unwrap()
+}
+
+#[test]
+fn test_spellings_of_deletions_and_cargo_mutants_names_exist_for_rust_only() {
+    let tokens = rust_like();
+    let both = Spellings::of(&[("rust", &tokens), ("toy", &tokens)]);
+    let inv = Inventory::of_all(&both);
+    let lt_le = replacement(&inv, "ror/lt->le");
+    assert_eq!(
+        lt_le.spellings["rust"].cargo_mutants.as_deref(),
+        Some("replace < with <=")
+    );
+    assert_eq!(lt_le.spellings["toy"].cargo_mutants, None);
+    let not = replacement(&inv, "unary/delete-not");
+    let s = &not.spellings["rust"];
+    assert_eq!((s.from.as_deref(), s.with.as_deref()), (Some("!"), None));
+    assert_eq!(s.cargo_mutants.as_deref(), Some("delete !"));
+    // No spelling for what is not a token.
+    assert!(replacement(&inv, "match-arm/delete").spellings.is_empty());
+}
+
+#[test]
+fn test_markdown_shows_spellings_grouped_by_language_only_when_asked_for() {
+    let tokens = rust_like();
+    let with = Inventory::of_all(&Spellings::of(&[("rust", &tokens), ("toy", &tokens)])).markdown();
+    assert!(with.contains("| Spelling |"), "{with}");
+    assert!(with.contains("`<` -> `<=` (rust, toy)"), "{with}");
+    assert!(with.contains("`<<` -> `>>` (rust, toy)"), "{with}");
+    assert!(with.contains("delete `!` (rust, toy)"), "{with}");
+    let without = Inventory::of_all(&without_spellings()).markdown();
+    assert!(!without.contains("| Spelling |"), "{without}");
+}
