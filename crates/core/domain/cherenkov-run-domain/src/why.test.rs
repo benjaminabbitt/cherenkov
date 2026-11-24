@@ -42,6 +42,26 @@ fn test_decoding_reads_a_nested_cause_back_as_nested() {
 }
 
 #[test]
+fn test_a_cause_with_no_args_is_still_read_back_as_a_cause() {
+    let outer = Report::new("o").arg("cause", Arg::nested(&Report::new("c-closed")));
+    let wire = encode(&outer);
+    assert_eq!(wire.args["cause"], "c-closed");
+    let decoded = decode(Some(&wire), "");
+    assert!(
+        matches!(&decoded.args()[..], [("cause", Arg::Nested(cause))] if cause.code() == "c-closed"),
+        "{decoded:?}"
+    );
+    assert_eq!(encode(&decoded), wire);
+}
+
+#[test]
+fn test_a_text_arg_that_holds_a_code_stays_text() {
+    let report = Report::new("o").arg("detail", "c-closed");
+    let decoded = decode(Some(&encode(&report)), "");
+    assert!(matches!(&decoded.args()[..], [("detail", Arg::Str(s))] if s == "c-closed"));
+}
+
+#[test]
 fn test_decoding_two_levels_of_cause_keeps_both() {
     let inner = Report::new("i").arg("detail", "x");
     let middle = Report::new("m").arg("cause", Arg::nested(&inner));

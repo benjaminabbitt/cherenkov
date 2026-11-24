@@ -84,6 +84,7 @@ async fn a_fact_reported_twice_under_one_id_is_a_duplicate() {
     let fact = PreparationFailed {
         program: Some("p".to_string()),
         reason: "r".to_string(),
+        why: None,
     };
     let first = edge.report(run(), &fact, "one").await.unwrap();
     assert_eq!(first.delivery, Delivery::Applied);

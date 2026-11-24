@@ -376,6 +376,7 @@ fn lines() -> Vec<String> {
     plan_lines()
         .into_iter()
         .chain(run_lines())
+        .chain(coded_lines())
         .chain(decision_lines())
         .chain(snapshot_lines())
         .chain(documents().iter().map(line))
@@ -468,6 +469,12 @@ fn run_lines() -> Vec<String> {
             reason: "the plan changed".to_string(),
             why: None,
         }),
+    ]
+}
+
+/// The lines of the preparation messages that carry a coded reason.
+fn coded_lines() -> Vec<String> {
+    vec![
         line(&PreparationReported {
             selection_reason: None,
             selection_why: Some(why()),

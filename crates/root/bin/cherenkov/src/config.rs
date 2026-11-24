@@ -51,7 +51,7 @@ pub fn tree_config_path(root: &Path) -> Option<PathBuf> {
 pub fn read(path: &Path) -> Result<Config, CliError> {
     let bad = |e: &dyn std::fmt::Display| CliError::Unreadable {
         path: path.display().to_string(),
-        reason: e.to_string(),
+        detail: e.to_string(),
     };
     let text = std::fs::read_to_string(path).map_err(|e| bad(&e))?;
     toml::from_str(&text).map_err(|e| bad(&e))

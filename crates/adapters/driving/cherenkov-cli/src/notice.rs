@@ -287,6 +287,12 @@ impl Say {
         }
     }
 
+    /// The catalog this says its notices in, for what else of the program's
+    /// speaks in words (a run's printed reasons).
+    pub fn catalog(&self) -> Arc<Catalog> {
+        Arc::clone(&self.catalog)
+    }
+
     /// Say `notice`, unless this format leaves it out ([`Notice::quiet_under_json`]).
     pub fn say(&self, notice: &Notice) {
         if self.format == Format::Json && notice.quiet_under_json() {

@@ -18,6 +18,7 @@ use cherenkov_run_domain::{OperatorSet, RunStatus};
 use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
 use cherenkov_run_ports::syntax::SyntaxPort;
 use cherenkov_syntax::TreeSitterSyntax;
+use coded_diagnostic::Diagnostic;
 use serde_json::Value;
 
 use angzarr_ports::memory::MemoryStore;
@@ -87,7 +88,10 @@ fn run(
         plans,
         settings,
         workers,
-        Readers::printing(printing(Box::new(JsonLines(out)))),
+        Readers::printing(printing(
+            Box::new(JsonLines(out)),
+            Arc::new(crate::catalog().unwrap()),
+        )),
     )
 }
 
@@ -261,10 +265,10 @@ fn test_a_run_whose_workers_cannot_run_fails_saying_why() {
         out.clone(),
     )
     .unwrap_err();
-    let RunLayerError::Workers { reason } = error else {
+    let RunLayerError::Workers { cause, .. } = error else {
         panic!("{error:?}");
     };
-    assert!(reason.contains("unmutated tests do not pass"), "{reason}");
+    assert_eq!(cause.code(), "cherenkov-run-domain-baseline-failed");
     // The stream says so too, and ends.
     let docs = documents(out.bytes());
     let failed = docs
@@ -434,7 +438,10 @@ fn test_two_runs_of_a_project_write_the_same_verdict_file() {
     for path in [&first, &second] {
         let runs = Arc::new(AtomicUsize::new(0));
         let readers = Readers::new(
-            printing(Box::new(JsonLines(std::io::sink()))),
+            printing(
+                Box::new(JsonLines(std::io::sink())),
+                Arc::new(crate::catalog().unwrap()),
+            ),
             Some(Arc::new(cherenkov_cli::output::JsonVerdictFile::new(
                 path.clone(),
             ))),

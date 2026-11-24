@@ -98,7 +98,7 @@ fn test_a_lock_that_could_not_be_made_is_unreadable_not_held() {
     };
     let error = refusal(Path::new("s"), broken, true);
     assert!(
-        matches!(&error, CliError::Unreadable { reason, .. } if reason.contains("disk full")),
+        matches!(&error, CliError::Unreadable { detail, .. } if detail.contains("disk full")),
         "{error:?}"
     );
 }

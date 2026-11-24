@@ -97,7 +97,7 @@ fn refusal(path: &Path, error: LockError, taking: bool) -> CliError {
         }
         other => CliError::Unreadable {
             path: store,
-            reason: other.to_string(),
+            detail: other.to_string(),
         },
     }
 }

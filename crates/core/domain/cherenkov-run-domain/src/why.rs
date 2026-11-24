@@ -4,7 +4,9 @@
 //! arg by its name, a nested cause as its code under the arg's name and each
 //! of its args under `<name>.<arg>`. angzarr-embedded's own converter is
 //! private to it, so the run layer's is here, and reads the flat form back
-//! into nested causes.
+//! into nested causes. A cause with no args would leave the flat form no
+//! different from a text arg that holds a code, so it also writes an arg
+//! named `<name>.` (an empty arg name under it): the one mark of a cause.
 
 use std::collections::BTreeMap;
 
@@ -30,6 +32,7 @@ fn flattened(diagnostic: &dyn Diagnostic) -> Vec<(String, String)> {
             Arg::Str(s) => flat.push((name.to_string(), s)),
             Arg::Nested(cause) => {
                 flat.push((name.to_string(), cause.code().to_string()));
+                flat.push((format!("{name}."), String::new()));
                 flat.extend(
                     flattened(cause.as_ref())
                         .into_iter()
@@ -57,7 +60,10 @@ pub fn decode(why: Option<&angzarr::Diagnostic>, text: &str) -> Report {
 /// siblings read as a nested cause, its value the cause's code.
 fn unflatten(code: &str, args: &BTreeMap<String, String>) -> Report {
     let mut report = Report::new(code.to_string());
-    for (name, value) in args.iter().filter(|(name, _)| !name.contains('.')) {
+    for (name, value) in args
+        .iter()
+        .filter(|(name, _)| !name.is_empty() && !name.contains('.'))
+    {
         let prefix = format!("{name}.");
         let inner: BTreeMap<String, String> = args
             .iter()

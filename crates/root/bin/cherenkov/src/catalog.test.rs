@@ -1,5 +1,5 @@
 use cherenkov_cli::error::CliError;
-use coded_diagnostic::Report;
+use coded_diagnostic::{Arg, Report};
 
 use super::catalog;
 
@@ -7,11 +7,47 @@ use super::catalog;
 fn test_the_program_s_catalog_renders_the_cli_s_and_the_run_layer_s_messages() {
     let catalog = catalog().unwrap();
     let run = CliError::Run {
-        cause: Report::new("cherenkov-run-application-workers").arg("reason", "no gdb"),
+        cause: Report::new("cherenkov-run-application-workers").arg(
+            "cause",
+            Arg::nested(&Report::new("cherenkov-run-application-no-workers")),
+        ),
     };
     assert_eq!(
         catalog.render(&run).unwrap(),
-        "the run could not run: the mutants could not run: no gdb"
+        "the run could not run: the mutants could not run: no workers"
+    );
+}
+
+#[test]
+fn test_a_debugger_session_failure_renders_its_nested_causes_through_the_whole_catalog() {
+    let closed = cherenkov_exec_dap::dap::DapError::Closed;
+    let step = cherenkov_exec_dap::error::Session::Step {
+        step: "continue".into(),
+        cause: Report::of(&closed),
+    };
+    let failure = cherenkov_run_ports::executor::ExecError::of(&step);
+    let error = CliError::toolchain(&failure);
+    assert_eq!(
+        catalog().unwrap().render(&error).unwrap(),
+        "continue: dap connection closed"
+    );
+}
+
+#[test]
+fn test_a_programs_failure_the_run_recorded_renders_through_the_catalog_as_it_was_read_back() {
+    let recorded =
+        cherenkov_run_domain::why::encode(&Report::of(&cherenkov_exec_dap::error::Session::Step {
+            step: "continue".into(),
+            cause: Report::of(&cherenkov_exec_dap::dap::DapError::Closed),
+        }));
+    let read = cherenkov_run_domain::why::decode(Some(&recorded), "");
+    let error = cherenkov_run_application::error::RunLayerError::Workers {
+        program: Some("calc-1".into()),
+        cause: read,
+    };
+    assert_eq!(
+        catalog().unwrap().render(&error).unwrap(),
+        "the mutants could not run (calc-1): continue: dap connection closed"
     );
 }
 

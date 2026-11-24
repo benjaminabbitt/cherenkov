@@ -120,7 +120,7 @@ fn glob_patterns(glob: &str) -> Vec<String> {
 fn invalid(what: &str, e: &dyn std::fmt::Display) -> CliError {
     CliError::Unreadable {
         path: what.to_string(),
-        reason: e.to_string(),
+        detail: e.to_string(),
     }
 }
 
@@ -222,12 +222,13 @@ pub fn plan_selected(
 ) -> Result<ProjectPlan, CliError> {
     let unreadable = |e: &dyn std::fmt::Display| CliError::Unreadable {
         path: root.display().to_string(),
-        reason: e.to_string(),
+        detail: e.to_string(),
     };
     let reader = FsSourceReader::new(root, profiles).map_err(|e| unreadable(&e))?;
     let mut project = plan_project_sets(&reader, syntax, profiles, sets, selection.include_tests)
         .map_err(|e| CliError::Planning {
-        reason: format!("{}: {e}", root.display()),
+        path: root.display().to_string(),
+        detail: e.to_string(),
     })?;
     if !selection.include_tests {
         let skipped = test_files(&reader).map_err(|e| unreadable(&e))?;

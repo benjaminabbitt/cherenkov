@@ -6,6 +6,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use coded_diagnostic::Report;
 use presentation::Format;
 
 use cherenkov_exec_dap::delve::{DelveConfig, DelveExecutor};
@@ -29,7 +30,7 @@ use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::{Settings, Workers};
 use cherenkov_run_application::verdicts::VerdictFile;
 use cherenkov_run_application::workers::SESSIONS_PER_WORKER;
-use cherenkov_run_ports::executor::MutantExecutor;
+use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
 use cherenkov_syntax::TreeSitterSyntax;
 
 use crate::changed_tests::{ChangedTest, changed_tests, libtest_names};
@@ -164,14 +165,12 @@ fn narrowed(plans: Vec<MutantPlan>, asked: &Asked) -> Result<Vec<MutantPlan>, Cl
 fn unreadable(path: &Path, e: &dyn std::fmt::Display) -> CliError {
     CliError::Unreadable {
         path: path.display().to_string(),
-        reason: e.to_string(),
+        detail: e.to_string(),
     }
 }
 
-fn toolchain(e: impl std::fmt::Display) -> CliError {
-    CliError::Toolchain {
-        reason: e.to_string(),
-    }
+fn toolchain(e: ExecError) -> CliError {
+    CliError::toolchain(&e)
 }
 
 fn run_go(asked: &Asked) -> Result<(), CliError> {
@@ -394,7 +393,7 @@ fn rustc_rejects(
         }
         Err(e) => {
             asked.say.say(&Notice::ViabilitySkipped {
-                detail: e.to_string(),
+                cause: Report::of(&e),
             });
             Arc::default()
         }
@@ -470,7 +469,7 @@ fn run_readers(asked: &Asked, log: Option<Box<dyn std::io::Write + Send>>) -> Re
     }
     let sink = Box::new(Phases::new(sink, asked.say.clone()));
     Readers::new(
-        output::printing(sink),
+        output::printing(sink, asked.say.catalog()),
         asked.tools.verdict_file.clone().map(|path| {
             let file = output::JsonVerdictFile::new(path);
             let file = if in_diff {

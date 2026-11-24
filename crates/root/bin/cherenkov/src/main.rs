@@ -385,10 +385,7 @@ pub(crate) fn operator_sets(spec: &str) -> Result<Vec<OperatorSet>, CliError> {
                 known: known.join(", "),
             }
         }
-        SetError::Unreadable { path, detail } => CliError::Unreadable {
-            path,
-            reason: detail,
-        },
+        SetError::Unreadable { path, detail } => CliError::Unreadable { path, detail },
         SetError::Invalid { path, cause } => CliError::BadOperatorSet { path, cause },
         other => CliError::bad_operator_set(spec, &other),
     })
@@ -674,7 +671,7 @@ fn plan(
         &plans,
         &settings,
         None,
-        Readers::printing(cherenkov_cli::output::printing(sink)),
+        Readers::printing(cherenkov_cli::output::printing(sink, say.catalog())),
     )
     .map_err(|e| CliError::run(&e))?;
     summarize(&project, say);

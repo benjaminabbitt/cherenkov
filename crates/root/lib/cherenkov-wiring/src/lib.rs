@@ -87,7 +87,7 @@ pub fn start_on<S: RunStore>(
         .enable_time()
         .build()
         .map_err(|e| RunLayerError::Runtime {
-            reason: e.to_string(),
+            detail: e.to_string(),
         })?;
     runtime.block_on(async {
         let core = Arc::new(core(opening.await?, OnRetryable::default()).await?);
@@ -123,7 +123,7 @@ pub fn prune_in_file(path: &Path, keep: usize, dry_run: bool) -> Result<Pruned, 
         .enable_time()
         .build()
         .map_err(|e| RunLayerError::Runtime {
-            reason: e.to_string(),
+            detail: e.to_string(),
         })?;
     runtime.block_on(async {
         let store =
