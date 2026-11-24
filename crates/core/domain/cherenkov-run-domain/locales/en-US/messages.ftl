@@ -24,3 +24,9 @@ cherenkov-run-domain-underivable-root = the stream of { $key } in the { $domain 
 
 cherenkov-run-domain-unreadable-missing = this record has no { $field }
 cherenkov-run-domain-unreadable-unknown = this record names a { $kind } the planner does not have: { $name }
+
+# Messages for the failures the run records itself.
+
+cherenkov-run-domain-recorded-reason = { $reason }
+cherenkov-run-domain-baseline-failed = unmutated tests do not pass under the debugger: { $outcome }{ $failing }
+cherenkov-run-domain-program-baseline-failed = unmutated tests do not pass under the debugger ({ $program }): { $outcome }{ $failing }

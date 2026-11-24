@@ -186,6 +186,15 @@ fn drives() -> Drives {
     }
 }
 
+/// A coded reason with one arg: angzarr's `Diagnostic` holds its args in a
+/// `HashMap`, so a message with two would encode in either order.
+fn why() -> angzarr_embedded::v1::Diagnostic {
+    angzarr_embedded::v1::Diagnostic {
+        code: "cherenkov-exec-dap-session".to_string(),
+        args: [("detail".to_string(), "connection closed".to_string())].into(),
+    }
+}
+
 fn preparation() -> PreparationReported {
     PreparationReported {
         program: "target/debug/deps/calc-0123".to_string(),
@@ -198,6 +207,7 @@ fn preparation() -> PreparationReported {
         baseline: Some(exited()),
         baseline_failures: vec!["calc::test_total at tests/calc.rs:5:5: boom".to_string()],
         drives: Some(drives()),
+        selection_why: None,
     }
 }
 
@@ -214,6 +224,7 @@ fn prepared() -> ProgramPrepared {
         index: p.index,
         budget_ms: 6_000,
         drives: p.drives,
+        selection_why: None,
     }
 }
 
@@ -432,24 +443,58 @@ fn run_lines() -> Vec<String> {
         line(&PreparationFailed {
             program: Some("target/debug/deps/calc-0123".to_string()),
             reason: "no debug info".to_string(),
+            why: None,
         }),
         line(&PreparationFailed {
             program: Some(String::new()),
             reason: "build failed".to_string(),
+            why: None,
         }),
         line(&ProgramFailed {
             program: Some("target/debug/deps/calc-0123".to_string()),
             reason: "no debug info".to_string(),
+            why: None,
         }),
         line(&ProgramFailed {
             program: None,
             reason: "build failed".to_string(),
+            why: None,
         }),
         line(&Abandoned {
             reason: "the plan changed".to_string(),
+            why: None,
         }),
         line(&RunAbandoned {
             reason: "the plan changed".to_string(),
+            why: None,
+        }),
+        line(&PreparationReported {
+            selection_reason: None,
+            selection_why: Some(why()),
+            ..preparation()
+        }),
+        line(&ProgramPrepared {
+            selection_reason: None,
+            selection_why: Some(why()),
+            ..prepared()
+        }),
+        line(&PreparationFailed {
+            program: Some("target/debug/deps/calc-0123".to_string()),
+            reason: String::new(),
+            why: Some(why()),
+        }),
+        line(&ProgramFailed {
+            program: None,
+            reason: String::new(),
+            why: Some(why()),
+        }),
+        line(&Abandoned {
+            reason: String::new(),
+            why: Some(why()),
+        }),
+        line(&RunAbandoned {
+            reason: String::new(),
+            why: Some(why()),
         }),
     ]
 }
@@ -544,9 +589,20 @@ fn decision_lines() -> Vec<String> {
             tests: vec!["it::test_b".to_string()],
             result: Some(program_run::Result::Failed(DebuggerFailed {
                 reason: "evaluate: dap connection closed".to_string(),
+                why: None,
             })),
         }),
         line(&decided()),
+        line(&ProgramRun {
+            program: 2,
+            program_name: "it-4567".to_string(),
+            took_ms: 12,
+            tests: vec!["it::test_b".to_string()],
+            result: Some(program_run::Result::Failed(DebuggerFailed {
+                reason: String::new(),
+                why: Some(why()),
+            })),
+        }),
     ]
 }
 

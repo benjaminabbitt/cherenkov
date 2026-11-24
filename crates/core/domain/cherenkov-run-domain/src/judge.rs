@@ -17,7 +17,7 @@
 use cherenkov_mutation::execution::{RawOutcome, classify, combine};
 use cherenkov_mutation::verdict::Verdict as Judged;
 
-use crate::mutant::{KilledBy, Outcome, ProgramRun, ProgramRunResult, Ran, Tier, Verdict};
+use crate::mutant::{DebuggerFailed, KilledBy, Outcome, ProgramRun, ProgramRunResult, Ran, Tier, Verdict};
 use crate::observation;
 use crate::rejection::Unreadable;
 
@@ -70,7 +70,10 @@ impl Folded {
             ProgramRunResult::NotCalled(_) => Ok(None),
             ProgramRunResult::Failed(failed) => {
                 self.ran_in(run);
-                let reason = format!("the debugger failed on this mutant: {}", failed.reason);
+                let reason = format!(
+                    "the debugger failed on this mutant: {}",
+                    debugger_failure(failed)
+                );
                 let concluded = Concluded {
                     verdict: Verdict::Unsupported,
                     tier: None,
@@ -163,6 +166,17 @@ impl Folded {
             },
             programs: self.programs.clone(),
         }
+    }
+}
+
+/// What the debugger's failure says, for the mutant's outcome reason (a
+/// text, which the verdict file and the output hold): a failure recorded as
+/// text says it; a coded one is named by its keyed form, whose English is
+/// the output's catalog's, and not the domain's.
+fn debugger_failure(failed: &DebuggerFailed) -> String {
+    match &failed.why {
+        Some(why) => crate::why::decode(Some(why), &failed.reason).to_string(),
+        None => failed.reason.clone(),
     }
 }
 

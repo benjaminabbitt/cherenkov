@@ -2,3 +2,5 @@ cherenkov.run.v1.AlreadyPlanned
 cherenkov.mutant.v1.NoRun
 cherenkov.mutant.v1.NoMutant
 cherenkov.mutant.v1.PlannedForRun
+cherenkov.run.v1.PreparationFailed 1a2e0a1a63686572656e6b6f762d657865632d6461702d73657373696f6e12100a0664657461696c1206636c6f736564
+cherenkov.run.v1.ProgramFailed 0a0663616c632d311a2e0a1a63686572656e6b6f762d657865632d6461702d73657373696f6e12100a0664657461696c1206636c6f736564

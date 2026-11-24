@@ -16,6 +16,7 @@ package cherenkov.run.v1;
 import "google/protobuf/timestamp.proto";
 import "io/angzarr/codegen/v1/codegen.proto";
 import "io/angzarr/v1/options.proto";
+import "io/angzarr/v1/types.proto";
 import "cherenkov/mutant/v1/mutant.proto";
 import "cherenkov/mutant/v1/plan.proto";
 
@@ -172,6 +173,9 @@ message PreparationReported {
   repeated string baseline_failures = 10;
   // Which tests call each mutant's function, where the executor can tell.
   optional Drives drives = 11;
+  // `selection_reason`, coded. A fact recorded before it was added holds the
+  // string only.
+  optional io.angzarr.v1.Diagnostic selection_why = 12;
 }
 
 // A test program did not prepare: the run cannot go on. Recorded while the
@@ -183,7 +187,10 @@ message PreparationFailed {
   };
 
   optional string program = 1;
+  // The failure, as text. A fact recorded with `why` leaves it empty.
   string reason = 2;
+  // The failure, coded.
+  optional io.angzarr.v1.Diagnostic why = 3;
 }
 
 // The run is superseded: a later run found it unfinished with a plan that
@@ -196,7 +203,9 @@ message Abandoned {
     emits: ["cherenkov.run.v1.RunAbandoned", "cherenkov.run.v1.RunFinished"]
   };
 
+  // As text; empty in a fact recorded with `why`.
   string reason = 1;
+  optional io.angzarr.v1.Diagnostic why = 2;
 }
 
 // A mutant's decision, reported to the run that asked for it: the mutant's
@@ -257,6 +266,8 @@ message ProgramPrepared {
   // The time one mutant may run in the program.
   uint64 budget_ms = 9;
   optional Drives drives = 10;
+  // `selection_reason`, coded.
+  optional io.angzarr.v1.Diagnostic selection_why = 11;
 }
 
 // Every test program is prepared: the mutants can run, and are handed on,
@@ -273,14 +284,18 @@ message ProgramFailed {
   option (io.angzarr.v1.event) = {component: "cherenkov.run.v1.RunSnapshot"};
 
   optional string program = 1;
+  // As text; empty in an event recorded with `why`.
   string reason = 2;
+  optional io.angzarr.v1.Diagnostic why = 3;
 }
 
 // The run was superseded, and why.
 message RunAbandoned {
   option (io.angzarr.v1.event) = {component: "cherenkov.run.v1.RunSnapshot"};
 
+  // As text; empty in an event recorded with `why`.
   string reason = 1;
+  optional io.angzarr.v1.Diagnostic why = 2;
 }
 
 // One of the run's mutants decided, counted in its tallies, with the

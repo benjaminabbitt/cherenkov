@@ -254,6 +254,7 @@ fn test_a_debugger_that_fails_on_a_mutant_makes_it_unsupported_saying_what_faile
         &mut harness,
         ProgramRun {
             result: ProgramRunResult::Failed(DebuggerFailed {
+                why: None,
                 reason: "evaluate: dap connection closed".to_string(),
             }),
             ..ran(0, &exited(0, 1), 5, &["calc::test_total"])
@@ -266,6 +267,31 @@ fn test_a_debugger_that_fails_on_a_mutant_makes_it_unsupported_saying_what_faile
         Some("the debugger failed on this mutant: evaluate: dap connection closed")
     );
     assert_eq!((decided.tier, decided.took_ms), (None, 5));
+}
+
+#[test]
+fn test_a_coded_debugger_failure_is_named_by_its_code_in_the_reason() {
+    let mut harness = harness();
+    harness.given([planned(2)]);
+    let events = told(
+        &mut harness,
+        ProgramRun {
+            result: ProgramRunResult::Failed(DebuggerFailed {
+                reason: String::new(),
+                why: Some(crate::angzarr::Diagnostic {
+                    code: "cherenkov-exec-dap-rpc".to_string(),
+                    args: [("detail".to_string(), "closed".to_string())].into(),
+                }),
+            }),
+            ..ran(0, &exited(0, 1), 5, &["calc::test_total"])
+        },
+    );
+    let decided = outcome(&events);
+    assert_eq!(decided.verdict, Verdict::Unsupported);
+    assert_eq!(
+        decided.reason.as_deref(),
+        Some("the debugger failed on this mutant: cherenkov-exec-dap-rpc detail=closed")
+    );
 }
 
 #[test]

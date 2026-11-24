@@ -35,22 +35,32 @@ use angzarr_embedded::v1::Uuid;
 use angzarr_embedded_macros::{aggregate, applies, handles_cmd, handles_fact};
 use cherenkov_mutation::execution::{Budget, RawOutcome};
 
+mod failure;
 pub mod events;
 mod judge;
 pub mod observation;
 pub mod plan;
 mod refusal;
 mod rejection;
+pub mod why;
 
 use judge::{Decision, judge};
 use refusal::refuse;
 
 pub use refusal::NotOurs;
-#[cfg(test)]
-pub use rejection::diagnostic_samples;
+pub use failure::Failure;
 pub use rejection::{
     EN_US, MutantRejection, RunRejection, SnapshotRejection, UnderivableRoot, Unreadable,
 };
+
+/// One value of every refusal and failure, for the catalog test.
+#[cfg(test)]
+pub fn diagnostic_samples() -> Vec<Box<dyn angzarr_diagnostic::Diagnostic>> {
+    rejection::diagnostic_samples()
+        .into_iter()
+        .chain(failure::diagnostic_samples())
+        .collect()
+}
 
 /// The run's domain layer (`cherenkov.run.v1`), generated from the protos.
 // The generated layer holds what the aggregates here do not use (the
@@ -60,6 +70,9 @@ pub use rejection::{
 pub mod run {
     include!(concat!(env!("OUT_DIR"), "/cherenkov.run.v1.domain.rs"));
 }
+
+/// angzarr's `Diagnostic`, as the run layers hold it.
+pub mod angzarr;
 
 /// The mutant's domain layer (`cherenkov.mutant.v1`), generated from the
 /// protos.
@@ -178,9 +191,18 @@ impl Run {
     }
 
     /// A program that did not prepare, and the run finished, failed.
-    fn failed(&self, program: Option<String>, reason: String, ctx: &Context) -> FactEmit<Self> {
+    fn failed(
+        &self,
+        program: Option<String>,
+        (reason, why): (String, Option<angzarr::Diagnostic>),
+        ctx: &Context,
+    ) -> FactEmit<Self> {
         FactEmit::of([
-            pack_message(&ProgramFailed { program, reason }),
+            pack_message(&ProgramFailed {
+                program,
+                reason,
+                why,
+            }),
             pack_message(&self.finish(&self.counts, &ctx.recorded_at(), RunStatus::Failed)),
         ])
     }
@@ -208,7 +230,7 @@ fn tallies(counts: &BTreeMap<Verdict, u32>) -> Vec<VerdictCount> {
 
 /// The unmutated run's wall time, when it passed; else why the program
 /// cannot run mutants. Unreadable when the reporter named no baseline.
-fn baseline_of(fact: &PreparationReported) -> Result<Result<Duration, String>, Unreadable> {
+fn baseline_of(fact: &PreparationReported) -> Result<Result<Duration, Failure>, Unreadable> {
     let observed = fact
         .baseline
         .clone()
@@ -217,18 +239,20 @@ fn baseline_of(fact: &PreparationReported) -> Result<Result<Duration, String>, U
     Ok(match raw {
         RawOutcome::Exited { code: 0, wall, .. } => Ok(wall),
         raw => {
-            let named = match fact.program.as_str() {
-                "" => String::new(),
-                program => format!(" ({program})"),
-            };
+            let outcome = format!("{raw:?}");
             let failing: String = fact
                 .baseline_failures
                 .iter()
                 .map(|line| format!("\n  {line}"))
                 .collect();
-            Err(format!(
-                "unmutated tests do not pass under the debugger{named}: {raw:?}{failing}"
-            ))
+            Err(match fact.program.as_str() {
+                "" => Failure::BaselineFailed { outcome, failing },
+                program => Failure::ProgramBaselineFailed {
+                    program: program.to_string(),
+                    outcome,
+                    failing,
+                },
+            })
         }
     })
 }
@@ -243,6 +267,7 @@ fn program_prepared(fact: PreparationReported, wall: Duration) -> ProgramPrepare
         selection: fact.selection,
         failed_tests: fact.failed_tests,
         selection_reason: fact.selection_reason,
+        selection_why: fact.selection_why,
         index: fact.index,
         budget_ms: millis(Budget::for_mutant(wall).timeout),
         drives: fact.drives,
@@ -356,7 +381,11 @@ impl Run {
         let baseline = baseline_of(&fact).map_err(|e| Bug::new(&e))?;
         let wall = match baseline {
             Ok(wall) => wall,
-            Err(reason) => return Ok(self.failed(Some(fact.program), reason, ctx)),
+            Err(failure) => {
+                let why = why::encode(&angzarr_diagnostic::Report::of(&failure));
+                let coded = (String::new(), Some(why));
+                return Ok(self.failed(Some(fact.program), coded, ctx));
+            }
         };
         let last = self.programs > 0 && self.prepared.len() + 1 == self.programs as usize;
         let ready = RunReady {
@@ -379,7 +408,7 @@ impl Run {
         ctx: &Context,
     ) -> Result<FactEmit<Self>, Bug> {
         Ok(match self.live() {
-            true => self.failed(fact.program, fact.reason, ctx),
+            true => self.failed(fact.program, (fact.reason, fact.why), ctx),
             false => FactEmit::none(),
         })
     }
@@ -394,6 +423,7 @@ impl Run {
         Ok(FactEmit::of([
             pack_message(&RunAbandoned {
                 reason: fact.reason,
+                why: fact.why,
             }),
             pack_message(&self.finish(&self.counts, &ctx.recorded_at(), RunStatus::Abandoned)),
         ]))

@@ -169,6 +169,7 @@ fn passed() -> Observation {
 /// `index`th of the run's.
 fn preparation_at(index: u32, program: &str) -> PreparationReported {
     PreparationReported {
+        selection_why: None,
         program: program.to_string(),
         prepared_ms: 2,
         tests: None,
@@ -377,6 +378,7 @@ async fn test_a_prepared_program_is_recorded_with_its_budget_from_its_baseline()
         }],
     };
     let prepared = PreparationReported {
+        selection_why: None,
         tests: Some(3),
         selection: Selection::RecordedWithFailures,
         failed_tests: vec!["test_flaky".to_string()],
@@ -390,6 +392,7 @@ async fn test_a_prepared_program_is_recorded_with_its_budget_from_its_baseline()
     assert_eq!(
         run_events(&core, &run).await.last(),
         Some(&RunEvent::ProgramPrepared(ProgramPrepared {
+            selection_why: None,
             program: "target/debug/deps/calc-1".to_string(),
             baseline_ms: 1_500,
             prepared_ms: 2,
@@ -452,6 +455,7 @@ async fn test_a_baseline_that_fails_finishes_the_run_failed_and_it_is_never_read
     let run = new_run();
     core.command(run_cover(&run), &plan(&["a"])).await.unwrap();
     let failing = PreparationReported {
+        selection_why: None,
         baseline: Some(observation::encode(&RawOutcome::Exited {
             code: 101,
             tier: CoreTier::P,
@@ -473,20 +477,14 @@ async fn test_a_baseline_that_fails_finishes_the_run_failed_and_it_is_never_read
         panic!("{events:?}");
     };
     assert_eq!(program.program.as_deref(), Some("calc-1"));
+    assert_eq!(program.reason, "", "a coded failure leaves the text empty");
+    let why = program.why.as_ref().expect("a coded reason");
+    assert_eq!(why.code, "cherenkov-run-domain-program-baseline-failed");
+    assert_eq!(why.args["program"], "calc-1");
+    assert!(why.args["outcome"].contains("code: 101"), "{why:?}");
     assert!(
-        program
-            .reason
-            .starts_with("unmutated tests do not pass under the debugger (calc-1)"),
-        "{}",
-        program.reason
-    );
-    assert!(program.reason.contains("code: 101"), "{}", program.reason);
-    assert!(
-        program
-            .reason
-            .contains("calc::test_total at tests/calc.rs:5:5: boom"),
-        "{}",
-        program.reason
+        why.args["failing"].contains("calc::test_total at tests/calc.rs:5:5: boom"),
+        "{why:?}"
     );
     assert_eq!(finished.status, RunStatus::Failed);
     assert!(!events.iter().any(|e| matches!(e, RunEvent::RunReady(_))));
@@ -498,6 +496,7 @@ async fn test_a_baseline_the_executor_did_not_report_is_a_bug_of_the_reporter() 
     let run = new_run();
     core.command(run_cover(&run), &plan(&["a"])).await.unwrap();
     let silent = PreparationReported {
+        selection_why: None,
         baseline: None,
         ..preparation("calc-1")
     };
@@ -531,6 +530,7 @@ async fn test_a_program_that_does_not_prepare_is_recorded_and_finishes_the_run_f
     let run = new_run();
     core.command(run_cover(&run), &plan(&["a"])).await.unwrap();
     let failed = PreparationFailed {
+        why: None,
         program: Some("calc-1".to_string()),
         reason: "unmutated tests do not pass".to_string(),
     };
@@ -551,6 +551,59 @@ async fn test_a_program_that_does_not_prepare_is_recorded_and_finishes_the_run_f
     assert_eq!(finished.status, RunStatus::Failed);
 }
 
+fn why() -> angzarr::Diagnostic {
+    angzarr::Diagnostic {
+        code: "cherenkov-exec-dap-session".to_string(),
+        args: [("detail".to_string(), "closed".to_string())].into(),
+    }
+}
+
+#[tokio::test]
+async fn test_a_coded_failure_is_recorded_as_it_was_reported() {
+    let core = core();
+    let run = new_run();
+    core.command(run_cover(&run), &plan(&["a"])).await.unwrap();
+    let failed = PreparationFailed {
+        why: Some(why()),
+        program: Some("calc-1".to_string()),
+        reason: String::new(),
+    };
+    core.report(run_cover(&run), &failed, "preparation failed")
+        .await
+        .unwrap();
+    let events = run_events(&core, &run).await;
+    let [.., RunEvent::ProgramFailed(program), _] = &events[..] else {
+        panic!("{events:?}");
+    };
+    assert_eq!(program.why, Some(why()));
+    assert_eq!(program.reason, "");
+}
+
+#[tokio::test]
+async fn test_a_coded_selection_reason_is_kept_in_the_prepared_program() {
+    let core = core();
+    let run = new_run();
+    core.command(run_cover(&run), &plan_for(&["a"], 1))
+        .await
+        .unwrap();
+    let prepared = PreparationReported {
+        selection_reason: None,
+        selection_why: Some(why()),
+        ..preparation_at(0, "calc-1")
+    };
+    core.report(run_cover(&run), &prepared, "program 0")
+        .await
+        .unwrap();
+    let events = run_events(&core, &run).await;
+    let Some(RunEvent::ProgramPrepared(program)) = events
+        .iter()
+        .find(|e| matches!(e, RunEvent::ProgramPrepared(_)))
+    else {
+        panic!("{events:?}");
+    };
+    assert_eq!(program.selection_why, Some(why()));
+}
+
 #[tokio::test]
 async fn test_nothing_is_recorded_after_the_run_finishes() {
     let core = core();
@@ -561,6 +614,7 @@ async fn test_nothing_is_recorded_after_the_run_finishes() {
         .unwrap();
     let after = run_events(&core, &run).await.len();
     let failed = PreparationFailed {
+        why: None,
         program: None,
         reason: "late".to_string(),
     };
@@ -583,6 +637,7 @@ async fn test_a_run_told_it_is_abandoned_records_why_and_finishes_abandoned_with
         .await
         .unwrap();
     let abandoned = Abandoned {
+        why: None,
         reason: "the plan changed".to_string(),
     };
     core.report(run_cover(&run), &abandoned, "abandoned")
@@ -617,6 +672,7 @@ async fn test_a_run_already_over_is_not_abandoned_and_one_told_twice_is_abandone
         .unwrap();
     let over = run_events(&core, &run).await.len();
     let abandoned = Abandoned {
+        why: None,
         reason: "late".to_string(),
     };
     core.report(run_cover(&run), &abandoned, "abandoned")
@@ -893,6 +949,7 @@ async fn test_restoring_a_failed_run_s_snapshot_equals_its_replay_with_mutants_o
         .await
         .unwrap();
     let failed = PreparationFailed {
+        why: None,
         program: Some("calc-2".to_string()),
         reason: "did not build".to_string(),
     };
@@ -1120,6 +1177,16 @@ fn test_every_refusal_encodes_to_the_bytes_it_always_has() {
         refusal_line(&NoRun {}),
         refusal_line(&NoMutant {}),
         refusal_line(&PlannedForRun {}),
+        refusal_line(&PreparationFailed {
+            program: None,
+            reason: String::new(),
+            why: Some(why()),
+        }),
+        refusal_line(&ProgramFailed {
+            program: Some("calc-1".to_string()),
+            reason: String::new(),
+            why: Some(why()),
+        }),
     ];
     let expected: Vec<&str> = include_str!("encodings.txt").lines().collect();
     assert_eq!(lines, expected);
@@ -1292,6 +1359,7 @@ async fn test_a_decision_told_to_an_abandoned_run_with_a_mutant_owed_records_not
         .await
         .unwrap();
     let abandoned = Abandoned {
+        why: None,
         reason: "the plan changed".to_string(),
     };
     core.report(run_cover(&run), &abandoned, "abandoned")

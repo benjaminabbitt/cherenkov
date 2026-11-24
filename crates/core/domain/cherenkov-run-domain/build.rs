@@ -12,10 +12,12 @@ fn main() -> Result<(), angzarr_build::BuildError> {
         &[
             ("cherenkov.run.v1", "::cherenkov_run_wire::run"),
             ("cherenkov.mutant.v1", "::cherenkov_run_wire::mutant"),
+            ("io.angzarr.v1", "::angzarr_embedded::v1"),
         ],
         &[
             ("cherenkov.run.v1", "crate::run"),
             ("cherenkov.mutant.v1", "crate::mutant"),
+            ("io.angzarr.v1", "crate::angzarr"),
         ],
     )
 }

@@ -225,7 +225,9 @@ message Ran {
 // The debugger (or the harness driving it) failed on a mutant; the mutant
 // costs nothing else, and the next gets a fresh session.
 message DebuggerFailed {
+  // As text; empty in a fact recorded with `why`.
   string reason = 1;
+  optional io.angzarr.v1.Diagnostic why = 2;
 }
 
 // region commands
