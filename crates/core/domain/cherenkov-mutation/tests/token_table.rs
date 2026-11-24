@@ -36,9 +36,12 @@ fn test_literal_bool_uses_profile_spellings_only() {
 fn test_token_table_rejects_template_without_exactly_one_placeholder() {
     for bad in ["not", "{} and {}"] {
         let err = TokenTable::new([], bad).unwrap_err();
-        assert_eq!(err, TokenTableError::BadNotTemplate {
+        assert_eq!(
+            err,
+            TokenTableError::BadNotTemplate {
                 template: bad.to_string()
-            });
+            }
+        );
     }
 }
 
@@ -49,9 +52,12 @@ fn test_token_table_rejects_one_spelling_for_two_tokens() {
         "!({})",
     )
     .unwrap_err();
-    assert_eq!(err, TokenTableError::DuplicateSpelling {
+    assert_eq!(
+        err,
+        TokenTableError::DuplicateSpelling {
             spelling: "&".to_string()
-        });
+        }
+    );
 }
 
 #[test]
@@ -80,7 +86,10 @@ fn test_two_unary_tokens_with_one_spelling_are_rejected() {
         "!({})",
     )
     .unwrap_err();
-    assert_eq!(err, TokenTableError::DuplicateSpelling {
+    assert_eq!(
+        err,
+        TokenTableError::DuplicateSpelling {
             spelling: "-".to_string()
-        });
+        }
+    );
 }

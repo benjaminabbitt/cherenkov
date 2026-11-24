@@ -257,7 +257,12 @@ fn test_resolve_sets_names_the_unknown_one() {
     let err = resolve_sets("breadth,nope", |_| unreachable!())
         .err()
         .unwrap();
-    assert_eq!(err, SetError::Unknown { name: "nope".to_string() });
+    assert_eq!(
+        err,
+        SetError::Unknown {
+            name: "nope".to_string()
+        }
+    );
 }
 
 #[test]
@@ -278,10 +283,17 @@ fn test_a_custom_set_must_name_known_mutations_and_skips() {
     let bad_mutation = custom_set(custom(&["ror/zzz"], &[])).err().unwrap();
     assert_eq!(
         bad_mutation,
-        SetError::UnknownMutation { name: "ror/zzz".to_string() }
+        SetError::UnknownMutation {
+            name: "ror/zzz".to_string()
+        }
     );
     let bad_skip = custom_set(custom(&[], &["moon"])).err().unwrap();
-    assert_eq!(bad_skip, SetError::UnknownSkip { name: "moon".to_string() });
+    assert_eq!(
+        bad_skip,
+        SetError::UnknownSkip {
+            name: "moon".to_string()
+        }
+    );
 }
 
 #[test]

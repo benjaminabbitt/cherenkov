@@ -486,6 +486,7 @@ dependencies = [
 name = "cherenkov-exec-dap"
 version = "0.1.0"
 dependencies = [
+ "angzarr-diagnostic",
  "base64 0.23.1",
  "cherenkov-dap-types",
  "cherenkov-mutation",

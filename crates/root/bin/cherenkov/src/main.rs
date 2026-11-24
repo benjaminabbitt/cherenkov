@@ -695,7 +695,9 @@ pub(crate) fn with_excludes(mut profiles: Vec<Profile>, exclude: &[String]) -> V
 /// What was planned for each language, and the files that were not.
 fn summarize(project: &ProjectPlan, say: &Say) {
     for (lang, d) in &project.diagnostics {
-        say.say(&Notice::Planned(Box::new(cherenkov_cli::notice::Planned::of(lang.as_str(), d))));
+        say.say(&Notice::Planned(Box::new(
+            cherenkov_cli::notice::Planned::of(lang.as_str(), d),
+        )));
     }
     for (path, problem) in &project.problems {
         say.say(&Notice::FileProblem {

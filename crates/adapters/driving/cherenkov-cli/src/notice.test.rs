@@ -156,9 +156,12 @@ fn test_a_plan_is_summarized_from_what_the_planner_counted() {
     d.unrepresentable.insert(Concept::Binary, 2);
     d.disabled.insert("ror".into(), 3);
     d.disabled.insert("aor".into(), 4);
-    d.skipped.insert(("aor".into(), SkipReason::NoActionForContext), 6);
-    d.skipped.insert(("aor".into(), SkipReason::Region(SkipKind::Test)), 2);
-    d.skipped.insert(("ror".into(), SkipReason::Region(SkipKind::Test)), 1);
+    d.skipped
+        .insert(("aor".into(), SkipReason::NoActionForContext), 6);
+    d.skipped
+        .insert(("aor".into(), SkipReason::Region(SkipKind::Test)), 2);
+    d.skipped
+        .insert(("ror".into(), SkipReason::Region(SkipKind::Test)), 1);
     let planned = Planned::of("rust", &d);
     assert_eq!(planned.mutants, 5);
     assert_eq!(planned.mapped, Concept::ALL.len() as u64 - 1);

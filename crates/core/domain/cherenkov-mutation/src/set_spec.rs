@@ -66,7 +66,10 @@ impl Diagnostic for SetError {
                 ("detail", detail.as_str().into()),
             ],
             SetError::Invalid { path, cause } => {
-                vec![("path", path.as_str().into()), ("cause", Arg::nested(cause))]
+                vec![
+                    ("path", path.as_str().into()),
+                    ("cause", Arg::nested(cause)),
+                ]
             }
             SetError::Alias { alias, canonical } => vec![
                 ("alias", alias.as_str().into()),
@@ -120,8 +123,8 @@ fn one_set(
         });
     }
     named(item).ok_or_else(|| SetError::Unknown {
-            name: item.to_string(),
-        })
+        name: item.to_string(),
+    })
 }
 
 /// The set a file defines. Its strings live as long as the process: a set

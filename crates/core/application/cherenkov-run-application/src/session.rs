@@ -3,10 +3,9 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-
+use angzarr_diagnostic::{Arg, Diagnostic, Report, code};
 use cherenkov_mutation::operator::Operator;
 use cherenkov_mutation::operator_set::OperatorSet;
-use angzarr_diagnostic::{Arg, Diagnostic, Report, code};
 use cherenkov_mutation::plan::{Diagnostics, MutantPlan, PlanOutput, Provenance, plan_file};
 use cherenkov_mutation::plan_sets::plan_file_sets;
 use cherenkov_mutation::profile::Profile;
@@ -106,20 +105,24 @@ fn plan_project_with(
             let source = match reader.read(&rel) {
                 Ok(s) => s,
                 Err(e) => {
-                    out.problems
-                        .push((rel, FileProblem::Unreadable {
+                    out.problems.push((
+                        rel,
+                        FileProblem::Unreadable {
                             detail: e.to_string(),
-                        }));
+                        },
+                    ));
                     continue;
                 }
             };
             let file = match syntax.analyze(&profile.lang, &rel, source) {
                 Ok(f) => f,
                 Err(e) => {
-                    out.problems
-                        .push((rel, FileProblem::Analysis {
+                    out.problems.push((
+                        rel,
+                        FileProblem::Analysis {
                             cause: Report::of(&e),
-                        }));
+                        },
+                    ));
                     continue;
                 }
             };

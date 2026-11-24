@@ -2,11 +2,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use angzarr_diagnostic::{Arg, Diagnostic, Report, code};
 use cherenkov_mutation::concept::{Capture, Concept};
 use cherenkov_mutation::profile::{FileRules, Profile, ReturnValues};
 use cherenkov_mutation::syntax::{LanguageId, SkipKind, StmtKind};
 use cherenkov_mutation::token::{Token, TokenTable};
-use angzarr_diagnostic::{Arg, Diagnostic, Report, code};
 use serde::Deserialize;
 
 /// The three data files that make up a profile, plus its grammar.
@@ -73,11 +73,17 @@ impl Diagnostic for ProfileError {
     fn args(&self) -> Vec<(&str, Arg)> {
         match self {
             ProfileError::Query { lang, detail } => {
-                vec![("lang", lang.as_str().into()), ("detail", detail.as_str().into())]
+                vec![
+                    ("lang", lang.as_str().into()),
+                    ("detail", detail.as_str().into()),
+                ]
             }
             ProfileError::UnknownCapture { lang, name }
             | ProfileError::UnknownToken { lang, name } => {
-                vec![("lang", lang.as_str().into()), ("name", name.as_str().into())]
+                vec![
+                    ("lang", lang.as_str().into()),
+                    ("name", name.as_str().into()),
+                ]
             }
             ProfileError::Toml { lang, file, detail } => vec![
                 ("lang", lang.as_str().into()),
@@ -85,7 +91,10 @@ impl Diagnostic for ProfileError {
                 ("detail", detail.as_str().into()),
             ],
             ProfileError::Tokens { lang, cause } => {
-                vec![("lang", lang.as_str().into()), ("cause", Arg::nested(cause))]
+                vec![
+                    ("lang", lang.as_str().into()),
+                    ("cause", Arg::nested(cause)),
+                ]
             }
         }
     }

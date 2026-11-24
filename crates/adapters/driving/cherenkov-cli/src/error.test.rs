@@ -147,7 +147,9 @@ fn test_a_bad_operator_set_and_a_parser_that_did_not_load_render_their_causes() 
     let mut sources = vec![EN_US];
     sources.extend(cherenkov_run_application::error::CATALOG_SOURCES);
     let catalog = angzarr_presentation::Catalog::en_us(&sources).unwrap();
-    let cause = cherenkov_mutation::set_spec::SetError::UnknownSkip { name: "moon".into() };
+    let cause = cherenkov_mutation::set_spec::SetError::UnknownSkip {
+        name: "moon".into(),
+    };
     let bad = CliError::bad_operator_set("mine.toml", &cause);
     assert_eq!(
         catalog.render(&bad).unwrap(),

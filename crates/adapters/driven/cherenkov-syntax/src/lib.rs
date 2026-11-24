@@ -90,7 +90,7 @@ impl SyntaxPort for TreeSitterSyntax {
             })?;
         let tree = parser
             .parse(source.as_bytes(), None)
-            .ok_or_else(|| SyntaxError::Incomplete)?;
+            .ok_or(SyntaxError::Incomplete)?;
 
         let names = loaded.query.capture_names();
         // Repeated grammar fields yield one query match per occurrence; fold

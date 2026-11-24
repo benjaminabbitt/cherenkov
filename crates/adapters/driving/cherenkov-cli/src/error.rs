@@ -99,7 +99,10 @@ impl Diagnostic for CliError {
             CliError::NoProject { dir } => vec![("dir", dir.as_str().into())],
             CliError::ToolMissing { tool } => vec![("tool", tool.as_str().into())],
             CliError::BadOperatorSet { path, cause } => {
-                vec![("path", path.as_str().into()), ("cause", Arg::nested(cause))]
+                vec![
+                    ("path", path.as_str().into()),
+                    ("cause", Arg::nested(cause)),
+                ]
             }
             CliError::Unreadable { path, reason } => {
                 vec![
@@ -107,8 +110,9 @@ impl Diagnostic for CliError {
                     ("reason", reason.as_str().into()),
                 ]
             }
-            CliError::Planning { reason }
-            | CliError::Toolchain { reason } => vec![("reason", reason.as_str().into())],
+            CliError::Planning { reason } | CliError::Toolchain { reason } => {
+                vec![("reason", reason.as_str().into())]
+            }
             CliError::Syntax { cause } | CliError::Run { cause } => {
                 vec![("cause", Arg::nested(cause))]
             }

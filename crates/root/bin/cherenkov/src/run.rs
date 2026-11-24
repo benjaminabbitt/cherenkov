@@ -230,7 +230,9 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     let changed_tests = diff_tests(asked)?;
     let scope = scope.with_changed_tests(&changed_tests, &every, &packages, &canonical);
     let plans = scope.plans_to_run(changed_code, &every);
-    let mut programs = timed(asked.say, "build", || build_programs(&cargo, root, tools, &scope))?;
+    let mut programs = timed(asked.say, "build", || {
+        build_programs(&cargo, root, tools, &scope)
+    })?;
     programs.sort();
     let prefix = cargo_workspace_prefix(&cargo, root).map_err(toolchain)?;
     let facts = default_facts(&cargo, root, &tools.cargo_args)?;
@@ -279,7 +281,9 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
             })
             .collect()
     };
-    let jobs = tools.jobs.unwrap_or_else(|| machine_jobs(asked.say, &programs));
+    let jobs = tools
+        .jobs
+        .unwrap_or_else(|| machine_jobs(asked.say, &programs));
     let sets = (0..jobs.max(1)).map(|_| set()).collect();
     let result = on_run_layer(asked, "rust", &plans, workers_of(sets, jobs));
     cherenkov_exec_dap::support_lib::remove_scratch();

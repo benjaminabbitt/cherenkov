@@ -369,7 +369,9 @@ fn test_sets_and_mutations_list_other_tools_names_beside_the_canonical_ones() {
 #[test]
 fn test_plan_defaults_to_cargo_mutants_for_rust_and_breadth_for_go() {
     let rust = plan(&fixtures().join("rust"), &[]);
-    assert!(String::from_utf8_lossy(&rust.stderr).starts_with("cherenkov: operators: cargo-mutants\n"));
+    assert!(
+        String::from_utf8_lossy(&rust.stderr).starts_with("cherenkov: operators: cargo-mutants\n")
+    );
     let explicit = plan(&fixtures().join("rust"), &["--operators", "cargo-mutants"]);
     assert_eq!(listing(&rust), listing(&explicit));
     let go = plan(&fixtures().join("go"), &[]);

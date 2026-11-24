@@ -10,11 +10,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::{FileProblem, plan_project};
+use angzarr_diagnostic::Report;
 use cherenkov_mutation::operator::catalog;
 use cherenkov_mutation::profile::Profile;
 use cherenkov_mutation::syntax::{FileSyntax, LanguageId};
 use cherenkov_run_ports::source::SourceReader;
-use angzarr_diagnostic::Report;
 use cherenkov_run_ports::syntax::{SyntaxError, SyntaxPort};
 use common::{TOY_SRC, toy_file, toy_profile};
 
@@ -118,7 +118,9 @@ fn test_plan_project_reports_unreadable_file_and_plans_the_rest() {
     assert_eq!(out.plans.len(), TOY_PLANS);
     assert_eq!(out.problems.len(), 1);
     assert_eq!(out.problems[0].0, PathBuf::from("locked.src"));
-    assert!(matches!(&out.problems[0].1, FileProblem::Unreadable { detail } if detail.contains("denied")));
+    assert!(
+        matches!(&out.problems[0].1, FileProblem::Unreadable { detail } if detail.contains("denied"))
+    );
 }
 
 #[test]

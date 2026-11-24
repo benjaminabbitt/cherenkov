@@ -86,7 +86,10 @@ fn regions(d: &Diagnostics) -> Vec<String> {
 
 /// Time as the notices say it: whole seconds and tenths of one.
 fn seconds(tenths: u64) -> [(&'static str, Arg); 2] {
-    [("whole", (tenths / 10).into()), ("tenth", (tenths % 10).into())]
+    [
+        ("whole", (tenths / 10).into()),
+        ("tenth", (tenths % 10).into()),
+    ]
 }
 
 /// The tenths of a second in `elapsed`, rounded.
@@ -182,7 +185,10 @@ impl Diagnostic for Notice {
             Notice::Operators { label } => vec![("label", label.as_str().into())],
             Notice::Planned(planned) => planned_args(planned),
             Notice::FileProblem { path, cause } => {
-                vec![("path", path.as_str().into()), ("cause", Arg::nested(cause))]
+                vec![
+                    ("path", path.as_str().into()),
+                    ("cause", Arg::nested(cause)),
+                ]
             }
             Notice::Provenance { each, shared } => {
                 vec![("each", each.as_str().into()), ("shared", (*shared).into())]

@@ -142,9 +142,12 @@ fn test_analyze_unknown_language_is_an_error() {
     let err = syntax
         .analyze(&LanguageId::new("cobol"), Path::new("t"), Arc::from(""))
         .unwrap_err();
-    assert_eq!(err, SyntaxError::UnknownLanguage {
+    assert_eq!(
+        err,
+        SyntaxError::UnknownLanguage {
             lang: LanguageId::new("cobol")
-        });
+        }
+    );
 }
 
 // --- Positions and statements.
