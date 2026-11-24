@@ -6,13 +6,14 @@ use std::io::{BufRead, BufReader};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use cherenkov_dap_types::{
     Capabilities, ExitedEventBody, InitializeRequestArguments, StoppedEventBody,
 };
+use cherenkov_mutation::execution::TestReport;
 use cherenkov_run_ports::executor::ExecError;
 use serde_json::{Value, json};
 
@@ -35,6 +36,8 @@ pub use crate::toolchain::build_go_test_binary;
 
 const STARTUP: Duration = Duration::from_secs(20);
 const REQUEST: Duration = Duration::from_secs(30);
+/// The most a run's output is waited for after the run has ended.
+const OUTPUT_BOUND: Duration = Duration::from_secs(2);
 
 fn err<E: std::fmt::Display>(context: &str) -> impl Fn(E) -> ExecError + '_ {
     move |e| ExecError(format!("{context}: {e}"))
@@ -46,6 +49,8 @@ pub struct DelveSession {
     dap: DapClient,
     rpc: DelveRpc,
     debuggee: Option<u32>,
+    /// What the program has printed, read off Delve's stdout.
+    printed: Arc<Printed>,
 }
 
 impl DelveSession {
@@ -66,8 +71,8 @@ impl DelveSession {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| ExecError(format!("starting {}: {e}", config.dlv.display())))?;
-        let addr = match listening_address(&mut child) {
-            Ok(a) => a,
+        let (addr, printed) = match listening_address(&mut child) {
+            Ok(found) => found,
             Err(e) => {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -98,6 +103,7 @@ impl DelveSession {
             dap: DapClient::new(dap_stream, REQUEST),
             rpc,
             debuggee: None,
+            printed,
         };
         session.initialize()?;
         // Recorded while the target is stopped and Delve responsive, for teardown.
@@ -183,6 +189,10 @@ impl NativeSession for DelveSession {
             file: reported_file,
             insns,
         }))
+    }
+
+    fn take_output(&mut self) -> String {
+        self.printed.settled(OUTPUT_BOUND)
     }
 
     fn read(&mut self, addr: u64, len: usize) -> Result<Vec<u8>, ExecError> {
@@ -296,10 +306,91 @@ impl DelveSession {
     }
 }
 
+/// What the program under test prints, as Delve's stdout carries it.
+#[derive(Default)]
+struct Printed {
+    text: Mutex<String>,
+    grew: Condvar,
+}
+
+/// Output going quiet for this long, with no verdict printed, is all the
+/// run printed (a crash stops the program before its verdict).
+const QUIET: Duration = Duration::from_millis(100);
+
+impl Printed {
+    fn lock(&self) -> MutexGuard<'_, String> {
+        self.text.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn push(&self, line: &str) {
+        self.lock().push_str(line);
+        self.grew.notify_all();
+    }
+
+    /// What the program printed. The run has ended, but its last lines may
+    /// not have crossed the pipe yet: wait, for at most `bound`, until the
+    /// verdict line (`PASS` or `FAIL`, which Go prints last) is in, or the
+    /// output has been quiet for [`QUIET`]. What is returned is taken.
+    fn settled(&self, bound: Duration) -> String {
+        let deadline = Instant::now() + bound;
+        let mut text = self.lock();
+        while !has_verdict(&text) {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            let before = text.len();
+            let (guard, _) = self
+                .grew
+                .wait_timeout(text, QUIET.min(left))
+                .unwrap_or_else(PoisonError::into_inner);
+            text = guard;
+            if text.len() == before {
+                break;
+            }
+        }
+        std::mem::take(&mut *text)
+    }
+}
+
+/// Whether the last line is the verdict line of a Go test binary.
+fn has_verdict(text: &str) -> bool {
+    matches!(text.lines().next_back(), Some("PASS" | "FAIL")) && text.ends_with('\n')
+}
+
+/// The lines of Delve's stdout, each with its newline: the banner's
+/// address goes to `listening`, and what follows the banner, which is the
+/// program's, to `printed`. What came before the banner is Delve's own.
+fn split_stdout(
+    mut reader: impl BufRead,
+    mut listening: impl FnMut(String),
+    mut printed: impl FnMut(&str),
+) {
+    let mut announced = false;
+    let mut raw = Vec::new();
+    loop {
+        raw.clear();
+        if !matches!(reader.read_until(b'\n', &mut raw), Ok(n) if n > 0) {
+            return;
+        }
+        let line = String::from_utf8_lossy(&raw);
+        match line.strip_prefix(BANNER) {
+            Some(addr) if !announced => {
+                announced = true;
+                listening(addr.trim().to_string());
+            }
+            _ if announced => printed(&line),
+            _ => {}
+        }
+    }
+}
+
+const BANNER: &str = "API server listening at: ";
+
 /// Read Delve's stdout until it announces its listener; keep draining both
-/// pipes afterwards so the test process never blocks on a full pipe.
-fn listening_address(child: &mut Child) -> Result<String, ExecError> {
-    const BANNER: &str = "API server listening at: ";
+/// pipes afterwards so the test process never blocks on a full pipe. The
+/// program's output after the banner is kept for [`Printed::settled`].
+fn listening_address(child: &mut Child) -> Result<(String, Arc<Printed>), ExecError> {
     let stdout = child
         .stdout
         .take()
@@ -309,14 +400,18 @@ fn listening_address(child: &mut Child) -> Result<String, ExecError> {
         .take()
         .ok_or_else(|| ExecError("no stderr pipe".into()))?;
     let (tx, rx) = mpsc::channel();
+    let printed = Arc::new(Printed::default());
+    let program = Arc::clone(&printed);
     thread::spawn(move || {
         let mut sent = false;
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if !sent && let Some(addr) = line.strip_prefix(BANNER) {
-                let _ = tx.send(Ok(addr.trim().to_string()));
+        split_stdout(
+            BufReader::new(stdout),
+            |addr| {
                 sent = true;
-            }
-        }
+                let _ = tx.send(Ok(addr));
+            },
+            |line| program.push(line),
+        );
         if !sent {
             let _ = tx.send(Err(()));
         }
@@ -332,7 +427,7 @@ fn listening_address(child: &mut Child) -> Result<String, ExecError> {
         }
     });
     match rx.recv_timeout(STARTUP) {
-        Ok(Ok(addr)) => Ok(addr),
+        Ok(Ok(addr)) => Ok((addr, printed)),
         Ok(Err(())) | Err(_) => {
             thread::sleep(Duration::from_millis(100));
             let stderr = stderr_text
@@ -375,7 +470,15 @@ impl Launcher for DelveConfig {
     fn binary(&self) -> Option<&Path> {
         Some(&self.test_binary)
     }
+
+    fn tests_of(&self, output: &str) -> Vec<TestReport> {
+        crate::gotest::reports(output)
+    }
 }
 
 /// Go mutants under unmodified Delve, applied as tier P patches.
 pub type DelveExecutor = TierPExecutor<DelveConfig>;
+
+#[cfg(test)]
+#[path = "delve.test.rs"]
+mod tests;
