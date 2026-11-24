@@ -9,9 +9,9 @@ use cherenkov_mutation::edit::{Edit, Lit};
 use cherenkov_mutation::operator_set::registry;
 use cherenkov_mutation::plan::{Action, MutantPlan, render_source};
 use cherenkov_mutation::plan_sets::plan_file_sets;
-use cherenkov_mutation::ports::SyntaxPort;
 use cherenkov_mutation::profile::Profile;
 use cherenkov_mutation::syntax::LanguageId;
+use cherenkov_run_ports::syntax::SyntaxPort;
 use cherenkov_syntax::TreeSitterSyntax;
 
 /// How the function receives its input `a` (a `u32`).

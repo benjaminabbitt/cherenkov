@@ -11,7 +11,7 @@ use base64::Engine;
 use cherenkov_dap_types::{
     Capabilities, ExitedEventBody, InitializeRequestArguments, StoppedEventBody,
 };
-use cherenkov_mutation::execution::{Driven, ExecError};
+use cherenkov_run_ports::executor::{Driven, ExecError};
 use serde::Deserialize;
 use serde_json::{Value, json};
 

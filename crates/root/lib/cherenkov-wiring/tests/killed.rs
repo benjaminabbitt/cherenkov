@@ -14,10 +14,11 @@ use std::time::{Duration, Instant};
 
 mod common;
 
-use cherenkov_mutation::execution::{Budget, ExecError, MutantExecutor, RawOutcome};
+use cherenkov_mutation::execution::{Budget, RawOutcome};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_application::layer::Workers;
 use cherenkov_run_domain::RunStatus;
+use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
 use common::{Kept, exited, explain, plans_of, readers, scratch, settings};
 
 const MUTANTS: usize = 6;

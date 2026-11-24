@@ -8,6 +8,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+cherenkov-run-ports.workspace = true
 gimli.workspace = true
 iced-x86.workspace = true
 object.workspace = true

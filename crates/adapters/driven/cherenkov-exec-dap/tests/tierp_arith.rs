@@ -13,9 +13,9 @@ use cherenkov_mutation::concept::Capture;
 use cherenkov_mutation::edit::Edit;
 use cherenkov_mutation::operator_set::named;
 use cherenkov_mutation::plan::{Action, MutantPlan, plan_file};
-use cherenkov_mutation::ports::SyntaxPort;
 use cherenkov_mutation::syntax::{LanguageId, Pos, Span};
 use cherenkov_mutation::token::Token;
+use cherenkov_run_ports::syntax::SyntaxPort;
 use cherenkov_syntax::TreeSitterSyntax;
 
 const FILE: &str = "src/lib.rs";

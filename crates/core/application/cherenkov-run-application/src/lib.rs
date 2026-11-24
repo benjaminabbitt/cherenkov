@@ -26,6 +26,7 @@ pub mod pool;
 pub mod programs;
 pub mod resume;
 pub mod runner;
+pub mod session;
 pub mod verdicts;
 pub mod workers;
 

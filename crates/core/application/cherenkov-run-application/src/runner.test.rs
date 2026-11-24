@@ -2,7 +2,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use angzarr_embedded::v1::{Cover, EventBook, EventPage};
-use cherenkov_mutation::execution::{Budget, ExecError, MutantExecutor, RawOutcome, Tier};
+use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
+use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
 
 use super::*;
 use crate::covers::{mutant_cover, run_cover};

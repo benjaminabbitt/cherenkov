@@ -5,8 +5,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use cherenkov_mutation::concept::{Capture, Concept};
-use cherenkov_mutation::ports::{SyntaxError, SyntaxPort};
 use cherenkov_mutation::syntax::{ConceptMatch, FileSyntax, LanguageId, StmtKind};
+use cherenkov_run_ports::syntax::{SyntaxError, SyntaxPort};
 use cherenkov_syntax::{ProfileError, ProfileSource, TreeSitterSyntax, profiles};
 
 fn analyze(lang: &str, src: &str) -> FileSyntax {

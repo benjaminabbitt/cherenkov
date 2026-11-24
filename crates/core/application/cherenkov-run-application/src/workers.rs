@@ -10,10 +10,9 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use cherenkov_mutation::execution::{
-    Budget, Driven, MutantExecutor, RawOutcome, Recording, classify,
-};
+use cherenkov_mutation::execution::{Budget, RawOutcome, classify};
 use cherenkov_mutation::plan::MutantPlan;
+use cherenkov_run_ports::executor::{Driven, MutantExecutor, Recording};
 
 /// The first, unmutated run of each test program is given this long.
 const FIRST_RUN: Duration = Duration::from_secs(120);

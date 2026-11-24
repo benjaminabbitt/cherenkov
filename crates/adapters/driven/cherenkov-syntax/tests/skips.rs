@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use cherenkov_mutation::operator_set::named;
 use cherenkov_mutation::plan::{PlanOutput, SkipReason, plan_file};
-use cherenkov_mutation::ports::SyntaxPort;
 use cherenkov_mutation::syntax::{LanguageId, SkipKind};
+use cherenkov_run_ports::syntax::SyntaxPort;
 use cherenkov_syntax::TreeSitterSyntax;
 
 fn plan(src: &str, set: &str) -> PlanOutput {

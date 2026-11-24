@@ -1,21 +1,9 @@
-//! Port traits. The core defines them; adapters implement them.
-//!
-//! Only the ports M0 exercises are defined here. Test catalog, coverage,
-//! executor and report ports arrive with the milestones that use them.
+//! The syntax port: what a parser adapter hands the core.
 
-use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
-use crate::syntax::{FileSyntax, LanguageId};
-
-/// Read-only by construction: no port in the core writes source.
-pub trait SourceReader {
-    /// Source files of `lang` under the project root, relative to it, sorted.
-    fn list(&self, lang: &LanguageId) -> io::Result<Vec<PathBuf>>;
-    /// Contents of a file given relative to the project root.
-    fn read(&self, rel: &Path) -> io::Result<Arc<str>>;
-}
+use cherenkov_mutation::syntax::{FileSyntax, LanguageId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyntaxError {

@@ -15,10 +15,11 @@ use std::time::Duration;
 
 use angzarr_embedded::angzarr_router::router::DynProjectorHandler;
 use angzarr_embedded::v1::Uuid;
-use cherenkov_mutation::execution::{Budget, ExecError, MutantExecutor, RawOutcome, Tier};
+use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, run_event};
 use cherenkov_run_domain::{PlanRun, RunStatus};
+use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
 
 use crate::covers::{mutant_cover, run_cover};
 use crate::host::{self, Readers};

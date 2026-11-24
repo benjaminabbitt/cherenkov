@@ -111,14 +111,6 @@ fn test_classify_crash_caught_by_the_debugger_is_killed_with_its_message() {
     );
 }
 
-#[test]
-fn test_exec_error_displays_its_message() {
-    assert_eq!(
-        cherenkov_mutation::execution::ExecError("dlv not found".into()).to_string(),
-        "dlv not found"
-    );
-}
-
 // --- Outcomes across several test binaries (Rust: one per test target).
 
 fn ms(n: u64) -> Duration {
@@ -226,54 +218,4 @@ fn test_combine_unviable_anywhere_without_a_detection_is_unviable() {
         },
     ]);
     assert!(matches!(got, RawOutcome::Unviable { .. }), "{got:?}");
-}
-
-/// Says which tests call what through `driven` alone, as an executor
-/// written before recordings were reported does.
-struct DrivenOnly(Option<Vec<cherenkov_mutation::execution::Driven>>);
-
-impl cherenkov_mutation::execution::MutantExecutor for DrivenOnly {
-    fn run(
-        &mut self,
-        _: &cherenkov_mutation::plan::MutantPlan,
-        _: Budget,
-    ) -> Result<RawOutcome, cherenkov_mutation::execution::ExecError> {
-        Ok(exited(0))
-    }
-
-    fn baseline(
-        &mut self,
-        _: Budget,
-    ) -> Result<RawOutcome, cherenkov_mutation::execution::ExecError> {
-        Ok(exited(0))
-    }
-
-    fn driven(
-        &mut self,
-        _: &[cherenkov_mutation::plan::MutantPlan],
-        _: Budget,
-    ) -> Result<
-        Option<Vec<cherenkov_mutation::execution::Driven>>,
-        cherenkov_mutation::execution::ExecError,
-    > {
-        Ok(self.0.clone())
-    }
-}
-
-#[test]
-fn test_a_recording_is_what_driven_says_and_every_test_where_it_cannot_tell() {
-    use cherenkov_mutation::execution::{Driven, MutantExecutor, Selection};
-    let budget = Budget::from_baseline(Duration::from_millis(10));
-    let recorded = DrivenOnly(Some(vec![Driven::NotCalled]))
-        .recording(&[], budget)
-        .unwrap();
-    assert_eq!(recorded.tests, None, "not counted");
-    assert_eq!(recorded.selection, Selection::Recorded);
-    assert_eq!(recorded.driven, Some(vec![Driven::NotCalled]));
-    let blind = DrivenOnly(None).recording(&[], budget).unwrap();
-    assert!(
-        matches!(blind.selection, Selection::EveryTest { .. }),
-        "{blind:?}"
-    );
-    assert_eq!(blind.driven, None);
 }

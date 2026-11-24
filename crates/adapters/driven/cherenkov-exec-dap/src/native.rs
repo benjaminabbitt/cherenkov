@@ -6,12 +6,11 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use cherenkov_mutation::edit::Edit;
-use cherenkov_mutation::execution::{
-    Budget, Driven, ExecError, MutantExecutor, RawOutcome, Recording, Selection, Tier,
-};
+use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
 use cherenkov_mutation::plan::{Action, MutantPlan};
 use cherenkov_mutation::syntax::Pos;
 use cherenkov_mutation::token::Token;
+use cherenkov_run_ports::executor::{Driven, ExecError, MutantExecutor, Recording, Selection};
 
 use crate::isa::Isa;
 use crate::tierp::{Insn, Patch, Unpatchable, derive, derive_returning};
@@ -1921,7 +1920,7 @@ mod tests {
     }
 
     fn return_plan(source: &str, value: &str) -> MutantPlan {
-        use cherenkov_mutation::ports::SyntaxPort;
+        use cherenkov_run_ports::syntax::SyntaxPort;
         let syntax = cherenkov_syntax::TreeSitterSyntax::builtin().unwrap();
         let rust = cherenkov_mutation::syntax::LanguageId::new("rust");
         let profile = syntax

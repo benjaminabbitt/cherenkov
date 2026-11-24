@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use cherenkov_mutation::operator::catalog;
 use cherenkov_mutation::plan::{Action, MutantPlan, Target, plan_file};
-use cherenkov_mutation::ports::SyntaxPort;
 use cherenkov_mutation::syntax::LanguageId;
+use cherenkov_run_ports::syntax::SyntaxPort;
 use cherenkov_syntax::TreeSitterSyntax;
 
 fn plans(lang: &str, src: &str) -> Vec<MutantPlan> {

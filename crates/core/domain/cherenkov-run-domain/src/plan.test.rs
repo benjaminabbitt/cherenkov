@@ -7,10 +7,10 @@ use std::sync::Arc;
 use cherenkov_fs::FsSourceReader;
 use cherenkov_mutation::concept::Capture as CoreCapture;
 use cherenkov_mutation::plan::{MutantPlan as CorePlan, plan_file};
-use cherenkov_mutation::ports::SyntaxPort;
-use cherenkov_mutation::session::plan_project;
 use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_mutation::token::Token as CoreToken;
+use cherenkov_run_ports::source::SourceReader;
+use cherenkov_run_ports::syntax::SyntaxPort;
 use cherenkov_syntax::TreeSitterSyntax;
 
 use super::*;
@@ -52,6 +52,24 @@ fn varied_plans(operators: &[Box<dyn Operator>]) -> Vec<CorePlan> {
     plan_file(&file, &profile, operators).plans
 }
 
+/// Every plan of every file of a project, for each profile's language.
+fn project_plans(
+    reader: &dyn SourceReader,
+    syntax: &TreeSitterSyntax,
+    profiles: &[cherenkov_mutation::profile::Profile],
+    operators: &[Box<dyn Operator>],
+) -> Vec<CorePlan> {
+    let mut plans = Vec::new();
+    for profile in profiles {
+        for rel in reader.list(&profile.lang).unwrap() {
+            let source = reader.read(&rel).unwrap();
+            let file = syntax.analyze(&profile.lang, &rel, source).unwrap();
+            plans.extend(plan_file(&file, profile, operators).plans);
+        }
+    }
+    plans
+}
+
 /// Every plan the planner makes for the fixtures, in every language, and
 /// for [`VARIED`], with the operators of every set: the variety the run
 /// layer has to carry.
@@ -65,9 +83,7 @@ fn fixture_plans() -> Vec<CorePlan> {
             let operators = set.operators();
             let fixtures = ["rust", "go", "python"].iter().flat_map(|language| {
                 let reader = FsSourceReader::new(root.join(language), &profiles).unwrap();
-                plan_project(&reader, &syntax, &profiles, &operators)
-                    .unwrap()
-                    .plans
+                project_plans(&reader, &syntax, &profiles, &operators)
             });
             fixtures.chain(varied_plans(&operators)).collect::<Vec<_>>()
         })

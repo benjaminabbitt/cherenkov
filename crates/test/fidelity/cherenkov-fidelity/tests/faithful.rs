@@ -11,11 +11,12 @@ use cherenkov_fidelity::check::{Checked, Debugger, check};
 use cherenkov_fidelity::judge::Judgement;
 use cherenkov_fidelity::source::ScratchProject;
 use cherenkov_fs::FsSourceReader;
-use cherenkov_mutation::execution::{MutantExecutor, Tier};
+use cherenkov_mutation::execution::Tier;
 use cherenkov_mutation::operator::Operator;
 use cherenkov_mutation::operator_set::named;
 use cherenkov_mutation::plan::MutantPlan;
-use cherenkov_mutation::session::plan_project;
+use cherenkov_run_application::session::plan_project;
+use cherenkov_run_ports::executor::MutantExecutor;
 use cherenkov_syntax::TreeSitterSyntax;
 
 /// The mutation name of a compound assignment's operator swap: the one

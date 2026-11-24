@@ -16,11 +16,10 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use cherenkov_mutation::execution::{
-    Budget, Driven, ExecError, MutantExecutor, RawOutcome, Recording,
-};
+use cherenkov_mutation::execution::{Budget, RawOutcome};
 use cherenkov_mutation::id::MutantId;
 use cherenkov_mutation::plan::MutantPlan;
+use cherenkov_run_ports::executor::{Driven, ExecError, MutantExecutor, Recording};
 use serde_json::Value;
 
 /// A mutant to check: its text replaces `start..end` of `file` (relative to

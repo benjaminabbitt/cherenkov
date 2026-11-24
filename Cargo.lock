@@ -422,6 +422,7 @@ dependencies = [
  "cherenkov-mutation",
  "cherenkov-run-application",
  "cherenkov-run-domain",
+ "cherenkov-run-ports",
  "cherenkov-run-store",
  "cherenkov-run-wire",
  "cherenkov-syntax",
@@ -445,24 +446,14 @@ dependencies = [
  "angzarr-embedded",
  "angzarr-ports",
  "angzarr-presentation",
- "cherenkov-exec-dap",
- "cherenkov-fs",
  "cherenkov-mutation",
  "cherenkov-run-application",
  "cherenkov-run-domain",
- "cherenkov-run-store",
  "cherenkov-run-wire",
- "cherenkov-syntax",
- "cherenkov-wiring",
- "clap",
  "cli-support",
- "globset",
- "regex",
  "serde",
  "serde_json",
- "sysinfo",
  "tokio",
- "toml 1.2.1+spec-1.1.0",
 ]
 
 [[package]]
@@ -492,6 +483,7 @@ dependencies = [
  "base64 0.23.1",
  "cherenkov-dap-types",
  "cherenkov-mutation",
+ "cherenkov-run-ports",
  "cherenkov-syntax",
  "gimli",
  "iced-x86",
@@ -510,6 +502,8 @@ dependencies = [
  "cherenkov-exec-dap",
  "cherenkov-fs",
  "cherenkov-mutation",
+ "cherenkov-run-application",
+ "cherenkov-run-ports",
  "cherenkov-syntax",
  "walkdir",
 ]
@@ -519,6 +513,7 @@ name = "cherenkov-fs"
 version = "0.1.0"
 dependencies = [
  "cherenkov-mutation",
+ "cherenkov-run-ports",
  "cherenkov-syntax",
  "globset",
  "walkdir",
@@ -548,6 +543,7 @@ dependencies = [
  "cherenkov-run-ports",
  "cherenkov-run-wire",
  "cherenkov-syntax",
+ "serde",
  "tokio",
  "uuid",
 ]
@@ -563,6 +559,7 @@ dependencies = [
  "angzarr-ports",
  "cherenkov-fs",
  "cherenkov-mutation",
+ "cherenkov-run-ports",
  "cherenkov-run-wire",
  "cherenkov-syntax",
  "prost",
@@ -576,6 +573,7 @@ name = "cherenkov-run-ports"
 version = "0.1.0"
 dependencies = [
  "angzarr-embedded",
+ "cherenkov-mutation",
  "cherenkov-run-domain",
  "tokio",
 ]
@@ -607,6 +605,7 @@ name = "cherenkov-syntax"
 version = "0.1.0"
 dependencies = [
  "cherenkov-mutation",
+ "cherenkov-run-ports",
  "serde",
  "streaming-iterator",
  "toml 1.2.1+spec-1.1.0",

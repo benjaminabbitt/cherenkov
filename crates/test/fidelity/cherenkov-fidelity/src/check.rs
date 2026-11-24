@@ -2,9 +2,10 @@
 
 use std::time::{Duration, Instant};
 
-use cherenkov_mutation::execution::{Budget, Driven, MutantExecutor, RawOutcome, Tier, classify};
+use cherenkov_mutation::execution::{Budget, RawOutcome, Tier, classify};
 use cherenkov_mutation::plan::{MutantPlan, render_source};
 use cherenkov_mutation::profile::Profile;
+use cherenkov_run_ports::executor::{Driven, MutantExecutor};
 
 use crate::judge::{Judgement, Run, judge};
 use crate::source::ScratchProject;
@@ -306,11 +307,11 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
-    use cherenkov_mutation::execution::ExecError;
     use cherenkov_mutation::operator_set::named;
     use cherenkov_mutation::plan::plan_file;
-    use cherenkov_mutation::ports::SyntaxPort;
     use cherenkov_mutation::syntax::LanguageId;
+    use cherenkov_run_ports::executor::ExecError;
+    use cherenkov_run_ports::syntax::SyntaxPort;
     use cherenkov_syntax::TreeSitterSyntax;
 
     use super::*;

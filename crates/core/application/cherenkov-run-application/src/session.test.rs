@@ -1,6 +1,7 @@
 //! The planning use case with fake ports: every file is either planned or
 //! reported in `problems`, never silently dropped.
 
+#[path = "../../../domain/cherenkov-mutation/tests/common/mod.rs"]
 mod common;
 
 use std::collections::BTreeMap;
@@ -8,11 +9,12 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use super::{FileProblem, plan_project};
 use cherenkov_mutation::operator::catalog;
-use cherenkov_mutation::ports::{SourceReader, SyntaxError, SyntaxPort};
 use cherenkov_mutation::profile::Profile;
-use cherenkov_mutation::session::{FileProblem, plan_project};
 use cherenkov_mutation::syntax::{FileSyntax, LanguageId};
+use cherenkov_run_ports::source::SourceReader;
+use cherenkov_run_ports::syntax::{SyntaxError, SyntaxPort};
 use common::{TOY_SRC, toy_file, toy_profile};
 
 const SYNTAX_ERROR: &str = "<syntax error>";
@@ -188,8 +190,8 @@ fn test_plan_project_language_without_files_has_no_diagnostics_entry() {
 
 #[test]
 fn test_plan_project_sets_merges_the_sets_per_file_and_tags_each_plan() {
+    use super::plan_project_sets;
     use cherenkov_mutation::operator_set::named;
-    use cherenkov_mutation::session::plan_project_sets;
     let r = reader(&[
         ("toy", "a.src", Some(TOY_SRC)),
         ("toy", "b.src", Some(TOY_SRC)),

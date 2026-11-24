@@ -6,9 +6,9 @@ use std::io;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
-use cherenkov_mutation::ports::SourceReader;
 use cherenkov_mutation::profile::Profile;
 use cherenkov_mutation::syntax::LanguageId;
+use cherenkov_run_ports::source::SourceReader;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use walkdir::WalkDir;
 

@@ -8,6 +8,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+cherenkov-run-ports.workspace = true
 cherenkov-mutation.workspace = true
 cherenkov-exec-dap.workspace = true
 walkdir.workspace = true
@@ -16,5 +17,6 @@ walkdir.workspace = true
 workspace = true
 
 [dev-dependencies]
+cherenkov-run-application.workspace = true
 cherenkov-fs.workspace = true
 cherenkov-syntax.workspace = true

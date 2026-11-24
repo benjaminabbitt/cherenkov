@@ -6,11 +6,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cherenkov_exec_dap::routing::OnlyJudged;
-use cherenkov_mutation::execution::{
-    Budget, Driven, ExecError, MutantExecutor, RawOutcome, Recording, Selection, Tier,
-};
+use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
 use cherenkov_mutation::id::MutantId;
 use cherenkov_mutation::plan::MutantPlan;
+use cherenkov_run_ports::executor::{Driven, ExecError, MutantExecutor, Recording, Selection};
 
 /// What the inner program was asked to record.
 #[derive(Default, Clone)]
@@ -62,7 +61,7 @@ impl Program {
 }
 
 fn plan_of(id: &str) -> MutantPlan {
-    use cherenkov_mutation::ports::SyntaxPort;
+    use cherenkov_run_ports::syntax::SyntaxPort;
     let syntax = cherenkov_syntax::TreeSitterSyntax::builtin().unwrap();
     let rust = cherenkov_mutation::syntax::LanguageId::new("rust");
     let profile = syntax

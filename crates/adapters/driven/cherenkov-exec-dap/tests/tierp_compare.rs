@@ -11,8 +11,8 @@ use cherenkov_exec_dap::tierp::{Insn, Unpatchable, derive};
 use cherenkov_mutation::operator_set::registry;
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_mutation::plan_sets::plan_file_sets;
-use cherenkov_mutation::ports::SyntaxPort;
 use cherenkov_mutation::syntax::LanguageId;
+use cherenkov_run_ports::syntax::SyntaxPort;
 use cherenkov_syntax::TreeSitterSyntax;
 
 const FILE: &str = "s.rs";

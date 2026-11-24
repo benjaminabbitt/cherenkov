@@ -18,11 +18,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use cherenkov_mutation::concept::{Capture, Concept};
-use cherenkov_mutation::ports::{SyntaxError, SyntaxPort};
 use cherenkov_mutation::profile::Profile;
 use cherenkov_mutation::syntax::{
     ConceptMatch, FileSyntax, LanguageId, Pos, SkipKind, SkipRegion, Span, Statement, StmtKind,
 };
+use cherenkov_run_ports::syntax::{SyntaxError, SyntaxPort};
 use std::collections::{BTreeMap, BTreeSet};
 use streaming_iterator::StreamingIterator;
 

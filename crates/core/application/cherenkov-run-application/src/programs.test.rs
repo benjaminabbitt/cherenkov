@@ -1,9 +1,8 @@
 use std::time::Duration;
 
-use cherenkov_mutation::execution::{
-    Driven as Chosen, RawOutcome, Recording, Selection as Picked, Tier,
-};
+use cherenkov_mutation::execution::{RawOutcome, Tier};
 use cherenkov_mutation::plan::MutantPlan;
+use cherenkov_run_ports::executor::{Driven as Chosen, Recording, Selection as Picked};
 
 use super::*;
 use crate::test_plans::plans;

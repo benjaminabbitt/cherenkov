@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use cherenkov_mutation::execution::ExecError;
+use cherenkov_run_ports::executor::ExecError;
 use serde_json::Value;
 
 /// Build a Go package's test binary without optimization or inlining, so

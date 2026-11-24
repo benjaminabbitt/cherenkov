@@ -7,12 +7,13 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use cherenkov_mutation::execution::{self as core, Budget, Selection as Chosen};
+use cherenkov_mutation::execution::Budget;
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_domain::observation;
 use cherenkov_run_domain::{
     Drive, Driven, DrivenKind, Drives, PreparationReported, ProgramPrepared, Selection, TestList,
 };
+use cherenkov_run_ports::executor::{self as core, Selection as Chosen};
 
 use crate::workers::{Preparation, Programs};
 

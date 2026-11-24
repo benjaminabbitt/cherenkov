@@ -21,7 +21,6 @@ use cherenkov_exec_dap::toolchain::{
 };
 use cherenkov_exec_dap::viability::{self, RustcRejects};
 use cherenkov_mutation::diff::AddedLines;
-use cherenkov_mutation::execution::MutantExecutor;
 use cherenkov_mutation::id::MutantId;
 use cherenkov_mutation::operator_set::OperatorSet;
 use cherenkov_mutation::plan::MutantPlan;
@@ -30,6 +29,7 @@ use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::{Settings, Workers};
 use cherenkov_run_application::verdicts::VerdictFile;
 use cherenkov_run_application::workers::{Killer, SESSIONS_PER_WORKER};
+use cherenkov_run_ports::executor::MutantExecutor;
 use cherenkov_syntax::TreeSitterSyntax;
 
 use crate::changed_tests::{ChangedTest, changed_tests, libtest_names};

@@ -3,9 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use cherenkov_fs::FsSourceReader;
-use cherenkov_mutation::ports::SourceReader;
 use cherenkov_mutation::profile::Profile;
 use cherenkov_mutation::syntax::LanguageId;
+use cherenkov_run_ports::source::SourceReader;
 use cherenkov_syntax::TreeSitterSyntax;
 
 fn fixtures() -> PathBuf {

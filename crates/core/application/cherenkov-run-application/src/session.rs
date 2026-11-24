@@ -5,13 +5,14 @@ use std::path::PathBuf;
 
 use serde::Serialize;
 
-use crate::operator::Operator;
-use crate::operator_set::OperatorSet;
-use crate::plan::{Diagnostics, MutantPlan, PlanOutput, Provenance, plan_file};
-use crate::plan_sets::plan_file_sets;
-use crate::ports::{SourceReader, SyntaxPort};
-use crate::profile::Profile;
-use crate::syntax::{FileSyntax, LanguageId};
+use cherenkov_mutation::operator::Operator;
+use cherenkov_mutation::operator_set::OperatorSet;
+use cherenkov_mutation::plan::{Diagnostics, MutantPlan, PlanOutput, Provenance, plan_file};
+use cherenkov_mutation::plan_sets::plan_file_sets;
+use cherenkov_mutation::profile::Profile;
+use cherenkov_mutation::syntax::{FileSyntax, LanguageId};
+use cherenkov_run_ports::source::SourceReader;
+use cherenkov_run_ports::syntax::SyntaxPort;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case", tag = "kind", content = "message")]
@@ -105,3 +106,7 @@ fn plan_project_with(
     out.plans.sort_by(|a, b| a.file.cmp(&b.file));
     Ok(out)
 }
+
+#[cfg(test)]
+#[path = "session.test.rs"]
+mod tests;

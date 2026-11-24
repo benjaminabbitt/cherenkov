@@ -8,7 +8,8 @@ use std::path::{Path, PathBuf};
 use cherenkov_exec_dap::viability::{
     Blamed, Candidate, Diag, apply_edits, batches, blame, diagnostics, settle,
 };
-use cherenkov_mutation::execution::{ExecError, MutantExecutor, RawOutcome};
+use cherenkov_mutation::execution::RawOutcome;
+use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
 
 fn candidate(file: &str, start: usize, end: usize) -> Candidate {
     Candidate {
@@ -194,7 +195,7 @@ impl MutantExecutor for Fixed {
 }
 
 fn plan_of(id: &str) -> cherenkov_mutation::plan::MutantPlan {
-    use cherenkov_mutation::ports::SyntaxPort;
+    use cherenkov_run_ports::syntax::SyntaxPort;
     let syntax = cherenkov_syntax::TreeSitterSyntax::builtin().unwrap();
     let rust = cherenkov_mutation::syntax::LanguageId::new("rust");
     let profile = syntax
@@ -351,7 +352,7 @@ fn test_a_project_that_does_not_pass_cargo_check_is_not_checked() {
 // still in the file where the plan found it.
 
 fn fn_value_plan(src: &str) -> cherenkov_mutation::plan::MutantPlan {
-    use cherenkov_mutation::ports::SyntaxPort;
+    use cherenkov_run_ports::syntax::SyntaxPort;
     let syntax = cherenkov_syntax::TreeSitterSyntax::builtin().unwrap();
     let rust = cherenkov_mutation::syntax::LanguageId::new("rust");
     let profile = syntax
@@ -438,9 +439,9 @@ impl MutantExecutor for Spy {
         &mut self,
         plans: &[cherenkov_mutation::plan::MutantPlan],
         _: Budget,
-    ) -> Result<Option<Vec<cherenkov_mutation::execution::Driven>>, ExecError> {
+    ) -> Result<Option<Vec<cherenkov_run_ports::executor::Driven>>, ExecError> {
         Ok(Some(vec![
-            cherenkov_mutation::execution::Driven::Every;
+            cherenkov_run_ports::executor::Driven::Every;
             plans.len()
         ]))
     }
@@ -472,7 +473,7 @@ fn test_everything_else_is_the_inner_executors() {
         executor
             .driven(std::slice::from_ref(&plan), budget)
             .unwrap(),
-        Some(vec![cherenkov_mutation::execution::Driven::Every])
+        Some(vec![cherenkov_run_ports::executor::Driven::Every])
     );
     assert_eq!(
         executor

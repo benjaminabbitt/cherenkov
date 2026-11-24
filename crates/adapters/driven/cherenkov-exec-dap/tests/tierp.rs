@@ -9,8 +9,8 @@ use cherenkov_exec_dap::isa::Isa;
 use cherenkov_exec_dap::tierp::{Insn, Patch, Region, Unpatchable, derive};
 use cherenkov_mutation::operator::catalog;
 use cherenkov_mutation::plan::{MutantPlan, plan_file};
-use cherenkov_mutation::ports::SyntaxPort;
 use cherenkov_mutation::syntax::LanguageId;
+use cherenkov_run_ports::syntax::SyntaxPort;
 use cherenkov_syntax::TreeSitterSyntax;
 
 const FILE: &str = "/src/calc.go";

@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use cherenkov_dap_types::{
     Capabilities, ExitedEventBody, InitializeRequestArguments, StoppedEventBody,
 };
-use cherenkov_mutation::execution::ExecError;
+use cherenkov_run_ports::executor::ExecError;
 use serde_json::{Value, json};
 
 use crate::dap::{DapClient, DapError};

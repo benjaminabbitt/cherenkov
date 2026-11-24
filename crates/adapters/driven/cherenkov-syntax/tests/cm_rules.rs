@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 use cherenkov_mutation::operator_set::named;
 use cherenkov_mutation::plan::plan_file;
-use cherenkov_mutation::ports::SyntaxPort;
 use cherenkov_mutation::syntax::LanguageId;
+use cherenkov_run_ports::syntax::SyntaxPort;
 use cherenkov_syntax::TreeSitterSyntax;
 
 fn mutated_lines(syntax: &TreeSitterSyntax, src: &str) -> BTreeSet<u32> {

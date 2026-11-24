@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use crate::selection::{SelectArgs, Selection};
 
 pub(crate) fn plan_in(id: &str, file: &str) -> MutantPlan {
-    use cherenkov_mutation::ports::SyntaxPort;
+    use cherenkov_run_ports::syntax::SyntaxPort;
     let syntax = cherenkov_syntax::TreeSitterSyntax::builtin().unwrap();
     let rust = cherenkov_mutation::syntax::LanguageId::new("rust");
     let profile = syntax

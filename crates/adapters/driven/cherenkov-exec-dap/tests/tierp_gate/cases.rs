@@ -8,10 +8,10 @@ use cherenkov_mutation::edit::Edit;
 use cherenkov_mutation::operator_set::registry;
 use cherenkov_mutation::plan::{MutantPlan, render_source};
 use cherenkov_mutation::plan_sets::plan_file_sets;
-use cherenkov_mutation::ports::SyntaxPort;
 use cherenkov_mutation::profile::Profile;
 use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_mutation::token::Token;
+use cherenkov_run_ports::syntax::SyntaxPort;
 use cherenkov_syntax::TreeSitterSyntax;
 
 use crate::snippets::{self, Snippet};

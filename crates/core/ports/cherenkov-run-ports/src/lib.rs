@@ -11,6 +11,10 @@
 //! Errors are angzarr's diagnostics, captured as a [`Report`] with their
 //! recovery ([`EdgeError`]).
 
+pub mod executor;
+pub mod source;
+pub mod syntax;
+
 use std::future::Future;
 
 use angzarr_embedded::BusPolicy;

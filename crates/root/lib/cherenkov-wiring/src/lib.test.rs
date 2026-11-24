@@ -8,7 +8,6 @@ use angzarr_embedded::{OnRetryable, ProjectorHandler};
 use angzarr_ports::memory::MemoryStore;
 use cherenkov_mutation::operator::catalog;
 use cherenkov_mutation::plan::plan_file;
-use cherenkov_mutation::ports::SyntaxPort;
 use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_run_application::covers::run_cover;
 use cherenkov_run_application::host::Readers;
@@ -16,6 +15,7 @@ use cherenkov_run_application::layer::Settings;
 use cherenkov_run_domain::events::{RunEvent, run_event};
 use cherenkov_run_domain::{OperatorSet, PlanRun};
 use cherenkov_run_ports::Edge;
+use cherenkov_run_ports::syntax::SyntaxPort;
 use cherenkov_syntax::TreeSitterSyntax;
 
 use super::*;

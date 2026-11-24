@@ -5,7 +5,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 
-use cherenkov_mutation::execution::ExecError;
+use cherenkov_run_ports::executor::ExecError;
 use gimli::{EndianSlice, RunTimeEndian};
 use object::{Object, ObjectSection};
 

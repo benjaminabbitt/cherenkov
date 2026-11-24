@@ -12,6 +12,7 @@ angzarr-diagnostic.workspace = true
 angzarr-embedded.workspace = true
 angzarr-embedded-macros.workspace = true
 cherenkov-mutation.workspace = true
+serde.workspace = true
 cherenkov-run-domain.workspace = true
 cherenkov-run-ports.workspace = true
 cherenkov-run-wire.workspace = true

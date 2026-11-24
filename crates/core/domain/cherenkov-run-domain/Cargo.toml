@@ -23,6 +23,7 @@ angzarr-build.workspace = true
 angzarr-ports.workspace = true
 # Its Harness: given/when/then on one stream, through the kernel.
 angzarr-embedded = { workspace = true, features = ["test-support"] }
+cherenkov-run-ports.workspace = true
 cherenkov-fs.workspace = true
 cherenkov-syntax.workspace = true
 tokio.workspace = true

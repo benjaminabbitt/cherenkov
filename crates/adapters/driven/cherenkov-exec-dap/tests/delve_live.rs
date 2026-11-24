@@ -11,11 +11,12 @@ use cherenkov_exec_dap::delve::{
 use cherenkov_exec_dap::isa::Isa;
 use cherenkov_exec_dap::native::NativeSession;
 use cherenkov_exec_dap::tierp::{Patch, derive};
-use cherenkov_mutation::execution::{Budget, MutantExecutor, RawOutcome, Tier};
+use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
 use cherenkov_mutation::operator::catalog;
 use cherenkov_mutation::plan::{MutantPlan, plan_file};
-use cherenkov_mutation::ports::SyntaxPort;
 use cherenkov_mutation::syntax::LanguageId;
+use cherenkov_run_ports::executor::MutantExecutor;
+use cherenkov_run_ports::syntax::SyntaxPort;
 use cherenkov_syntax::TreeSitterSyntax;
 
 fn fixture() -> PathBuf {
