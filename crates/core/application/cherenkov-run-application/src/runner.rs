@@ -25,16 +25,20 @@ use angzarr_embedded::v1::{Cover, EventPage, Uuid};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::Edge;
 
+use angzarr_diagnostic::Report;
+
 use crate::covers::run_cover;
 use crate::error::RunLayerError;
 use crate::live::LiveRuns;
 use crate::policies::{handed, handler_error};
 use crate::pool::Pool;
 use crate::programs;
+use crate::reason::Reason;
 use crate::workers::{Programs, Ran, Seen};
 use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, run_event};
 use cherenkov_run_domain::observation;
 use cherenkov_run_domain::plan;
+use cherenkov_run_domain::why;
 use cherenkov_run_domain::{
     DebuggerFailed, ProgramRun, ProgramRunReported, ProgramRunResult, Ran as Observed, RunId, Unit,
 };
@@ -101,7 +105,8 @@ impl<E> Runner<E> {
         })
         .await;
         let (worker, ran) = ran.map_err(|_| RunLayerError::Workers {
-            reason: "a worker panicked".to_string(),
+            program: None,
+            cause: Report::of(&Reason::WorkerPanicked),
         })?;
         self.pool.give(worker);
         Ok(ran)
@@ -160,7 +165,10 @@ impl<E: Edge> Runner<E> {
             .is_some_and(|programs| programs.is_empty())
         {
             return Err(RunLayerError::Workers {
-                reason: format!("run {run} prepared no test program"),
+                program: None,
+                cause: Report::of(&Reason::NonePrepared {
+                    run: run.to_string(),
+                }),
             });
         }
         self.programs
@@ -261,7 +269,10 @@ fn program_run(ran: Ran, programs: &Programs) -> ProgramRun {
         tests,
         result: match seen {
             Seen::NotCalled => ProgramRunResult::NotCalled(Unit {}),
-            Seen::Failed { reason } => ProgramRunResult::Failed(DebuggerFailed { reason }),
+            Seen::Failed { why } => ProgramRunResult::Failed(DebuggerFailed {
+                reason: String::new(),
+                why: Some(why::encode(&why)),
+            }),
             Seen::Observed { raw, killed_by } => ProgramRunResult::Ran(Observed {
                 observation: Some(observation::encode(&raw)),
                 killed_by: observation::killed_by(&killed_by),
@@ -287,12 +298,14 @@ impl<E: Edge + 'static> ProjectorHandler for Runner<E> {
         };
         let plan = executable.plan.ok_or_else(|| {
             handler_error(&RunLayerError::Workers {
-                reason: "a mutant was planned with no plan".to_string(),
+                program: None,
+                cause: Report::of(&Reason::NoPlan),
             })
         })?;
         let plan = plan::decode(plan).map_err(|e| {
             handler_error(&RunLayerError::Workers {
-                reason: e.to_string(),
+                program: None,
+                cause: Report::of(&e),
             })
         })?;
         self.run_programs(cover, &run.0, &plan, (planned.programs, page.sequence))

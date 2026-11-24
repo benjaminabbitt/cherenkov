@@ -102,6 +102,7 @@ pub fn prepared() -> cherenkov_run_domain::PreparationReported {
         selection: cherenkov_run_domain::Selection::Recorded,
         failed_tests: Vec::new(),
         selection_reason: None,
+        selection_why: None,
         index: 0,
         baseline: Some(cherenkov_run_domain::observation::encode(
             &cherenkov_mutation::execution::RawOutcome::Exited {

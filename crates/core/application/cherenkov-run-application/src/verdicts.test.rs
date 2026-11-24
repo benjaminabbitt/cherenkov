@@ -187,6 +187,7 @@ async fn test_a_run_that_failed_writes_nothing_so_the_last_good_file_stays() {
     let failed = cherenkov_run_domain::PreparationFailed {
         program: None,
         reason: "no debugger".to_string(),
+        why: None,
     };
     core.report(run_cover(&run), &failed, "failed")
         .await

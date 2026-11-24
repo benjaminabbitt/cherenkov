@@ -102,6 +102,7 @@ fn test_the_programs_a_runner_reads_come_back_in_index_order_with_their_budgets_
             selection: Selection::Recorded,
             failed_tests: Vec::new(),
             selection_reason: None,
+            selection_why: None,
             index,
             budget_ms,
             drives,

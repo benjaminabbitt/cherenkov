@@ -1,7 +1,10 @@
 use cherenkov_mutation::execution::{Failure, Observed, TestResult, Tier};
 use cherenkov_run_ports::executor::{ExecError, Selection};
 
+use angzarr_diagnostic::Report;
+
 use super::*;
+use crate::reason::Reason;
 use crate::test_plans::plans;
 
 fn exited(code: i32) -> RawOutcome {
@@ -201,12 +204,16 @@ fn test_a_mutant_no_test_calls_is_told_not_called_without_a_run() {
     assert_eq!(b.took, Duration::ZERO);
 }
 
+fn closed() -> ExecError {
+    ExecError::of(&Report::new("test-session-closed"))
+}
+
 /// Loses the debugger on its first mutant.
 struct Loses;
 
 impl MutantExecutor for Loses {
     fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
-        Err(ExecError("evaluate: dap connection closed".into()))
+        Err(closed())
     }
 
     fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
@@ -223,7 +230,7 @@ fn test_a_mutant_the_debugger_fails_on_is_told_with_what_failed_and_the_run_goes
     assert_eq!(told.ran.len(), 2, "the run went on");
     assert!(told.ran.iter().flatten().all(|ran| ran.seen
         == Seen::Failed {
-            reason: "evaluate: dap connection closed".to_string()
+            why: closed().cause
         }));
 }
 
@@ -271,13 +278,13 @@ fn test_a_program_the_executor_cannot_baseline_is_a_failure_of_the_preparation()
         }
 
         fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
-            Err(ExecError("no debugger".into()))
+            Err(ExecError::of(&Report::new("test-no-debugger")))
         }
     }
     let plans = plans();
     let set: Vec<Box<dyn MutantExecutor + Send>> = vec![Box::new(Dead)];
     let error = run(&plans, vec![set], 1, &mut Told::default()).unwrap_err();
-    assert_eq!(error.reason, "no debugger");
+    assert_eq!(error.why, Report::new("test-no-debugger"));
 }
 
 /// Records which of its program's sessions are open, shared by a set.
@@ -402,12 +409,14 @@ fn test_a_passing_exit_whose_output_names_a_failed_test_is_a_failure_not_a_survi
         Driven::Every,
         &plan,
     );
-    let Seen::Failed { reason } = ran.seen else {
+    let Seen::Failed { why } = ran.seen else {
         panic!("a contradictory run was judged: {:?}", ran.seen);
     };
-    assert!(
-        reason.contains("exit code 0") && reason.contains("test_a"),
-        "{reason}"
+    assert_eq!(
+        why,
+        Report::of(&Reason::ExitDisagrees {
+            tests: "test_a".to_string()
+        })
     );
 }
 

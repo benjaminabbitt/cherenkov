@@ -15,7 +15,10 @@ use cherenkov_run_domain::{
 };
 use cherenkov_run_ports::executor::{self as core, Selection as Chosen};
 
+use crate::reason::Reason;
 use crate::workers::{Preparation, Programs};
+use angzarr_diagnostic::Report;
+use cherenkov_run_domain::why;
 
 /// `preparation` of a program, as the fact the run is told: its baseline
 /// as observed, and what recording found, for each of `plans`.
@@ -34,7 +37,8 @@ pub fn report(preparation: Preparation, plans: &[MutantPlan]) -> PreparationRepo
         tests: None,
         selection: Selection::EveryTest,
         failed_tests: Vec::new(),
-        selection_reason: Some("not recorded: the baseline did not pass".to_string()),
+        selection_reason: None,
+        selection_why: Some(why::encode(&Report::of(&Reason::BaselineFailed))),
         index: u32::try_from(program).unwrap_or(u32::MAX),
         baseline: Some(observation::encode(&baseline)),
         baseline_failures,
@@ -44,12 +48,14 @@ pub fn report(preparation: Preparation, plans: &[MutantPlan]) -> PreparationRepo
         fact.tests = recording
             .tests
             .map(|n| u32::try_from(n).unwrap_or(u32::MAX));
-        (fact.selection, fact.failed_tests, fact.selection_reason) = match recording.selection {
+        (fact.selection, fact.failed_tests, fact.selection_why) = match recording.selection {
             Chosen::Recorded => (Selection::Recorded, Vec::new(), None),
             Chosen::RecordedWithFailures { failed_tests } => {
                 (Selection::RecordedWithFailures, failed_tests, None)
             }
-            Chosen::EveryTest { reason } => (Selection::EveryTest, Vec::new(), Some(reason)),
+            Chosen::EveryTest { why } => {
+                (Selection::EveryTest, Vec::new(), Some(why::encode(&why)))
+            }
         };
         fact.drives = recording.driven.map(|driven| drives(plans, &driven));
     }

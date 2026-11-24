@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use angzarr_diagnostic::{Diagnostic, Report};
 use angzarr_embedded::OnRetryable;
 use angzarr_embedded::angzarr_ports::memory::MemoryStore;
 use cherenkov_embedded_edge::RunStore;
@@ -207,18 +208,18 @@ fn test_a_run_with_no_workers_or_no_test_programs_is_refused_saying_so() {
         sets: Vec::new(),
         jobs: 1,
     };
-    let Err(RunLayerError::Workers { reason }) = run(&plans(), Some(none)).status else {
+    let Err(RunLayerError::Workers { cause, .. }) = run(&plans(), Some(none)).status else {
         panic!("a run with no workers");
     };
-    assert_eq!(reason, "no workers");
+    assert_eq!(cause, Report::of(&Reason::NoWorkers));
     let empty = Workers {
         sets: vec![Vec::new()],
         jobs: 1,
     };
-    let Err(RunLayerError::Workers { reason }) = run(&plans(), Some(empty)).status else {
+    let Err(RunLayerError::Workers { cause, .. }) = run(&plans(), Some(empty)).status else {
         panic!("a run with no test programs");
     };
-    assert_eq!(reason, "no test programs");
+    assert_eq!(cause, Report::of(&Reason::NoTestPrograms));
 }
 
 /// Fails its baseline.
@@ -241,13 +242,13 @@ fn test_a_run_whose_workers_cannot_run_fails_saying_why() {
         jobs: 1,
     };
     let ran = run(&plans(), Some(broken));
-    let Err(RunLayerError::Workers { reason }) = ran.status else {
+    let Err(RunLayerError::Workers { cause, .. }) = ran.status else {
         panic!("{:?}", ran.status);
     };
-    assert!(reason.contains("unmutated tests do not pass"), "{reason}");
+    assert_eq!(cause.code(), "cherenkov-run-domain-baseline-failed");
     // The stream says so too, and ends, and the output printed both.
     assert!(ran.events.iter().any(|event| matches!(event,
-        RunEvent::ProgramFailed(f) if f.reason.contains("unmutated tests do not pass"))));
+        RunEvent::ProgramFailed(f) if f.why.as_ref().is_some_and(|w| w.code == cause.code()))));
     assert!(matches!(ran.events.last(),
         Some(RunEvent::RunFinished(f)) if f.status == RunStatus::Failed));
     assert_eq!(
@@ -276,10 +277,10 @@ fn test_a_preparation_that_panics_finishes_the_run_failed_and_says_so() {
         jobs: 1,
     };
     let ran = run(&plans(), Some(panicking));
-    let Err(RunLayerError::Workers { reason }) = ran.status else {
+    let Err(RunLayerError::Workers { cause, .. }) = ran.status else {
         panic!("{:?}", ran.status);
     };
-    assert_eq!(reason, "a test program's preparation panicked");
+    assert_eq!(cause, Report::of(&Reason::PreparationPanicked));
     assert!(matches!(ran.events.last(),
         Some(RunEvent::RunFinished(f)) if f.status == RunStatus::Failed));
 }

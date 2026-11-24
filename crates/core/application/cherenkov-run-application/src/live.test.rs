@@ -28,6 +28,7 @@ fn prepared() -> PreparationReported {
         selection: Selection::Recorded,
         failed_tests: Vec::new(),
         selection_reason: None,
+        selection_why: None,
         index: 0,
         baseline: Some(observation::encode(&RawOutcome::Exited {
             code: 0,
@@ -124,6 +125,7 @@ async fn test_a_run_whose_program_does_not_prepare_ends_failed() {
     let failed = cherenkov_run_domain::PreparationFailed {
         program: None,
         reason: "no debugger".to_string(),
+        why: None,
     };
     core.report(run_cover(&run), &failed, "failed")
         .await

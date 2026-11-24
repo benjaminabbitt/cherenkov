@@ -10,9 +10,12 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
+use angzarr_diagnostic::Report;
 use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, TestReport, classify};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::executor::{Driven, MutantExecutor, Recording};
+
+use crate::reason::Reason;
 
 /// The first, unmutated run of each test program is given this long.
 const FIRST_RUN: Duration = Duration::from_secs(120);
@@ -66,7 +69,7 @@ pub enum Seen {
     /// The debugger (or the harness driving it) failed on this mutant: it
     /// costs this mutant only, and the executor starts a fresh session for
     /// the next.
-    Failed { reason: String },
+    Failed { why: Report },
 }
 
 /// What the run recorded of its prepared programs, which every worker runs
@@ -141,7 +144,7 @@ pub fn prepare(
     if set.is_empty() {
         report(Err(Failed {
             program: None,
-            reason: "no executors".into(),
+            why: Report::of(&Reason::NoExecutors),
         }));
         return;
     }
@@ -159,7 +162,7 @@ pub fn prepare(
                     let prepared = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                         prepare_one(executor.as_mut(), plans)
                     }))
-                    .unwrap_or_else(|_| Err("a test program's preparation panicked".into()));
+                    .unwrap_or_else(|_| Err(Report::of(&Reason::PreparationPanicked)));
                     let _ = sender.send((offset + i, describe, prepared));
                 });
             }
@@ -171,9 +174,9 @@ pub fn prepare(
                         program,
                         ..preparation
                     }),
-                    Err(reason) => Err(Failed {
+                    Err(why) => Err(Failed {
                         program: describe,
-                        reason,
+                        why,
                     }),
                 });
             }
@@ -192,7 +195,7 @@ pub fn prepare(
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Failed {
     pub program: Option<String>,
-    pub reason: String,
+    pub why: Report,
 }
 
 /// One worker: its own executor for each test program, and the sessions
@@ -220,7 +223,9 @@ impl Worker {
                 took: Duration::ZERO,
                 tests: Vec::new(),
                 seen: Seen::Failed {
-                    reason: format!("the worker has no test program {program}"),
+                    why: Report::of(&Reason::NoProgram {
+                        program: program as u64,
+                    }),
                 },
             };
         };
@@ -266,7 +271,7 @@ fn run_one(
     let seen = match executor.run(plan, budget) {
         Ok(observed) => seen_of(observed),
         Err(e) => Seen::Failed {
-            reason: e.to_string(),
+            why: Report::of(&e),
         },
     };
     Ran {
@@ -291,10 +296,9 @@ fn seen_of(observed: Observed) -> Seen {
         // trusted, and a survivor is not to be claimed from either.
         let tests: Vec<&str> = killed_by.iter().map(|k| k.test.as_str()).collect();
         return Seen::Failed {
-            reason: format!(
-                "the run's exit status says it passed (exit code 0) but its output reports failed test(s): {}",
-                tests.join(", ")
-            ),
+            why: Report::of(&Reason::ExitDisagrees {
+                tests: tests.join(", "),
+            }),
         };
     }
     Seen::Observed {
@@ -325,14 +329,14 @@ impl OpenSessions {
 fn prepare_one(
     executor: &mut (dyn MutantExecutor + Send),
     plans: &[MutantPlan],
-) -> Result<Preparation, String> {
+) -> Result<Preparation, Report> {
     let started = Instant::now();
     let Observed {
         outcome: baseline,
         tests,
     } = executor
         .baseline(Budget::from_baseline(FIRST_RUN))
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Report::of(&e))?;
     let describe = executor.describe();
     let RawOutcome::Exited { code: 0, wall, .. } = &baseline else {
         // The run judges the baseline. A program it is bound to refuse is
@@ -354,7 +358,7 @@ fn prepare_one(
     // mutant's is short, so a hung one is decided in seconds.
     let mut recording = executor
         .recording(plans, Budget::from_baseline(*wall))
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Report::of(&e))?;
     if let Some(driven) = &mut recording.driven {
         widen_awaiting(plans, driven);
     }

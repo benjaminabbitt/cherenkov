@@ -274,7 +274,7 @@ async fn test_a_mutant_planned_for_a_run_that_prepared_no_program_is_a_bug() {
         .await
         .unwrap_err();
     assert!(
-        error.to_string().contains("prepared no test program"),
+        error.to_string().contains("cherenkov-run-application-none-prepared"),
         "{error}"
     );
     assert_eq!(runs.load(Ordering::SeqCst), 0);
@@ -409,6 +409,7 @@ async fn test_a_mutant_planned_for_a_run_that_has_ended_is_not_run() {
     let (core, run, projector) = projector(&runs, 1).await;
     let abandoned = cherenkov_run_domain::Abandoned {
         reason: "the plan changed".to_string(),
+        why: None,
     };
     core.report(run_cover(&run), &abandoned, "abandoned")
         .await

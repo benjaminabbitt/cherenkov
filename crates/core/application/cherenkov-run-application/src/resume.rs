@@ -15,6 +15,9 @@ use cherenkov_run_ports::{Edge, Listing};
 
 use crate::covers::run_cover;
 use crate::error::RunLayerError;
+use crate::reason::Reason;
+use angzarr_diagnostic::Report;
+use cherenkov_run_domain::why;
 
 /// An unfinished run, as its first events record it.
 pub(crate) struct Unfinished {
@@ -85,9 +88,10 @@ async fn unfinished<C: Listing>(core: &C) -> Result<Vec<Unfinished>, RunLayerErr
 }
 
 /// Tell `run` it is abandoned, for `reason`.
-async fn abandon<C: Edge>(core: &C, run: &Uuid, reason: &str) -> Result<(), RunLayerError> {
+async fn abandon<C: Edge>(core: &C, run: &Uuid, reason: Reason) -> Result<(), RunLayerError> {
     let fact = Abandoned {
-        reason: reason.to_string(),
+        reason: String::new(),
+        why: Some(why::encode(&Report::of(&reason))),
     };
     core.report(run_cover(run), &fact, "abandoned").await?;
     Ok(())
@@ -103,8 +107,8 @@ pub async fn settle<C: Listing>(core: &C, wanted: &PlanRun) -> Result<Option<Uui
         .map(|at| runs.remove(at).run);
     for found in runs {
         let reason = match found.is_plan_of(wanted) {
-            true => "a later run of the same plan was resumed",
-            false => "the plan changed",
+            true => Reason::Resumed,
+            false => Reason::PlanChanged,
         };
         abandon(core, &found.run, reason).await?;
     }

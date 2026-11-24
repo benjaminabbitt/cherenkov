@@ -11,6 +11,7 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use angzarr_diagnostic::Report;
 use angzarr_embedded::angzarr_bus::Outcome;
 use angzarr_embedded::v1::Uuid;
 use cherenkov_mutation::plan::MutantPlan;
@@ -24,11 +25,13 @@ use crate::host::{self, Readers};
 use crate::live::LiveRuns;
 use crate::pool::Pool;
 use crate::programs;
+use crate::reason::Reason;
 use crate::resume;
 use crate::runner::Runner;
 use crate::workers::{self, Failed, Preparation, Worker};
 use cherenkov_run_domain::events::{RunEvent, run_event};
 use cherenkov_run_domain::plan;
+use cherenkov_run_domain::why;
 use cherenkov_run_domain::{
     ExecutableMutant, OperatorSet, PlanRun, PlannedMutant, PreparationFailed, RunStatus,
 };
@@ -167,13 +170,15 @@ async fn work<C: Serving + 'static>(
     let Workers { mut sets, jobs } = workers;
     if sets.is_empty() {
         return Err(RunLayerError::Workers {
-            reason: "no workers".to_string(),
+            program: None,
+            cause: Report::of(&Reason::NoWorkers),
         });
     }
     let first = sets.remove(0);
     if first.is_empty() {
         return Err(RunLayerError::Workers {
-            reason: "no test programs".to_string(),
+            program: None,
+            cause: Report::of(&Reason::NoTestPrograms),
         });
     }
     let instances = NonZeroUsize::MIN.saturating_add(sets.len());
@@ -250,8 +255,12 @@ async fn prepare_programs<E: Edge>(
     while let Some(prepared) = told.recv().await {
         match prepared {
             Ok(preparation) => report_prepared(core, run, plans, preparation).await?,
-            Err(Failed { program, reason }) => {
-                let fact = PreparationFailed { program, reason };
+            Err(Failed { program, why }) => {
+                let fact = PreparationFailed {
+                    program,
+                    reason: String::new(),
+                    why: Some(why::encode(&why)),
+                };
                 core.report(run_cover(run), &fact, "preparation failed")
                     .await?;
             }
@@ -268,16 +277,20 @@ async fn prepare_programs<E: Edge>(
 /// The error of a preparation that panicked: the run is told, which finishes
 /// it failed, as for any program that does not prepare.
 async fn panicked<E: Edge>(core: &E, run: &Uuid) -> RunLayerError {
-    let reason = "a test program's preparation panicked".to_string();
+    let cause = Report::of(&Reason::PreparationPanicked);
     let fact = PreparationFailed {
         program: None,
-        reason: reason.clone(),
+        reason: String::new(),
+        why: Some(why::encode(&cause)),
     };
     match core
         .report(run_cover(run), &fact, "preparation panicked")
         .await
     {
-        Ok(_) => RunLayerError::Workers { reason },
+        Ok(_) => RunLayerError::Workers {
+            program: None,
+            cause,
+        },
         Err(failed) => failed.into(),
     }
 }
@@ -307,7 +320,8 @@ async fn refused<E: Edge>(core: &E, run: &Uuid) -> Result<(), RunLayerError> {
         });
     failed.map_or(Ok(()), |failed| {
         Err(RunLayerError::Workers {
-            reason: failed.reason,
+            program: failed.program,
+            cause: why::decode(failed.why.as_ref(), &failed.reason),
         })
     })
 }

@@ -186,7 +186,8 @@ fn test_a_failure_worth_making_again_is_a_retryable_handler_error_and_others_are
     assert_eq!(class_of(RunLayerError::Kernel { cause }), Class::BugFatal);
     assert_eq!(
         class_of(RunLayerError::Workers {
-            reason: "r".to_string()
+            program: None,
+            cause: angzarr_diagnostic::Report::new("x-r"),
         }),
         Class::BugFatal
     );

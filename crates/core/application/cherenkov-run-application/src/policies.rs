@@ -24,6 +24,8 @@ use angzarr_embedded_macros::{on_event, policy};
 use coded_diagnostic::Diagnostic;
 
 use crate::error::RunLayerError;
+use crate::reason::Reason;
+use angzarr_diagnostic::Report;
 use cherenkov_run_domain::{DecisionReported, MutantDecided, PlanMutant, RunReady};
 use cherenkov_run_domain::{Mutant, Run, RunId, UnderivableRoot, mutant_root};
 
@@ -100,7 +102,10 @@ impl FanIn {
         // and the run would wait for the mutant forever.
         let Some(outcome) = &event.verdict else {
             return Err(RunLayerError::Workers {
-                reason: format!("mutant {} was decided with no outcome", mutant.id),
+                program: None,
+                cause: Report::of(&Reason::NoOutcome {
+                    mutant: mutant.id.clone(),
+                }),
             });
         };
         Ok(Commands::none().fact(

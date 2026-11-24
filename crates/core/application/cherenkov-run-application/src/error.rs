@@ -18,11 +18,16 @@ pub enum RunLayerError {
     Store { cause: Report },
     /// The run's kernel or bus did not take what the run registers.
     Misconfigured { cause: Report },
-    /// The run's async runtime did not start (the root's).
-    Runtime { reason: String },
+    /// The run's async runtime did not start (the root's); `detail` is what
+    /// the operating system said.
+    Runtime { detail: String },
     /// The workers could not run the mutants (a test program that does
-    /// not prepare, a debugger missing).
-    Workers { reason: String },
+    /// not prepare, a debugger missing): `program` is the one that did not
+    /// prepare, where the failure is a program's.
+    Workers {
+        program: Option<String>,
+        cause: Report,
+    },
     /// Nothing is left to serve, and the run has not finished: `owed`
     /// mutants are planned and undecided, ones the bus gave up on.
     Stalled { owed: u64 },
@@ -64,7 +69,10 @@ impl Diagnostic for RunLayerError {
             RunLayerError::Store { .. } => code!("store"),
             RunLayerError::Misconfigured { .. } => code!("misconfigured"),
             RunLayerError::Runtime { .. } => code!("runtime"),
-            RunLayerError::Workers { .. } => code!("workers"),
+            RunLayerError::Workers { program: None, .. } => code!("workers"),
+            RunLayerError::Workers {
+                program: Some(_), ..
+            } => code!("workers-program"),
             RunLayerError::Stalled { .. } => code!("stalled"),
         }
     }
@@ -77,9 +85,18 @@ impl Diagnostic for RunLayerError {
             | RunLayerError::Misconfigured { cause } => {
                 vec![("cause", Arg::nested(cause))]
             }
-            RunLayerError::Runtime { reason } | RunLayerError::Workers { reason } => {
-                vec![("reason", reason.as_str().into())]
-            }
+            RunLayerError::Runtime { detail } => vec![("detail", detail.as_str().into())],
+            RunLayerError::Workers {
+                program: None,
+                cause,
+            } => vec![("cause", Arg::nested(cause))],
+            RunLayerError::Workers {
+                program: Some(program),
+                cause,
+            } => vec![
+                ("program", program.as_str().into()),
+                ("cause", Arg::nested(cause)),
+            ],
             RunLayerError::Stalled { owed } => vec![("owed", (*owed).into())],
         }
     }
@@ -107,7 +124,7 @@ pub const CATALOG_SOURCES: [(&str, &str); 6] = [
 #[cfg(test)]
 pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
     let cause = || Report::new("angzarr-embedded-x");
-    vec![
+    let own: Vec<Box<dyn Diagnostic>> = vec![
         Box::new(crate::session::FileProblem::Unreadable { detail: "d".into() }),
         Box::new(crate::session::FileProblem::Analysis {
             cause: Report::new("cherenkov-run-ports-incomplete"),
@@ -117,10 +134,20 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(RunLayerError::Unavailable { cause: cause() }),
         Box::new(RunLayerError::Store { cause: cause() }),
         Box::new(RunLayerError::Misconfigured { cause: cause() }),
-        Box::new(RunLayerError::Runtime { reason: "r".into() }),
-        Box::new(RunLayerError::Workers { reason: "r".into() }),
+        Box::new(RunLayerError::Runtime { detail: "r".into() }),
+        Box::new(RunLayerError::Workers {
+            program: None,
+            cause: cause(),
+        }),
+        Box::new(RunLayerError::Workers {
+            program: Some("p".into()),
+            cause: cause(),
+        }),
         Box::new(RunLayerError::Stalled { owed: 3 }),
-    ]
+    ];
+    own.into_iter()
+        .chain(crate::reason::diagnostic_samples())
+        .collect()
 }
 
 #[cfg(test)]
