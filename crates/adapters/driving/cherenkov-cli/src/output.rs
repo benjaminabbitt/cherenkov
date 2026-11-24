@@ -11,6 +11,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
 
+use crate::notice::{Notice, Say};
 use crate::render::documents;
 use angzarr_diagnostic::Report;
 use angzarr_embedded::ProjectorHandler;
@@ -177,17 +178,16 @@ pub fn exit_code(status: RunStatus) -> i32 {
 /// summary.
 pub struct InDiff {
     inner: Box<dyn Sink>,
-    note: Box<dyn Write + Send>,
-    text: bool,
-    skipped: u32,
+    say: Say,
+    skipped: u64,
 }
 
 impl InDiff {
-    pub fn new(inner: Box<dyn Sink>, note: Box<dyn Write + Send>, text: bool) -> Self {
+    /// The sink of an `--in-diff` run, its note said through `say`.
+    pub fn new(inner: Box<dyn Sink>, say: Say) -> Self {
         InDiff {
             inner,
-            note,
-            text,
+            say,
             skipped: 0,
         }
     }
@@ -199,15 +199,9 @@ impl Sink for InDiff {
             Some(Event::Decided(d)) if d.verdict() == Verdict::NotCalled => self.skipped += 1,
             Some(Event::Finished(_)) => {
                 self.inner.document(doc);
-                if self.text {
-                    let _ = writeln!(
-                        self.note,
-                        "cherenkov: --in-diff: {} not-called mutants not listed (counted above); \
-                         changed-test mutants are judged by the changed tests alone, so a survivor \
-                         means those tests do not catch it",
-                        self.skipped
-                    );
-                }
+                self.say.say(&Notice::InDiff {
+                    skipped: self.skipped,
+                });
             }
             _ => self.inner.document(doc),
         }

@@ -4,6 +4,7 @@ use cherenkov_run_wire::output::{Executors, FailedTests, Killers, OperatorSet};
 use cherenkov_run_wire::{RunStatus, Tier};
 
 use super::*;
+use crate::notice::Say;
 
 /// A planned mutant, as `mutant.decided` documents hold it.
 fn planned(original: &str, mutated: &str) -> PlannedMutant {
@@ -520,6 +521,12 @@ impl Write for Note {
     }
 }
 
+/// Notices said in `format` into `note`.
+fn says(format: Format, note: &Note) -> Say {
+    let catalog = angzarr_presentation::Catalog::en_us(&[crate::error::EN_US]).unwrap();
+    Say::to(format, std::sync::Arc::new(catalog), note.clone())
+}
+
 fn verdicts_of(kept: &Gathered) -> Vec<Verdict> {
     kept.0
         .lock()
@@ -547,7 +554,7 @@ fn feed(sink: &mut dyn Sink) {
 #[test]
 fn test_an_in_diff_run_lists_no_not_called_mutant_and_the_run_finished_count_is_intact() {
     let kept = Gathered::default();
-    let mut sink = InDiff::new(Box::new(kept.clone()), Box::new(Note::default()), false);
+    let mut sink = InDiff::new(Box::new(kept.clone()), says(Format::Json, &Note::default()));
     feed(&mut sink);
     assert_eq!(verdicts_of(&kept), [Verdict::Killed, Verdict::Survived]);
     let docs = kept.0.lock().unwrap();
@@ -560,7 +567,7 @@ fn test_an_in_diff_run_lists_no_not_called_mutant_and_the_run_finished_count_is_
 #[test]
 fn test_a_text_in_diff_run_says_who_judged_changed_test_mutants_and_how_many_were_not_listed() {
     let note = Note::default();
-    let mut sink = InDiff::new(Box::new(Gathered::default()), Box::new(note.clone()), true);
+    let mut sink = InDiff::new(Box::new(Gathered::default()), says(Format::Text, &note));
     feed(&mut sink);
     let text = String::from_utf8(note.0.lock().unwrap().clone()).unwrap();
     assert!(text.contains("1 not-called mutants not listed"), "{text}");
@@ -573,7 +580,7 @@ fn test_a_text_in_diff_run_says_who_judged_changed_test_mutants_and_how_many_wer
 #[test]
 fn test_a_json_in_diff_run_writes_no_note() {
     let note = Note::default();
-    let mut sink = InDiff::new(Box::new(Gathered::default()), Box::new(note.clone()), false);
+    let mut sink = InDiff::new(Box::new(Gathered::default()), says(Format::Json, &note));
     feed(&mut sink);
     assert!(note.0.lock().unwrap().is_empty());
 }
