@@ -92,10 +92,12 @@ pub const EN_US: (&str, &str) = (
 );
 
 /// The en-US messages of every crate a run layer error can carry: this
-/// crate's, the domain's refusals, and the kernel's and its store's for a
-/// nested cause.
-pub const CATALOG_SOURCES: [(&str, &str); 4] = [
+/// crate's, the domain's refusals, the planner's and the syntax port's, and
+/// the kernel's and its store's for a nested cause.
+pub const CATALOG_SOURCES: [(&str, &str); 6] = [
     EN_US,
+    cherenkov_mutation::error::EN_US,
+    cherenkov_run_ports::syntax::EN_US,
     cherenkov_run_domain::EN_US,
     angzarr_embedded::EN_US,
     angzarr_embedded::angzarr_ports::EN_US,
@@ -106,6 +108,11 @@ pub const CATALOG_SOURCES: [(&str, &str); 4] = [
 pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
     let cause = || Report::new("angzarr-embedded-x");
     vec![
+        Box::new(crate::session::FileProblem::Unreadable { detail: "d".into() }),
+        Box::new(crate::session::FileProblem::Analysis {
+            cause: Report::new("cherenkov-run-ports-incomplete"),
+        }),
+        Box::new(crate::session::FileProblem::SyntaxErrors),
         Box::new(RunLayerError::Kernel { cause: cause() }),
         Box::new(RunLayerError::Unavailable { cause: cause() }),
         Box::new(RunLayerError::Store { cause: cause() }),

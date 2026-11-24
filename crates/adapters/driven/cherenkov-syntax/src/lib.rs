@@ -28,7 +28,7 @@ use streaming_iterator::StreamingIterator;
 
 use profiles::{CaptureRole, capture_role};
 
-pub use profiles::{LoadedProfile, ProfileError, ProfileSource};
+pub use profiles::{EN_US, LoadedProfile, ProfileError, ProfileSource};
 
 /// A concept node: (start byte, concept, end byte), ordered by position.
 type NodeKey = (usize, Concept, usize);
@@ -81,14 +81,16 @@ impl SyntaxPort for TreeSitterSyntax {
             .profiles
             .iter()
             .find(|p| &p.profile.lang == lang)
-            .ok_or_else(|| SyntaxError::UnknownLanguage(lang.clone()))?;
+            .ok_or_else(|| SyntaxError::UnknownLanguage { lang: lang.clone() })?;
         let mut parser = tree_sitter::Parser::new();
         parser
             .set_language(&loaded.grammar)
-            .map_err(|e| SyntaxError::Parser(e.to_string()))?;
+            .map_err(|e| SyntaxError::Parser {
+                detail: e.to_string(),
+            })?;
         let tree = parser
             .parse(source.as_bytes(), None)
-            .ok_or_else(|| SyntaxError::Parser("parse did not complete".into()))?;
+            .ok_or_else(|| SyntaxError::Incomplete)?;
 
         let names = loaded.query.capture_names();
         // Repeated grammar fields yield one query match per occurrence; fold

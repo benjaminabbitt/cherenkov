@@ -6,6 +6,7 @@ use cherenkov_mutation::concept::{Capture, Concept};
 use cherenkov_mutation::profile::{FileRules, Profile, ReturnValues};
 use cherenkov_mutation::syntax::{LanguageId, SkipKind, StmtKind};
 use cherenkov_mutation::token::{Token, TokenTable};
+use angzarr_diagnostic::{Arg, Diagnostic, Report, code};
 use serde::Deserialize;
 
 /// The three data files that make up a profile, plus its grammar.
@@ -29,53 +30,101 @@ pub struct LoadedProfile {
     pub extra_matches: Option<ExtraMatches>,
 }
 
-#[derive(Debug)]
+/// Why a language profile did not load: coded, with named data (the
+/// messages are `locales/en-US/messages.ftl`'s). `detail` is what the
+/// parser of the file said.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProfileError {
-    Query {
-        lang: String,
-        message: String,
-    },
+    /// `concepts.scm` is not a query of the grammar.
+    Query { lang: String, detail: String },
     /// A capture name that is not `concept.<concept>`, `stmt.<kind>` or a role.
-    UnknownCapture {
-        lang: String,
-        name: String,
-    },
+    UnknownCapture { lang: String, name: String },
+    /// `file` is not TOML of the right shape.
     Toml {
         lang: String,
         file: &'static str,
-        message: String,
+        detail: String,
     },
-    UnknownToken {
-        lang: String,
-        name: String,
-    },
-    Tokens {
-        lang: String,
-        message: String,
-    },
+    /// `tokens.toml` names a token that does not exist.
+    UnknownToken { lang: String, name: String },
+    /// `tokens.toml` is not a token table: `cause` says why.
+    Tokens { lang: String, cause: Report },
 }
 
 impl std::fmt::Display for ProfileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ProfileError::Query { lang, message } => write!(f, "{lang}: concepts.scm: {message}"),
-            ProfileError::UnknownCapture { lang, name } => {
-                write!(f, "{lang}: concepts.scm: unknown capture @{name}")
-            }
-            ProfileError::Toml {
-                lang,
-                file,
-                message,
-            } => write!(f, "{lang}: {file}: {message}"),
-            ProfileError::UnknownToken { lang, name } => {
-                write!(f, "{lang}: tokens.toml: unknown token {name:?}")
-            }
-            ProfileError::Tokens { lang, message } => write!(f, "{lang}: tokens.toml: {message}"),
-        }
+        angzarr_diagnostic::display(self, f)
     }
 }
 
 impl std::error::Error for ProfileError {}
+
+impl Diagnostic for ProfileError {
+    fn code(&self) -> &str {
+        match self {
+            ProfileError::Query { .. } => code!("query"),
+            ProfileError::UnknownCapture { .. } => code!("unknown-capture"),
+            ProfileError::Toml { .. } => code!("toml"),
+            ProfileError::UnknownToken { .. } => code!("unknown-token"),
+            ProfileError::Tokens { .. } => code!("tokens"),
+        }
+    }
+
+    fn args(&self) -> Vec<(&str, Arg)> {
+        match self {
+            ProfileError::Query { lang, detail } => {
+                vec![("lang", lang.as_str().into()), ("detail", detail.as_str().into())]
+            }
+            ProfileError::UnknownCapture { lang, name }
+            | ProfileError::UnknownToken { lang, name } => {
+                vec![("lang", lang.as_str().into()), ("name", name.as_str().into())]
+            }
+            ProfileError::Toml { lang, file, detail } => vec![
+                ("lang", lang.as_str().into()),
+                ("file", (*file).into()),
+                ("detail", detail.as_str().into()),
+            ],
+            ProfileError::Tokens { lang, cause } => {
+                vec![("lang", lang.as_str().into()), ("cause", Arg::nested(cause))]
+            }
+        }
+    }
+}
+
+/// This crate's en-US messages, its name first.
+pub const EN_US: (&str, &str) = (
+    env!("CARGO_PKG_NAME"),
+    include_str!("../locales/en-US/messages.ftl"),
+);
+
+/// One value of every error, for the catalog test.
+#[cfg(test)]
+pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
+    let lang = || "go".to_string();
+    vec![
+        Box::new(ProfileError::Query {
+            lang: lang(),
+            detail: "d".into(),
+        }),
+        Box::new(ProfileError::UnknownCapture {
+            lang: lang(),
+            name: "n".into(),
+        }),
+        Box::new(ProfileError::Toml {
+            lang: lang(),
+            file: "tokens.toml",
+            detail: "d".into(),
+        }),
+        Box::new(ProfileError::UnknownToken {
+            lang: lang(),
+            name: "n".into(),
+        }),
+        Box::new(ProfileError::Tokens {
+            lang: lang(),
+            cause: Report::new("cherenkov-mutation-duplicate-spelling").arg("spelling", "&"),
+        }),
+    ]
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -138,7 +187,7 @@ pub fn load(src: &ProfileSource<'_>) -> Result<LoadedProfile, ProfileError> {
     let toml_err = |file, e: toml::de::Error| ProfileError::Toml {
         lang: lang.clone(),
         file,
-        message: e.to_string(),
+        detail: e.to_string(),
     };
 
     let tokens_toml: TokensToml =
@@ -154,7 +203,7 @@ pub fn load(src: &ProfileSource<'_>) -> Result<LoadedProfile, ProfileError> {
     let tokens =
         TokenTable::new(spellings, tokens_toml.not_template).map_err(|e| ProfileError::Tokens {
             lang: lang.clone(),
-            message: e.to_string(),
+            cause: Report::of(&e),
         })?;
 
     let profile_toml: ProfileToml =
@@ -163,7 +212,7 @@ pub fn load(src: &ProfileSource<'_>) -> Result<LoadedProfile, ProfileError> {
     let query = tree_sitter::Query::new(&src.grammar, src.concepts_scm).map_err(|e| {
         ProfileError::Query {
             lang: lang.clone(),
-            message: e.to_string(),
+            detail: e.to_string(),
         }
     })?;
     let mut mapped = BTreeSet::new();
@@ -249,3 +298,7 @@ pub fn builtin() -> Result<Vec<LoadedProfile>, ProfileError> {
     })
     .collect()
 }
+
+#[cfg(test)]
+#[path = "profiles.test.rs"]
+mod tests;

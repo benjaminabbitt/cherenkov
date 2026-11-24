@@ -92,7 +92,7 @@ fn test_profile_with_unknown_concept_capture_is_rejected() {
     );
     assert_eq!(
         err.to_string(),
-        "python: concepts.scm: unknown capture @concept.bogus"
+        "cherenkov-syntax-unknown-capture lang=python name=concept.bogus"
     );
 }
 
@@ -121,7 +121,7 @@ fn test_profile_with_unknown_token_key_is_rejected() {
     );
     assert_eq!(
         err.to_string(),
-        "python: tokens.toml: unknown token \"plus\""
+        "cherenkov-syntax-unknown-token lang=python name=plus"
     );
 }
 
@@ -142,7 +142,9 @@ fn test_analyze_unknown_language_is_an_error() {
     let err = syntax
         .analyze(&LanguageId::new("cobol"), Path::new("t"), Arc::from(""))
         .unwrap_err();
-    assert_eq!(err, SyntaxError::UnknownLanguage(LanguageId::new("cobol")));
+    assert_eq!(err, SyntaxError::UnknownLanguage {
+            lang: LanguageId::new("cobol")
+        });
 }
 
 // --- Positions and statements.

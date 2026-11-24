@@ -14,6 +14,7 @@ use cherenkov_mutation::operator::catalog;
 use cherenkov_mutation::profile::Profile;
 use cherenkov_mutation::syntax::{FileSyntax, LanguageId};
 use cherenkov_run_ports::source::SourceReader;
+use angzarr_diagnostic::Report;
 use cherenkov_run_ports::syntax::{SyntaxError, SyntaxPort};
 use common::{TOY_SRC, toy_file, toy_profile};
 
@@ -64,7 +65,9 @@ impl SyntaxPort for FakeSyntax {
         source: Arc<str>,
     ) -> Result<FileSyntax, SyntaxError> {
         if &*source == ANALYSIS_FAILS {
-            return Err(SyntaxError::Parser("boom".into()));
+            return Err(SyntaxError::Parser {
+                detail: "boom".into(),
+            });
         }
         let mut file = toy_file(rel.to_str().unwrap(), TOY_SRC);
         file.lang = lang.clone();
@@ -115,7 +118,7 @@ fn test_plan_project_reports_unreadable_file_and_plans_the_rest() {
     assert_eq!(out.plans.len(), TOY_PLANS);
     assert_eq!(out.problems.len(), 1);
     assert_eq!(out.problems[0].0, PathBuf::from("locked.src"));
-    assert!(matches!(&out.problems[0].1, FileProblem::Unreadable(m) if m.contains("denied")));
+    assert!(matches!(&out.problems[0].1, FileProblem::Unreadable { detail } if detail.contains("denied")));
 }
 
 #[test]
@@ -130,7 +133,11 @@ fn test_plan_project_reports_analysis_failure_and_plans_the_rest() {
         out.problems,
         [(
             PathBuf::from("bad.src"),
-            FileProblem::Analysis("parser failure: boom".into())
+            FileProblem::Analysis {
+                cause: Report::of(&SyntaxError::Parser {
+                    detail: "boom".into()
+                })
+            }
         )]
     );
 }

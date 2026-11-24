@@ -8,3 +8,6 @@ cherenkov-run-application-misconfigured = the run's kernel or bus did not take w
 cherenkov-run-application-runtime = the run's runtime did not start: { $reason }
 cherenkov-run-application-workers = the mutants could not run: { $reason }
 cherenkov-run-application-stalled = nothing is left to serve, and the run has not finished: { $owed } mutants are planned and not decided
+cherenkov-run-application-file-unreadable = unreadable: { $detail }
+cherenkov-run-application-file-analysis = analysis failed: { $cause }
+cherenkov-run-application-file-syntax-errors = syntax errors; not planned

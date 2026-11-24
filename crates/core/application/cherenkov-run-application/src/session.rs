@@ -3,10 +3,10 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use serde::Serialize;
 
 use cherenkov_mutation::operator::Operator;
 use cherenkov_mutation::operator_set::OperatorSet;
+use angzarr_diagnostic::{Arg, Diagnostic, Report, code};
 use cherenkov_mutation::plan::{Diagnostics, MutantPlan, PlanOutput, Provenance, plan_file};
 use cherenkov_mutation::plan_sets::plan_file_sets;
 use cherenkov_mutation::profile::Profile;
@@ -14,16 +14,43 @@ use cherenkov_mutation::syntax::{FileSyntax, LanguageId};
 use cherenkov_run_ports::source::SourceReader;
 use cherenkov_run_ports::syntax::SyntaxPort;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case", tag = "kind", content = "message")]
+/// Why a file was not planned: coded, with named data (the messages are
+/// `locales/en-US/messages.ftl`'s).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileProblem {
-    Unreadable(String),
-    Analysis(String),
+    /// The file could not be read; `detail` is what the reader said.
+    Unreadable { detail: String },
+    /// The syntax adapter could not analyze it: `cause` says why.
+    Analysis { cause: Report },
     /// The parser recovered from syntax errors; no mutants are planned.
     SyntaxErrors,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+impl std::fmt::Display for FileProblem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        angzarr_diagnostic::display(self, f)
+    }
+}
+
+impl Diagnostic for FileProblem {
+    fn code(&self) -> &str {
+        match self {
+            FileProblem::Unreadable { .. } => code!("file-unreadable"),
+            FileProblem::Analysis { .. } => code!("file-analysis"),
+            FileProblem::SyntaxErrors => code!("file-syntax-errors"),
+        }
+    }
+
+    fn args(&self) -> Vec<(&str, Arg)> {
+        match self {
+            FileProblem::Unreadable { detail } => vec![("detail", detail.as_str().into())],
+            FileProblem::Analysis { cause } => vec![("cause", Arg::nested(cause))],
+            FileProblem::SyntaxErrors => Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProjectPlan {
     /// All plans, sorted by file then by each file's own plan order.
     pub plans: Vec<MutantPlan>,
@@ -80,7 +107,9 @@ fn plan_project_with(
                 Ok(s) => s,
                 Err(e) => {
                     out.problems
-                        .push((rel, FileProblem::Unreadable(e.to_string())));
+                        .push((rel, FileProblem::Unreadable {
+                            detail: e.to_string(),
+                        }));
                     continue;
                 }
             };
@@ -88,7 +117,9 @@ fn plan_project_with(
                 Ok(f) => f,
                 Err(e) => {
                     out.problems
-                        .push((rel, FileProblem::Analysis(e.to_string())));
+                        .push((rel, FileProblem::Analysis {
+                            cause: Report::of(&e),
+                        }));
                     continue;
                 }
             };

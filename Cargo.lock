@@ -579,6 +579,7 @@ dependencies = [
 name = "cherenkov-run-ports"
 version = "0.1.0"
 dependencies = [
+ "angzarr-diagnostic",
  "angzarr-embedded",
  "cherenkov-mutation",
  "cherenkov-run-domain",
@@ -616,6 +617,7 @@ dependencies = [
 name = "cherenkov-syntax"
 version = "0.1.0"
 dependencies = [
+ "angzarr-diagnostic",
  "cherenkov-mutation",
  "cherenkov-run-ports",
  "serde",
