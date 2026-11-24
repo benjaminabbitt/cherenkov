@@ -84,6 +84,6 @@ What readers see of an `--in-diff` run:
 
 ## Phase times
 
-Written to stderr: `cherenkov: phase build`, `phase viability check`, and,
+Said on stderr (under JSON as `cherenkov-cli-notice-phase` envelopes): `cherenkov: phase build`, `phase viability check`, and,
 when the run finishes, `phase preparation and recording` (up to the last
 test program prepared) and `phase mutants` (the rest).

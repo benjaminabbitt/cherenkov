@@ -17,7 +17,15 @@
   - JSON on stdout only; everything for people goes to stderr in JSON mode.
   - Plain documents, no envelope.
   - Errors as `{"code": "<kebab-case>", "args": {..}, "message": ".."}`
-    with a non-zero exit code.
+    with a non-zero exit code. A cause is an envelope in its turn, under
+    `args.cause` (`syntax`, `bad-operator-set` and `run`: the parsers'
+    failure, what is wrong with an operator set's file, the run layer's).
+  - Under JSON, what a command notices on its way (what was planned, the
+    phases' times, the viability check, the workers chosen) is on stderr as
+    one such envelope each, `cherenkov-cli-notice-*`, and stderr holds
+    nothing else. Under text each is a line, `cherenkov: message`. The set
+    in use, a run carried on and the `--in-diff` note are said under text
+    only (`run.started` names the first two under JSON).
 
   ctxloom prints one document per command; a run is a stream, so it prints
   one compact document per line (JSON Lines). `jq` reads a stream of
