@@ -596,7 +596,16 @@ fn test_a_run_killed_with_sigkill_is_carried_on_and_ends_as_an_uninterrupted_run
     let mut child = Command::new(env!("CARGO_BIN_EXE_cherenkov"))
         .arg("run")
         .arg(&dir)
-        .args(["--store", store_arg, "--jobs", "1", "--format", "json"])
+        .args([
+            "--store",
+            store_arg,
+            "--jobs",
+            "1",
+            "--operators",
+            "breadth",
+            "--format",
+            "json",
+        ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -618,7 +627,17 @@ fn test_a_run_killed_with_sigkill_is_carried_on_and_ends_as_an_uninterrupted_run
     child.wait().unwrap();
     assert!(!seen.is_empty());
 
-    let resumed = run(&dir, &["--store", store_arg, "--jobs", "1"]);
+    let resumed = run(
+        &dir,
+        &[
+            "--store",
+            store_arg,
+            "--jobs",
+            "1",
+            "--operators",
+            "breadth",
+        ],
+    );
     let docs = documents(&resumed.stdout);
     assert_eq!(docs.first().unwrap()["event"], "run.started");
     assert_eq!(docs.first().unwrap()["run"], seen[0]["run"], "the same run");
@@ -638,7 +657,17 @@ fn test_a_run_killed_with_sigkill_is_carried_on_and_ends_as_an_uninterrupted_run
     assert_eq!(ids.len(), once.len(), "each mutant is decided once");
 
     // A run after that one is a new run: the first finished.
-    let after = run(&dir, &["--store", store_arg, "--jobs", "1"]);
+    let after = run(
+        &dir,
+        &[
+            "--store",
+            store_arg,
+            "--jobs",
+            "1",
+            "--operators",
+            "breadth",
+        ],
+    );
     assert_ne!(documents(&after.stdout)[0]["run"], seen[0]["run"]);
     let _ = std::fs::remove_dir_all(&scratch);
 }
