@@ -13,7 +13,7 @@ the runners), resume after a crash, incremental runs, and a committed
 verdict file that diffs as one line per changed verdict.
 
 ## Where it stands
-After 5.8 the crates are in rings and `arch-lint` holds them (one rule's findings wait on the owner, below); after 5.7 the run is kept in SQLite and resumed; after 5.6 the output and the verdict file are projectors on the bus and after 5.5 the root hosts the core (below); after 5.4 the aggregates decide (the Mutant its own verdict, from the facts
+After 5.8 the crates are in rings and `arch-lint` holds them (two ruled exceptions remain); after 5.7 the run is kept in SQLite and resumed; after 5.6 the output and the verdict file are projectors on the bus and after 5.5 the root hosts the core (below); after 5.4 the aggregates decide (the Mutant its own verdict, from the facts
 of its programs' runs), the streams can be executed (a runner needs the
 streams alone), and the run is served by angzarr's bus: the runners, both
 policies and the live-runs read model, built in one place
@@ -36,7 +36,7 @@ works its own way:
 - **Layering** (5.8): ctxloom's rings, `crates/<ring>/<role>/<crate>`, held
   by `arch-lint` in `just check`; the port traits are in `cherenkov-run-ports`
   and the planning use case in `cherenkov-run-application`. Six edges are
-  declared exceptions awaiting the owner's ruling (5.8). `Diagnostic` is
+  ruled exceptions (the CLI's two edges to the domains, until `cherenkov-run-reads`, 5.8). `Diagnostic` is
   still only at the top (5.9).
 
 ## Done
@@ -63,6 +63,19 @@ and `encodings.txt` pins their bytes. 5.3 and 5.4 (below) made the streams
 executable and put the run on the bus.
 
 ## Decided
+- **Rulings after 5.7** (not built yet, later steps): the store keeps every
+  run, `cherenkov store prune` will keep the last N finished runs; the
+  verdict file stays opt-in (`--verdicts FILE`); an exclusive lock on the
+  store file makes a second `cherenkov run` refuse with a diagnostic naming
+  the holder, and `cherenkov store unlock` clears it.
+- **Arch rules follow the code** (5.8): the core owns its ports. A driven
+  adapter may see `core/domain`, a driving adapter `core/wire`; the CLI's
+  edges to `cherenkov-run-domain` and `cherenkov-mutation` are ruled debt
+  until `cherenkov-run-reads` carries the projection. Cost: the rules
+  diverge from ctxloom's table, an adapter can reach past the ports into the
+  domain (e.g. the planner), and `arch-lint` still refuses adapter-to-adapter
+  edges. Revisit when `cherenkov-run-reads` is built, or if an adapter starts
+  calling domain behaviour rather than using its types.
 - Cherenkov is Apache-2.0 OR BSD-3-Clause; Rust 1.96; `protoc` at
   build time.
 - **Everything is proto**: `.proto` sources, generated Rust, generated
@@ -727,17 +740,18 @@ has it; no bump was needed). What was done:
   39 s. The store costs about 4 to 8 ms a mutant under that load, in commits
   (each step is a transaction); and the earlier runs' streams are read at each
   start. See the open question on retention.
-- **Open for the owner**: how many finished runs a store keeps (it keeps
-  all; every start reads their run streams, and a mutant's stream gains a
-  run's asking each run); whether `run` writes `.cherenkov/verdicts.jsonl`
-  by default (unchanged from 5.6); a store lock for two `cherenkov run`s of
-  one project at once (the second would carry on the first's run).
+- **Ruled (owner)**: retention keeps every run, with a later
+  `cherenkov store prune` that keeps the last N finished runs (not built
+  yet); the verdict file stays opt-in (`--verdicts FILE`, unchanged from
+  5.6); concurrent runs take an exclusive lock on the store file, a second
+  `cherenkov run` refuses with a diagnostic naming the holder, and
+  `cherenkov store unlock` clears the lock (not built yet, a later step).
 Upstream: none. Exit met: a fixture run killed partway and run again with
 the same plan resumes on its own, runs no decided mutant again, and writes
 the same verdict file as an uninterrupted run; run again with a changed plan,
 it records the old run abandoned. Unblocks: phase 6.
 
-**5.8 Layout, names and arch-lint.** Done, except the rulings below. Goal:
+**5.8 Layout, names and arch-lint.** Done. Goal:
 the rings above, held, under the names in "Naming". What was done, in
 order:
 - The domain crate renamed `cherenkov-mutation`, in one commit with nothing
@@ -759,24 +773,27 @@ order:
 - `arch-rules.toml` (ctxloom's rules, with `cherenkov-dap-types` as a support
   crate and `test/fidelity` allowed anything) and `just lint-arch`, in `just
   check`; `arch-lint` at the rust-support commit Cargo.toml pins.
-- Exit: `arch-lint` passes only with six declared exceptions, each marked
-  `TODO(owner ruling)` in `arch-rules.toml`; three dev-dependency edges are
+- Exit: `arch-lint` passes with two ruled exceptions in `arch-rules.toml`
+  (below); three dev-dependency edges are
   warnings. The old name remains nowhere in the tree, the docs or the error
   catalogs (grep); the fixtures' verdict files and both `encodings.txt` are
   byte-identical to before.
 
-Open for the owner (one question, six edges): the rules let a driven
-adapter see ports and wire only, and the driving adapter the application
-only. `cherenkov-exec-dap`, `cherenkov-fs` and `cherenkov-syntax` are
-written in the mutation domain's vocabulary (plans, tokens, concepts,
-profiles, spans), and `cherenkov-cli` prints the run domain's events, the
-output package's messages and the deficiency report. Either that vocabulary
-moves into the wire ring or is re-exported by the ports and the application
-(real API surface), a read-model crate carries the output projection, or the
-rules are widened (a driven adapter may see `core/domain`; a driving adapter
-`core/domain` and `core/wire`). Until ruled they are exceptions. The warnings
-are dev-dependency edges of tests (`embedded-edge` to `run-domain`,
-`exec-dap` and `fs` to `syntax`). Upstream: none. Unblocks: phase 8.
+Ruled (owner): the core owns its ports (hexagonal), so the rules follow
+the code. A driven adapter may also see `core/domain` (it implements traits
+written in the domain's vocabulary); a driving adapter may also see
+`core/wire` (the output documents of `cherenkov.output.v1` are wire messages
+by design). That retires four exceptions (`exec-dap`, `fs`, `syntax` to
+`cherenkov-mutation`; `cli` to `cherenkov-run-wire`). The two that remain,
+`cherenkov-cli` to `cherenkov-run-domain` and to `cherenkov-mutation` (the
+output projector prints run events; a deficiency), are ruled debt, accepted
+until `cherenkov-run-reads` carries the projection. Accepted cost: the rules
+diverge from ctxloom's table; an adapter can reach past the ports into the
+domain (e.g. the planner); `arch-lint` still refuses adapter-to-adapter
+edges. Revisit when `cherenkov-run-reads` is built, or if an adapter starts
+calling domain behaviour rather than using its types. The warnings are
+dev-dependency edges of tests (`embedded-edge` to `run-domain`, `exec-dap`
+and `fs` to `syntax`). Upstream: none. Unblocks: phase 8.
 
 **5.9 Diagnostic everywhere.** Changes: `ExecError`, `SyntaxError`,
 `TokenTableError`, `ProfileError`, `DapError`, `RpcError`, `IsaError`, the
