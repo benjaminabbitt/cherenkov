@@ -132,6 +132,12 @@ impl Observed {
     }
 }
 
+impl From<RawOutcome> for Observed {
+    fn from(outcome: RawOutcome) -> Observed {
+        Observed::bare(outcome)
+    }
+}
+
 /// One test's result as the test program reported it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TestReport {

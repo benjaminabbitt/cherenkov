@@ -310,3 +310,8 @@ fn test_report_line_of_a_test_that_did_not_fail_is_its_name_and_result() {
     };
     assert_eq!(report.line(), "t: passed");
 }
+
+#[test]
+fn test_an_outcome_converts_to_an_observation_with_no_tests() {
+    assert_eq!(Observed::from(exited(0)), Observed::bare(exited(0)));
+}

@@ -2,29 +2,18 @@
 //! the tests and reports raw facts (`cherenkov_mutation::execution`); only the
 //! core decides verdicts.
 
-use cherenkov_mutation::execution::{Budget, RawOutcome};
+use cherenkov_mutation::execution::{Budget, Observed};
 use cherenkov_mutation::plan::MutantPlan;
 
 /// An executor applies one plan, runs the tests, and reports facts.
 /// Errors are infrastructure failures (the debugger or harness broke), not
 /// mutant outcomes, and never count in the score.
 pub trait MutantExecutor {
-    fn run(&mut self, plan: &MutantPlan, budget: Budget) -> Result<RawOutcome, ExecError>;
+    /// Run the plan's mutant: what the process did and the tests it
+    /// reported ([`Observed::bare`] for a backend that cannot read them).
+    fn run(&mut self, plan: &MutantPlan, budget: Budget) -> Result<Observed, ExecError>;
     /// The unmutated reference run under the same backend.
-    fn baseline(&mut self, budget: Budget) -> Result<RawOutcome, ExecError>;
-    /// [`MutantExecutor::run`], with the test program's output, so a kill
-    /// can be explained by the failing test's report.
-    fn run_with_output(
-        &mut self,
-        plan: &MutantPlan,
-        budget: Budget,
-    ) -> Result<(RawOutcome, String), ExecError> {
-        self.run(plan, budget).map(|raw| (raw, String::new()))
-    }
-    /// [`MutantExecutor::baseline`], with the test program's output.
-    fn baseline_with_output(&mut self, budget: Budget) -> Result<(RawOutcome, String), ExecError> {
-        self.baseline(budget).map(|raw| (raw, String::new()))
-    }
+    fn baseline(&mut self, budget: Budget) -> Result<Observed, ExecError>;
     /// For each plan, which of the selected tests call the function it is
     /// in: the code they drive, from one unmutated run. `None` when this
     /// backend cannot tell (every plan is then run with every test).

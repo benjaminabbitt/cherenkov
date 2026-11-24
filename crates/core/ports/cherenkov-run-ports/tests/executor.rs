@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
+use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, Tier};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::executor::{Driven, ExecError, MutantExecutor, Selection};
 
@@ -27,12 +27,12 @@ fn test_exec_error_displays_its_message() {
 struct DrivenOnly(Option<Vec<Driven>>);
 
 impl MutantExecutor for DrivenOnly {
-    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 
     fn driven(&mut self, _: &[MutantPlan], _: Budget) -> Result<Option<Vec<Driven>>, ExecError> {
