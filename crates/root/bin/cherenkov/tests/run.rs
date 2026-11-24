@@ -269,6 +269,22 @@ fn test_run_reports_what_killed_each_mutant() {
 }
 
 #[test]
+#[ignore = "slow: needs dlv and go"]
+fn test_run_reports_what_killed_a_go_mutant() {
+    // Total's aor mutant (`a + b` -> `a - b`) fails TestTotal, whose
+    // `t.Fatal("Total")` is at calc_test.go:6: Go has no got/expected.
+    let out = run(&fixtures().join("go"), &["--dlv", dlv().to_str().unwrap()]);
+    let aor = decided(&out.stdout)
+        .into_iter()
+        .find(|d| d["function"] == "Total" && d["operator"] == "aor")
+        .unwrap();
+    assert_eq!(aor["verdict"], "killed");
+    assert_eq!(aor["killed_by"][0]["test"], "TestTotal");
+    assert_eq!(aor["killed_by"][0]["location"], "calc_test.go:6");
+    assert_eq!(aor["killed_by"][0]["message"], "Total");
+}
+
+#[test]
 #[ignore = "slow: needs gdb and cargo"]
 fn test_run_mutates_only_code_the_tests_call_never_the_tests() {
     // `called` is driven by the test; `never_called` is not; the test file
