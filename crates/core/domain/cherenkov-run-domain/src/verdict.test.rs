@@ -298,13 +298,6 @@ fn test_programs_told_out_of_order_decide_as_if_in_order() {
 }
 
 #[test]
-fn test_a_run_told_of_a_mutant_not_planned_for_it_records_nothing() {
-    let mut harness = harness();
-    let events = told(&mut harness, ran(0, &exited(0, 1), 1, &[]));
-    assert!(events.is_empty(), "{events:?}");
-}
-
-#[test]
 fn test_a_run_with_no_observation_is_a_bug_of_whoever_told_it() {
     let mut harness = harness();
     harness.given([planned(1)]);

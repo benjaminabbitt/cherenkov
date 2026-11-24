@@ -64,13 +64,13 @@ impl Diagnostic for MutantRejection {
 /// not written from one.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum SnapshotRejection {
-    /// A run's undecided mutants not in strictly ascending order.
-    UndecidedUnordered,
+    /// A run with more decisions tallied than mutants planned.
+    TalliesExceedPlan,
     /// A run's tallies not in strictly ascending order of verdict.
     TalliesUnordered,
     /// A run's prepared programs not in strictly ascending order.
     PreparedUnordered,
-    /// A run with undecided mutants, tallies or a finish, and no start.
+    /// A run with planned mutants, tallies or a finish, and no start.
     Unstarted,
     /// A mutant's runs not in strictly ascending order of their keys.
     RunsUnordered,
@@ -89,7 +89,7 @@ impl fmt::Display for SnapshotRejection {
 impl Diagnostic for SnapshotRejection {
     fn code(&self) -> &str {
         match self {
-            SnapshotRejection::UndecidedUnordered => code!("undecided-unordered"),
+            SnapshotRejection::TalliesExceedPlan => code!("tallies-exceed-plan"),
             SnapshotRejection::TalliesUnordered => code!("tallies-unordered"),
             SnapshotRejection::PreparedUnordered => code!("prepared-unordered"),
             SnapshotRejection::Unstarted => code!("unstarted"),
@@ -192,7 +192,7 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(MutantRejection::NoRun),
         Box::new(MutantRejection::NoMutant),
         Box::new(MutantRejection::PlannedForRun),
-        Box::new(SnapshotRejection::UndecidedUnordered),
+        Box::new(SnapshotRejection::TalliesExceedPlan),
         Box::new(SnapshotRejection::TalliesUnordered),
         Box::new(SnapshotRejection::PreparedUnordered),
         Box::new(SnapshotRejection::Unstarted),

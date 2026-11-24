@@ -125,6 +125,21 @@ executable and put the run on the bus.
 - **Resume is automatic** when the project has an unfinished run with the
   same plan (the settings but the worker count, and every mutant with its
   plan); otherwise the old run is recorded abandoned and a new one starts.
+- **The Run keeps a count, not the set of undecided ids** (owner's
+  ruling). `Run.planned` is the number of mutants planned; a run is done
+  when the verdict tallies sum to it. The set made the run's snapshot, which
+  the kernel loads, offers and writes with every decision, as large as the
+  undecided mutants, so a whole run was O(n squared) (profiled: nearly all
+  samples in snapshot restore, encode and decode). The Run therefore no
+  longer guards a decision for a mutant it did not plan, nor one already
+  decided. Accepted cost: those cases rest on structure: the fan-in
+  (`FanIn::decided`) targets `event.run`, the run named in the mutant's own
+  decision; a redelivered decision is a duplicate by its derived fact id; a
+  mutant is decided once per run (the Mutant aggregate). Revisit if a
+  decision can ever reach a run from outside that path. `RunSnapshot`
+  field 2 (`undecided`) is reserved and `planned` is field 9; the domain
+  crate's rules version is 0.5.0. A snapshot whose tallies sum past its
+  `planned` is refused on restore.
 - **Locations**: the store in `.cherenkov/store/runs.sqlite`, git-ignored by
   a `.gitignore` of its own directory; the verdict file
   `.cherenkov/verdicts.jsonl`, committed.

@@ -555,7 +555,7 @@ fn snapshot_lines() -> Vec<String> {
     vec![
         line(&RunSnapshot {
             started_at: Some(at()),
-            undecided: vec!["a".to_string(), "b".to_string()],
+            planned: 5,
             counts: counts(),
             finished: true,
             programs: 2,
@@ -565,7 +565,7 @@ fn snapshot_lines() -> Vec<String> {
         }),
         line(&RunSnapshot {
             started_at: Some(Timestamp::default()),
-            undecided: Vec::new(),
+            planned: 0,
             counts: Vec::new(),
             finished: false,
             programs: 0,

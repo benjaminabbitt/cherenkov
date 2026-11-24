@@ -360,30 +360,6 @@ async fn test_a_decision_redelivered_under_its_id_is_a_duplicate() {
 }
 
 #[tokio::test]
-async fn test_a_mutant_is_counted_once_and_only_for_its_own_run() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a", "b"]))
-        .await
-        .unwrap();
-    for (id, v, external) in [
-        ("a", Verdict::Killed, "a#1"),
-        ("a", Verdict::Survived, "a#2"),
-        ("z", Verdict::Killed, "z"),
-    ] {
-        core.report(run_cover(&run), &decision(id, v), external)
-            .await
-            .unwrap();
-    }
-    let decided = run_events(&core, &run)
-        .await
-        .into_iter()
-        .filter(|e| matches!(e, RunEvent::DecisionRecorded(_)))
-        .count();
-    assert_eq!(decided, 1);
-}
-
-#[tokio::test]
 async fn test_a_prepared_program_is_recorded_with_its_budget_from_its_baseline() {
     let core = core();
     let run = new_run();
@@ -967,14 +943,14 @@ fn tally(counts: &[(Verdict, u32)]) -> Vec<VerdictCount> {
         .collect()
 }
 
-/// A run, started, with `undecided` owed and `counts` tallied.
-fn run_snapshot(undecided: &[&str], counts: &[(Verdict, u32)]) -> RunSnapshot {
+/// A run, started, with `planned` mutants and `counts` tallied.
+fn run_snapshot(planned: u32, counts: &[(Verdict, u32)]) -> RunSnapshot {
     RunSnapshot {
         started_at: Some(Timestamp {
             seconds: 1,
             nanos: 0,
         }),
-        undecided: undecided.iter().map(ToString::to_string).collect(),
+        planned,
         counts: tally(counts),
         finished: false,
         ..RunSnapshot::default()
@@ -985,21 +961,17 @@ fn run_snapshot(undecided: &[&str], counts: &[(Verdict, u32)]) -> RunSnapshot {
 fn test_restoring_a_run_from_an_invalid_snapshot_is_refused_and_leaves_it_unchanged() {
     let unstarted = RunSnapshot {
         started_at: None,
-        ..run_snapshot(&["a"], &[])
+        ..run_snapshot(1, &[])
     };
     for (snapshot, refusal) in [
         (
-            run_snapshot(&["b", "a"], &[]),
-            SnapshotRejection::UndecidedUnordered,
-        ),
-        (
-            run_snapshot(&["a", "a"], &[]),
-            SnapshotRejection::UndecidedUnordered,
+            run_snapshot(1, &[(Verdict::Killed, 1), (Verdict::Survived, 1)]),
+            SnapshotRejection::TalliesExceedPlan,
         ),
         (
             RunSnapshot {
                 prepared: vec![1, 0],
-                ..run_snapshot(&["a"], &[])
+                ..run_snapshot(1, &[])
             },
             SnapshotRejection::PreparedUnordered,
         ),
@@ -1019,16 +991,16 @@ fn test_restoring_a_run_from_an_invalid_snapshot_is_refused_and_leaves_it_unchan
             SnapshotRejection::Unstarted,
         ),
         (
-            run_snapshot(&[], &[(Verdict::Survived, 1), (Verdict::Killed, 1)]),
+            run_snapshot(2, &[(Verdict::Survived, 1), (Verdict::Killed, 1)]),
             SnapshotRejection::TalliesUnordered,
         ),
         (
-            run_snapshot(&[], &[(Verdict::Killed, 1), (Verdict::Killed, 2)]),
+            run_snapshot(2, &[(Verdict::Killed, 1), (Verdict::Killed, 2)]),
             SnapshotRejection::TalliesUnordered,
         ),
     ] {
         let mut run = Run::default();
-        run.restore(run_snapshot(&["z"], &[(Verdict::Killed, 2)]))
+        run.restore(run_snapshot(3, &[(Verdict::Killed, 2)]))
             .unwrap();
         let before = run.clone();
         assert_eq!(
@@ -1279,4 +1251,36 @@ async fn test_a_decision_is_recorded_on_the_run_with_the_decision_whole() {
         })
         .unwrap();
     assert_eq!(recorded.decision, Some(decided));
+}
+
+/// The bytes of a ready run of `n` mutants' snapshot after its first decision.
+async fn snapshot_size_after_first_decision(n: usize) -> usize {
+    let core = core();
+    let run = new_run();
+    let ids: Vec<String> = (0..n).map(|i| format!("mutant-{i:05}")).collect();
+    let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+    core.command(run_cover(&run), &plan(&refs)).await.unwrap();
+    core.report(run_cover(&run), &preparation("calc-1"), "prepared")
+        .await
+        .unwrap();
+    core.report(
+        run_cover(&run),
+        &decision(&ids[0], Verdict::Killed),
+        "first",
+    )
+    .await
+    .unwrap();
+    let replayed = replay_run(run_events(&core, &run).await);
+    assert!(replayed.ready() && replayed.live());
+    prost::Message::encode_to_vec(&replayed.snapshot().expect("it offers one").to_wire()).len()
+}
+
+#[tokio::test]
+async fn test_a_ready_run_s_snapshot_does_not_grow_with_the_mutants_planned() {
+    let small = snapshot_size_after_first_decision(200).await;
+    let large = snapshot_size_after_first_decision(400).await;
+    assert!(
+        large <= small + 4,
+        "200 mutants: {small} bytes, 400 mutants: {large} bytes"
+    );
 }

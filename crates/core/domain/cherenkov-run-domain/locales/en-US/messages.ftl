@@ -8,7 +8,7 @@ cherenkov-run-domain-planned-for-run = this mutant is already planned for this r
 
 # Messages for snapshots refused on loading.
 
-cherenkov-run-domain-undecided-unordered = this run's snapshot does not list its undecided mutants in strictly ascending order
+cherenkov-run-domain-tallies-exceed-plan = this run's snapshot tallies more decisions than mutants it planned
 cherenkov-run-domain-tallies-unordered = this run's snapshot does not list its tallies in strictly ascending order of verdict
 cherenkov-run-domain-prepared-unordered = this run's snapshot does not list its prepared programs in strictly ascending order
 cherenkov-run-domain-unstarted = this run's snapshot holds mutants, programs, tallies or a finish but no start

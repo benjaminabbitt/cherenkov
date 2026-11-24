@@ -87,8 +87,8 @@ message Drives {
 
 // A run's whole state, which loading it resumes from in place of folding
 // its stream: when it started, how many test programs it is to prepare and
-// which are, the plans of its mutants until it is ready, its undecided
-// mutants' ids in ascending order, how many mutants got each verdict, and
+// which are, the plans of its mutants until it is ready, its planned
+// mutants' count, how many mutants got each verdict, and
 // whether it finished. It anchors the run component.
 message RunSnapshot {
   option (io.angzarr.v1.component) = {
@@ -97,7 +97,8 @@ message RunSnapshot {
   };
 
   optional google.protobuf.Timestamp started_at = 1;
-  repeated string undecided = 2;
+  reserved 2;
+  reserved "undecided";
   // In ascending order of verdict, one entry for each.
   repeated VerdictCount counts = 3;
   bool finished = 4;
@@ -107,6 +108,8 @@ message RunSnapshot {
   // The mutants as planned, until every program is prepared.
   repeated cherenkov.mutant.v1.ExecutableMutant plans = 7;
   bool ready = 8;
+  // How many mutants were planned: with the tallies, what is owed.
+  uint32 planned = 9;
 }
 
 // region commands
@@ -199,7 +202,7 @@ message Abandoned {
 // A mutant's decision, reported to the run that asked for it: the mutant's
 // id, its verdict, and the decision whole as the mutant recorded it, which
 // the run's readers print and keep. Recorded once for each of the run's
-// undecided mutants while it is live, and the last finishes the run.
+// mutants owed while it is live, and the last finishes the run.
 message DecisionReported {
   option (io.angzarr.v1.fact) = {
     component: "cherenkov.run.v1.RunSnapshot"

@@ -129,8 +129,11 @@ pub struct Run {
     /// The mutants as planned, until the run is ready: what it hands on.
     plans: Vec<ExecutableMutant>,
     ready: bool,
-    /// The planned mutants with no decision yet, by id.
-    undecided: BTreeSet<String>,
+    /// How many mutants were planned. What is owed is this less the
+    /// tallies: the run does not guard whose decision it is told (the
+    /// fan-in names the run, a duplicate is caught by its fact id, a
+    /// mutant is decided once per run).
+    planned: u32,
     /// How many mutants got each verdict.
     counts: BTreeMap<Verdict, u32>,
     finished: bool,
@@ -182,9 +185,14 @@ impl Run {
         ])
     }
 
+    /// How many mutants have a decision.
+    fn decided_count(&self) -> u32 {
+        self.counts.values().sum()
+    }
+
     /// Its finish, when it is live and nothing is left to decide.
     fn done(&self, ctx: &Context) -> Option<RunFinished> {
-        (self.live() && self.undecided.is_empty())
+        (self.live() && self.decided_count() == self.planned)
             .then(|| self.finish(&self.counts, &ctx.recorded_at(), RunStatus::Complete))
     }
 }
@@ -251,7 +259,7 @@ impl Snapshots for Run {
     fn snapshot(&self) -> Option<RunSnapshot> {
         Some(RunSnapshot {
             started_at: self.started_at,
-            undecided: self.undecided.iter().cloned().collect(),
+            planned: self.planned,
             counts: tallies(&self.counts),
             finished: self.finished,
             programs: self.programs,
@@ -264,16 +272,13 @@ impl Snapshots for Run {
     /// Resume from `snapshot`, refused when it holds what no stream folds
     /// to; refused, the run is unchanged.
     fn restore(&mut self, snapshot: RunSnapshot) -> Result<(), Report> {
-        if !ascending(&snapshot.undecided) {
-            return Err(Report::of(&SnapshotRejection::UndecidedUnordered));
-        }
         if !ascending(snapshot.counts.iter().map(|tally| tally.verdict)) {
             return Err(Report::of(&SnapshotRejection::TalliesUnordered));
         }
         if !ascending(&snapshot.prepared) {
             return Err(Report::of(&SnapshotRejection::PreparedUnordered));
         }
-        let holds = !snapshot.undecided.is_empty()
+        let holds = snapshot.planned > 0
             || !snapshot.counts.is_empty()
             || snapshot.finished
             || snapshot.programs > 0
@@ -281,9 +286,13 @@ impl Snapshots for Run {
         if snapshot.started_at.is_none() && holds {
             return Err(Report::of(&SnapshotRejection::Unstarted));
         }
+        let decided: u32 = snapshot.counts.iter().map(|tally| tally.count).sum();
+        if decided > snapshot.planned {
+            return Err(Report::of(&SnapshotRejection::TalliesExceedPlan));
+        }
         *self = Run {
             started_at: snapshot.started_at,
-            undecided: snapshot.undecided.into_iter().collect(),
+            planned: snapshot.planned,
             counts: snapshot
                 .counts
                 .into_iter()
@@ -390,16 +399,16 @@ impl Run {
         ]))
     }
 
-    /// A mutant's decision: recorded once for each of the run's undecided
-    /// mutants while it is live, and the last finishes the run.
+    /// A mutant's decision: recorded while the run is live and has
+    /// mutants owed, and the last finishes the run.
     #[handles_fact(DecisionReported)]
     fn decided(&self, fact: DecisionReported, ctx: &Context) -> Result<FactEmit<Self>, Bug> {
-        if !self.live() || !self.undecided.contains(&fact.mutant) {
+        if !self.live() || self.decided_count() >= self.planned {
             return Ok(FactEmit::none());
         }
         let mut counts = self.counts.clone();
         *counts.entry(fact.verdict).or_default() += 1;
-        let last = self.undecided.len() == 1;
+        let last = self.decided_count() + 1 == self.planned;
         let decided = pack_message(&DecisionRecorded {
             mutant: fact.mutant,
             verdict: fact.verdict,
@@ -422,12 +431,8 @@ impl Run {
 
     #[applies(MutantsPlanned)]
     fn planned(&mut self, event: MutantsPlanned) {
-        self.undecided = event
-            .mutants
-            .iter()
-            .filter_map(|m| m.mutant.as_ref())
-            .map(|m| m.id.clone())
-            .collect();
+        self.planned = u32::try_from(event.mutants.iter().filter(|m| m.mutant.is_some()).count())
+            .unwrap_or(u32::MAX);
         self.plans = event.mutants;
     }
 
@@ -455,7 +460,6 @@ impl Run {
 
     #[applies(DecisionRecorded)]
     fn decision_recorded(&mut self, event: DecisionRecorded) {
-        self.undecided.remove(&event.mutant);
         *self.counts.entry(event.verdict).or_default() += 1;
     }
 
