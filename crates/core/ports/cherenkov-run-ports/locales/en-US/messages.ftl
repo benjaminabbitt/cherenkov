@@ -3,4 +3,4 @@
 
 cherenkov-run-ports-unknown-language = no profile for language { $lang }
 cherenkov-run-ports-parser = parser failure: { $detail }
-cherenkov-run-ports-incomplete = parser failure: the parse did not complete
+cherenkov-run-ports-incomplete = parser failure: parse did not complete

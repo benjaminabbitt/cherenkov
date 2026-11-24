@@ -158,6 +158,6 @@ fn test_a_bad_operator_set_and_a_parser_that_did_not_load_render_their_causes() 
     let parsers = CliError::syntax(&Report::new("cherenkov-run-ports-incomplete"));
     assert_eq!(
         catalog.render(&parsers).unwrap(),
-        "the parsers did not load: parser failure: the parse did not complete"
+        "the parsers did not load: parser failure: parse did not complete"
     );
 }
