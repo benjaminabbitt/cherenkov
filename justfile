@@ -15,7 +15,7 @@ lint:
 
 # arch-lint at rust-support's pinned commit (the one Cargo.toml pins for
 # cli-support), installed once into the cache.
-arch_lint_rev := "5bc1d60f1a10d4902b2daad36c348e9bc39c15fa"
+arch_lint_rev := "2f7d2670a66f00dcf9ad4b2b5a8e20e5d9d3e479"
 arch_lint_root := env_var_or_default("XDG_CACHE_HOME", env_var("HOME") / ".cache") / "cherenkov-arch-lint" / arch_lint_rev
 arch_lint := arch_lint_root / "bin/arch-lint"
 
