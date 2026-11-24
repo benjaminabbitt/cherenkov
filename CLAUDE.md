@@ -42,6 +42,22 @@ and rust-support (cli-support) is on the same one, so the lock holds one core. A
 fold bumps `cherenkov-run-domain`'s minor version: it is the rules version
 under which snapshots are kept.
 
+# Layout
+
+Crates are in `crates/<ring>/<role>/<crate>`, and the directory is the role
+`arch-rules.toml` judges (`just lint-arch`, part of `just check`, which
+installs `arch-lint` at the rust-support commit `Cargo.toml` pins):
+`core/{wire,domain,ports,application}`, `adapters/{driven,driving}`,
+`root/{lib,bin}` and the test-only `test/fidelity`. A new role gets its rule
+before it gets code. The domain crate is `cherenkov-mutation`; the port
+traits (executor, source, syntax) are in `cherenkov-run-ports`, and the
+planning use case that drives them in `cherenkov-run-application`. The
+program is `cherenkov` (`root/bin`: commands and composition);
+`cherenkov-cli` holds what a run prints as and the errors a command fails
+with. An edge the rules refuse is fixed, never added to the `[[exception]]`s
+of `arch-rules.toml` without the owner's ruling (the six there are marked
+`TODO(owner ruling)`; `docs/runlayer-plan.md`, 5.8).
+
 # Hooks and CI
 
 Secrets are scanned with gitleaks in a pinned container (`just scan-secrets`
