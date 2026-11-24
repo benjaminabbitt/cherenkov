@@ -10,6 +10,7 @@ pub mod concept;
 pub mod deficiency;
 pub mod diff;
 pub mod edit;
+pub mod error;
 pub mod execution;
 pub mod id;
 pub mod inventory;

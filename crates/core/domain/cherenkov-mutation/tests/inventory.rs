@@ -5,7 +5,7 @@ mod common;
 
 use cherenkov_mutation::inventory::{Inventory, Spellings};
 use cherenkov_mutation::operator_set::{families, mutations, named, registry};
-use cherenkov_mutation::set_spec::{CustomSet, custom_set};
+use cherenkov_mutation::set_spec::{CustomSet, SetError, custom_set};
 
 fn without_spellings() -> Spellings<'static> {
     Spellings::none()
@@ -136,7 +136,7 @@ fn test_every_canonical_name_in_the_dump_is_accepted_by_a_custom_set() {
                 mutations: vec![name.to_string()],
                 skips: vec![],
             })
-            .unwrap_or_else(|e| panic!("{name}: {}", e.reason()))
+            .unwrap_or_else(|e| panic!("{name}: {e}"))
         };
         let whole = set(o.name);
         let got: Vec<&str> = whole.mutations.to_vec();
@@ -158,7 +158,24 @@ fn alias_error(alias: &str) -> String {
     })
     .err()
     .unwrap_or_else(|| panic!("{alias} was accepted"))
-    .reason()
+    .into_text()
+}
+
+/// The error as the catalog words it, for the two it can be here.
+trait IntoText {
+    fn into_text(self) -> String;
+}
+
+impl IntoText for SetError {
+    fn into_text(self) -> String {
+        match self {
+            SetError::Alias { alias, canonical } => {
+                format!("{alias} is another tool's name for {canonical}")
+            }
+            SetError::UnknownMutation { name } => format!("no mutation named {name}"),
+            other => panic!("{other}"),
+        }
+    }
 }
 
 #[test]

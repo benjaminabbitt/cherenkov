@@ -92,15 +92,19 @@ fn test_display_impls_show_the_value() {
         "0123456789abcdef"
     );
     assert_eq!(LanguageId::new("go").to_string(), "go");
-    assert!(
-        TokenTableError::BadNotTemplate("not".into())
-            .to_string()
-            .contains("\"not\"")
+    assert_eq!(
+        TokenTableError::BadNotTemplate {
+            template: "not".into()
+        }
+        .to_string(),
+        "cherenkov-mutation-bad-not-template template=not"
     );
-    assert!(
-        TokenTableError::DuplicateSpelling("&".into())
-            .to_string()
-            .contains("\"&\"")
+    assert_eq!(
+        TokenTableError::DuplicateSpelling {
+            spelling: "&".into()
+        }
+        .to_string(),
+        "cherenkov-mutation-duplicate-spelling spelling=&"
     );
 }
 

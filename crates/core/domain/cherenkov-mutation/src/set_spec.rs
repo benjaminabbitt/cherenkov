@@ -11,6 +11,7 @@
 //! skips = ["test", "annotated"]     # optional region kinds to plan nothing in
 //! ```
 
+use angzarr_diagnostic::{Arg, Diagnostic, Report, code};
 use serde::Deserialize;
 
 use crate::inventory::canonical_names;
@@ -20,37 +21,57 @@ use crate::syntax::SkipKind;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetError {
     /// No registered set has this name.
-    Unknown(String),
-    /// The custom set's file could not be read.
-    Unreadable { path: String, reason: String },
-    /// The custom set in this file is not a set.
-    Invalid { path: String, reason: String },
+    Unknown { name: String },
+    /// The custom set's file could not be read (`detail` is what the reader
+    /// said).
+    Unreadable { path: String, detail: String },
+    /// The custom set in this file is not a set: `cause` says why.
+    Invalid { path: String, cause: Report },
     /// The custom set names a mutation `cherenkov mutations` does not list.
-    UnknownMutation(String),
+    UnknownMutation { name: String },
     /// The custom set names another tool's name for mutations: the canonical
-    /// names it stands for.
-    Alias {
-        alias: String,
-        canonical: Vec<String>,
-    },
+    /// names it stands for, comma-separated.
+    Alias { alias: String, canonical: String },
     /// The custom set names a skip kind that does not exist.
-    UnknownSkip(String),
+    UnknownSkip { name: String },
 }
 
-impl SetError {
-    /// What is wrong with a custom set.
-    pub fn reason(&self) -> String {
+impl std::fmt::Display for SetError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        angzarr_diagnostic::display(self, f)
+    }
+}
+
+impl std::error::Error for SetError {}
+
+impl Diagnostic for SetError {
+    fn code(&self) -> &str {
         match self {
-            SetError::UnknownMutation(m) => format!("no mutation named {m}"),
-            SetError::Alias { alias, canonical } => format!(
-                "{alias} is another tool's name for {}",
-                canonical.join(", ")
-            ),
-            SetError::UnknownSkip(k) => format!("no skip kind named {k}"),
-            SetError::Invalid { reason, .. } | SetError::Unreadable { reason, .. } => {
-                reason.clone()
+            SetError::Unknown { .. } => code!("unknown-set"),
+            SetError::Unreadable { .. } => code!("unreadable-set"),
+            SetError::Invalid { .. } => code!("invalid-set"),
+            SetError::UnknownMutation { .. } => code!("unknown-mutation"),
+            SetError::Alias { .. } => code!("mutation-alias"),
+            SetError::UnknownSkip { .. } => code!("unknown-skip"),
+        }
+    }
+
+    fn args(&self) -> Vec<(&str, Arg)> {
+        match self {
+            SetError::Unknown { name }
+            | SetError::UnknownMutation { name }
+            | SetError::UnknownSkip { name } => vec![("name", name.as_str().into())],
+            SetError::Unreadable { path, detail } => vec![
+                ("path", path.as_str().into()),
+                ("detail", detail.as_str().into()),
+            ],
+            SetError::Invalid { path, cause } => {
+                vec![("path", path.as_str().into()), ("cause", Arg::nested(cause))]
             }
-            SetError::Unknown(name) => format!("no operator set named {name}"),
+            SetError::Alias { alias, canonical } => vec![
+                ("alias", alias.as_str().into()),
+                ("canonical", canonical.as_str().into()),
+            ],
         }
     }
 }
@@ -89,16 +110,18 @@ fn one_set(
     load: &impl Fn(&str) -> Result<CustomSet, String>,
 ) -> Result<OperatorSet, SetError> {
     if item.ends_with(".toml") {
-        let custom = load(item).map_err(|reason| SetError::Unreadable {
+        let custom = load(item).map_err(|detail| SetError::Unreadable {
             path: item.to_string(),
-            reason,
+            detail,
         })?;
         return custom_set(custom).map_err(|e| SetError::Invalid {
             path: item.to_string(),
-            reason: e.reason(),
+            cause: Report::of(&e),
         });
     }
-    named(item).ok_or_else(|| SetError::Unknown(item.to_string()))
+    named(item).ok_or_else(|| SetError::Unknown {
+            name: item.to_string(),
+        })
 }
 
 /// The set a file defines. Its strings live as long as the process: a set
@@ -115,7 +138,7 @@ pub fn custom_set(c: CustomSet) -> Result<OperatorSet, SetError> {
     let skips = c
         .skips
         .iter()
-        .map(|s| SkipKind::from_name(s).ok_or_else(|| SetError::UnknownSkip(s.clone())))
+        .map(|s| SkipKind::from_name(s).ok_or_else(|| SetError::UnknownSkip { name: s.clone() }))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(OperatorSet {
         name: leak(c.name),
@@ -143,11 +166,13 @@ fn expand(entry: &str) -> Result<Vec<&'static str>, SetError> {
     }
     let canonical = canonical_names(entry);
     if canonical.is_empty() {
-        Err(SetError::UnknownMutation(entry.to_string()))
+        Err(SetError::UnknownMutation {
+            name: entry.to_string(),
+        })
     } else {
         Err(SetError::Alias {
             alias: entry.to_string(),
-            canonical: canonical.into_iter().map(str::to_string).collect(),
+            canonical: canonical.join(", "),
         })
     }
 }

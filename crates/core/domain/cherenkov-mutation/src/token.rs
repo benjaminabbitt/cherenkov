@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use angzarr_diagnostic::{Arg, Diagnostic, code};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
@@ -163,25 +164,38 @@ impl Token {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenTableError {
     /// `not_template` must contain exactly one `{}` placeholder.
-    BadNotTemplate(String),
+    BadNotTemplate { template: String },
     /// Two tokens share one spelling, so spelling-to-token is ambiguous.
-    DuplicateSpelling(String),
+    DuplicateSpelling { spelling: String },
 }
 
 impl std::fmt::Display for TokenTableError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TokenTableError::BadNotTemplate(t) => {
-                write!(f, "not_template {t:?} must contain exactly one {{}}")
-            }
-            TokenTableError::DuplicateSpelling(s) => {
-                write!(f, "spelling {s:?} is mapped to more than one token")
-            }
-        }
+        angzarr_diagnostic::display(self, f)
     }
 }
 
 impl std::error::Error for TokenTableError {}
+
+impl Diagnostic for TokenTableError {
+    fn code(&self) -> &str {
+        match self {
+            TokenTableError::BadNotTemplate { .. } => code!("bad-not-template"),
+            TokenTableError::DuplicateSpelling { .. } => code!("duplicate-spelling"),
+        }
+    }
+
+    fn args(&self) -> Vec<(&str, Arg)> {
+        match self {
+            TokenTableError::BadNotTemplate { template } => {
+                vec![("template", template.as_str().into())]
+            }
+            TokenTableError::DuplicateSpelling { spelling } => {
+                vec![("spelling", spelling.as_str().into())]
+            }
+        }
+    }
+}
 
 /// Maps concrete spellings to abstract tokens and back.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -200,7 +214,9 @@ impl TokenTable {
     ) -> Result<Self, TokenTableError> {
         let not_template = not_template.into();
         if not_template.matches("{}").count() != 1 {
-            return Err(TokenTableError::BadNotTemplate(not_template));
+            return Err(TokenTableError::BadNotTemplate {
+                template: not_template,
+            });
         }
         let mut by_token = BTreeMap::new();
         let mut by_spelling = BTreeMap::new();
@@ -215,7 +231,7 @@ impl TokenTable {
                 .insert(spelling.clone(), token)
                 .is_some_and(|prev| prev != token)
             {
-                return Err(TokenTableError::DuplicateSpelling(spelling));
+                return Err(TokenTableError::DuplicateSpelling { spelling });
             }
             by_token.insert(token, spelling);
         }
