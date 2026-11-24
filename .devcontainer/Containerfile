@@ -20,9 +20,9 @@
 # dev container's `vscode` user (uid 1000, remapped to the host's by
 # updateRemoteUserUID) run the same recipes.
 
-# golang:1.26.9-trixie: Debian 13 with Go, gcc and git. The same digest as
-# ctxloom's image.
-FROM docker.io/library/golang:1.26.9-trixie@sha256:f06b7122f888680048afb247c4e5f49c0069eb6c4c1ccae0f3f4834527a8d22c
+# golang:1.27.4-trixie (the fixture's toolchain line): Debian 13 with Go,
+# gcc and git. The multi-arch index digest.
+FROM docker.io/library/golang:1.27.4-trixie@sha256:f18c3d73a184fb0582828510722e723b63a93f7188d11dd223d9be6f6880e65d
 
 ENV TERM=xterm-256color \
     COLORTERM=truecolor
