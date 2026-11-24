@@ -278,12 +278,15 @@ fn run_one(
 }
 
 /// What an executor's observation of a run says: a kill names the tests
-/// that failed, and a run whose exit status and test reports disagree is a
-/// failure of the run, not a verdict.
+/// that failed. Exit status and reports are checked against each other only
+/// where the outcome says the tests passed; a run that reached nothing
+/// (not reached, unsupported, unviable) keeps its outcome and drops what
+/// the reports say.
 fn seen_of(observed: Observed) -> Seen {
     let detected = classify(&observed.outcome).verdict.detected();
     let killed_by = observed.failures();
-    if !detected && !killed_by.is_empty() {
+    let passed = matches!(observed.outcome, RawOutcome::Exited { code: 0, .. });
+    if passed && !killed_by.is_empty() {
         // The exit status and the report disagree: neither can be
         // trusted, and a survivor is not to be claimed from either.
         let tests: Vec<&str> = killed_by.iter().map(|k| k.test.as_str()).collect();

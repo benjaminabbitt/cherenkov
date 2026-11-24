@@ -410,3 +410,69 @@ fn test_a_passing_exit_whose_output_names_a_failed_test_is_a_failure_not_a_survi
         "{reason}"
     );
 }
+
+/// Ends as `outcome` with a failed `test_a` reported.
+struct EndsWithAFailure(RawOutcome);
+
+impl MutantExecutor for EndsWithAFailure {
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        Ok(Observed {
+            outcome: self.0.clone(),
+            tests: vec![killer("test_a")],
+        })
+    }
+
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
+    }
+}
+
+fn seen_ending(outcome: RawOutcome) -> Seen {
+    let plan = plans().remove(0);
+    run_one(
+        0,
+        &mut EndsWithAFailure(outcome),
+        Budget::from_baseline(Duration::from_secs(1)),
+        Driven::Every,
+        &plan,
+    )
+    .seen
+}
+
+#[test]
+fn test_a_run_that_reached_nothing_keeps_its_outcome_and_drops_the_reports() {
+    for outcome in [
+        RawOutcome::NotReached { reason: "r".into() },
+        RawOutcome::Unsupported { reason: "u".into() },
+        RawOutcome::Unviable { reason: "v".into() },
+    ] {
+        assert_eq!(
+            seen_ending(outcome.clone()),
+            Seen::Observed {
+                raw: outcome,
+                killed_by: Vec::new()
+            }
+        );
+    }
+}
+
+#[test]
+fn test_a_crash_or_a_failing_exit_keeps_the_reports_that_name_the_killer() {
+    for outcome in [
+        exited(1),
+        RawOutcome::Crashed {
+            kind: "panic".into(),
+            message: "m".into(),
+            tier: Tier::P,
+            wall: Duration::from_millis(1),
+        },
+    ] {
+        assert_eq!(
+            seen_ending(outcome.clone()),
+            Seen::Observed {
+                raw: outcome,
+                killed_by: vec![killer("test_a")]
+            }
+        );
+    }
+}
