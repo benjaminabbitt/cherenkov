@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use cherenkov_mutation::execution::{
-    Budget, Failure, Observed, Outcome, RawOutcome, Tier, TestReport, TestResult, classify, combine,
+    Budget, Failure, Observed, Outcome, RawOutcome, TestReport, TestResult, Tier, classify, combine,
 };
 use cherenkov_mutation::verdict::Verdict;
 

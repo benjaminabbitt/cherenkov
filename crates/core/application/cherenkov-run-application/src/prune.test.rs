@@ -40,7 +40,6 @@ fn exited() -> RawOutcome {
     }
 }
 
-
 fn settings() -> Settings {
     Settings {
         root: "/project".to_string(),

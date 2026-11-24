@@ -11,8 +11,8 @@ use cherenkov_mutation::execution::{RawOutcome, TestReport, TestResult, Tier as 
 use prost_types::Duration as WireDuration;
 
 use crate::mutant::{
-    Crashed, Exited, KilledBy, NotReached, Observation, ObservationKind, Tier, TimedOut, Unsupported,
-    Unviable,
+    Crashed, Exited, KilledBy, NotReached, Observation, ObservationKind, Tier, TimedOut,
+    Unsupported, Unviable,
 };
 use crate::rejection::Unreadable;
 

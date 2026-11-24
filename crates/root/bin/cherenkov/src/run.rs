@@ -408,10 +408,7 @@ fn viability_summary(checked: usize, found: &viability::Checked) -> String {
 
 /// The run layer's workers over `sets`, `jobs` programs prepared at once.
 fn workers_of(sets: Vec<Vec<Box<dyn MutantExecutor + Send>>>, jobs: usize) -> Workers {
-    Workers {
-        sets,
-        jobs,
-    }
+    Workers { sets, jobs }
 }
 
 /// Run `plans` on the run layer with `workers`, printing its events as

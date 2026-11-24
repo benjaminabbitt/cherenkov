@@ -10,8 +10,8 @@ use crate::covers::{mutant_cover, run_cover};
 use crate::pool::Pool;
 use crate::test_plans::plans;
 use crate::testing::{Core, new_core, new_run};
-use crate::workers::Worker;
 use crate::workers;
+use crate::workers::Worker;
 use cherenkov_run_domain::{PlanMutant, PlanRun, ProgramRunReported, Verdict};
 use cherenkov_run_ports::Edge;
 
@@ -46,7 +46,6 @@ impl MutantExecutor for Fake {
     }
 }
 
-
 fn request(stream: &Cover, page: EventPage) -> ProjectRequest {
     ProjectRequest {
         events: Some(EventBook {
@@ -75,9 +74,7 @@ async fn projector(runs: &Arc<AtomicUsize>, programs: usize) -> (Arc<Core>, Uuid
         .map(|_| Box::new(Fake { runs: runs.clone() }) as Box<dyn MutantExecutor + Send>)
         .collect();
     let mut prepared = Vec::new();
-    workers::prepare(&plans, &mut set, 1, &mut |p| {
-        prepared.push(p.unwrap())
-    });
+    workers::prepare(&plans, &mut set, 1, &mut |p| prepared.push(p.unwrap()));
     for preparation in prepared {
         let external_id = format!("program {}", preparation.program);
         let fact = crate::programs::report(preparation, &plans);
@@ -301,9 +298,7 @@ async fn test_a_ready_run_hands_its_mutants_on_with_their_plans_and_not_before()
     let runs = Arc::new(AtomicUsize::new(0));
     let mut set: Vec<Box<dyn MutantExecutor + Send>> = vec![Box::new(Fake { runs })];
     let mut prepared = Vec::new();
-    workers::prepare(&plans(), &mut set, 1, &mut |p| {
-        prepared.push(p.unwrap())
-    });
+    workers::prepare(&plans(), &mut set, 1, &mut |p| prepared.push(p.unwrap()));
     let fact = crate::programs::report(prepared.remove(0), &plans());
     core.report(run_cover(&run), &fact, "program 0")
         .await

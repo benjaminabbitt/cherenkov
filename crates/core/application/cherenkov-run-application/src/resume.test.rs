@@ -81,7 +81,6 @@ impl MutantExecutor for Executor {
     }
 }
 
-
 /// One worker, holding on the ledger's `hold`th run.
 fn workers(ledger: &Arc<Ledger>, hold: usize, gate: &Arc<Mutex<Receiver<()>>>) -> Workers {
     let executor: Box<dyn MutantExecutor + Send> = Box::new(Executor {

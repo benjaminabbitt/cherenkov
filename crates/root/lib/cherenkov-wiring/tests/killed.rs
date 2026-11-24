@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 mod common;
 
-use cherenkov_mutation::execution::{Budget, Observed, RawOutcome};
+use cherenkov_mutation::execution::{Budget, Observed};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_application::layer::Workers;
 use cherenkov_run_domain::RunStatus;
@@ -59,8 +59,8 @@ impl MutantExecutor for Logged {
             std::thread::sleep(Duration::from_secs(3600));
         }
         Ok(match plan.function.as_deref() {
-            Some("a") => exited(101),
-            _ => exited(0),
+            Some("a") => exited(101).into(),
+            _ => exited(0).into(),
         })
     }
 

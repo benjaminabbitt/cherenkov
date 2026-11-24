@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use cherenkov_mutation::execution::{Budget, Observed, RawOutcome};
+use cherenkov_mutation::execution::{Budget, Observed};
 use cherenkov_mutation::id::MutantId;
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::executor::{Driven, ExecError, MutantExecutor, Recording};

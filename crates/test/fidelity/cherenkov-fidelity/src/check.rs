@@ -2,14 +2,16 @@
 
 use std::time::{Duration, Instant};
 
-use cherenkov_mutation::execution::{Budget, RawOutcome, Tier, classify};
+use cherenkov_mutation::execution::{
+    Budget, Observed as Reported, RawOutcome, TestReport, TestResult, Tier, classify,
+};
 use cherenkov_mutation::plan::{MutantPlan, render_source};
 use cherenkov_mutation::profile::Profile;
 use cherenkov_run_ports::executor::{Driven, MutantExecutor};
 
 use crate::judge::{Judgement, Run, judge};
 use crate::source::ScratchProject;
-use cherenkov_exec_dap::libtest::{self, TestOutcome};
+use cherenkov_exec_dap::libtest::TestOutcome;
 
 /// What checking one mutant found.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,18 +112,18 @@ impl Debugger {
     pub fn new(executors: Vec<Box<dyn MutantExecutor>>) -> Result<Debugger, String> {
         let mut out = Vec::new();
         for mut ex in executors {
-            let (raw, output) = ex
-                .baseline_with_output(Budget::from_baseline(FIRST_RUN))
+            let Reported { outcome, tests } = ex
+                .baseline(Budget::from_baseline(FIRST_RUN))
                 .map_err(|e| e.to_string())?;
-            let RawOutcome::Exited { code: 0, wall, .. } = raw else {
+            let RawOutcome::Exited { code: 0, wall, .. } = outcome else {
                 return Err(format!(
-                    "unmutated tests do not pass under the debugger: {raw:?}"
+                    "unmutated tests do not pass under the debugger: {outcome:?}"
                 ));
             };
             out.push((
                 ex,
                 Budget::from_baseline(wall),
-                Run::Tests(libtest::parse(&output)),
+                Run::Tests(outcomes(&tests)),
             ));
         }
         let drives = vec![None; out.len()];
@@ -181,13 +183,16 @@ impl Debugger {
                     baseline_tests.keys().cloned().collect()
                 }
             };
-            let (raw, output) = ex
-                .run_with_output(plan, *budget)
+            let Reported {
+                outcome,
+                tests: reported,
+            } = ex
+                .run(plan, *budget)
                 .map_err(|e| format!("{} {}: {e}", plan.id, plan.site()))?;
-            if let Some(tier) = classify(&raw).tier {
+            if let Some(tier) = classify(&outcome).tier {
                 self.tiers.insert(plan.id.to_string(), tier);
             }
-            match program_run(&raw, &output, &expected) {
+            match program_run(&outcome, &reported, &expected) {
                 Program::Ends(observed) => return Ok(observed),
                 Program::NotReached(reason) => not_reached = Some(reason),
                 Program::Tests(t) => {
@@ -214,10 +219,25 @@ enum Program {
     Tests(std::collections::BTreeMap<String, TestOutcome>),
 }
 
-/// One program's run: its ending, its output, and the tests that were
-/// to run. Output that does not agree with the ending, or does not cover
-/// the tests, is incomplete, never a verdict.
-fn program_run(raw: &RawOutcome, output: &str, expected: &[String]) -> Program {
+/// The outcome of each test the program reported.
+fn outcomes(tests: &[TestReport]) -> std::collections::BTreeMap<String, TestOutcome> {
+    tests
+        .iter()
+        .map(|t| {
+            let outcome = match t.result {
+                TestResult::Passed => TestOutcome::Ok,
+                TestResult::Ignored => TestOutcome::Ignored,
+                TestResult::Failed(_) => TestOutcome::Failed,
+            };
+            (t.test.clone(), outcome)
+        })
+        .collect()
+}
+
+/// One program's run: its ending, the tests it reported, and the tests
+/// that were to run. Reports that do not agree with the ending, or do not
+/// cover the tests, are incomplete, never a verdict.
+fn program_run(raw: &RawOutcome, tests: &[TestReport], expected: &[String]) -> Program {
     match raw {
         RawOutcome::Unsupported { reason } => Program::Ends(Observed::Unsupported(reason.clone())),
         RawOutcome::Unviable { .. } => Program::Ends(Observed::Ran(Run::Unviable)),
@@ -227,7 +247,7 @@ fn program_run(raw: &RawOutcome, output: &str, expected: &[String]) -> Program {
         }
         RawOutcome::NotReached { reason } => Program::NotReached(reason.clone()),
         RawOutcome::Exited { code, .. } => {
-            let parsed = libtest::parse(output);
+            let parsed = outcomes(tests);
             match incomplete(*code, &parsed, expected) {
                 Some(why) => Program::Ends(Observed::Incomplete(why)),
                 None => Program::Tests(parsed),
@@ -320,16 +340,17 @@ mod tests {
     struct Fixed(RawOutcome);
 
     impl MutantExecutor for Fixed {
-        fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
-            Ok(self.0.clone())
+        fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Reported, ExecError> {
+            Ok(self.0.clone().into())
         }
 
-        fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+        fn baseline(&mut self, _: Budget) -> Result<Reported, ExecError> {
             Ok(RawOutcome::Exited {
                 code: 0,
                 tier: Tier::A,
                 wall: Duration::from_millis(1),
-            })
+            }
+            .into())
         }
     }
 
@@ -372,24 +393,18 @@ mod tests {
     }
 
     impl MutantExecutor for Scripted {
-        fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
-            Ok(self.raw.clone())
+        fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Reported, ExecError> {
+            Ok(Reported {
+                outcome: self.raw.clone(),
+                tests: cherenkov_exec_dap::libtest::reports(self.output),
+            })
         }
 
-        fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-            Ok(exited(0))
-        }
-
-        fn run_with_output(
-            &mut self,
-            _: &MutantPlan,
-            _: Budget,
-        ) -> Result<(RawOutcome, String), ExecError> {
-            Ok((self.raw.clone(), self.output.to_string()))
-        }
-
-        fn baseline_with_output(&mut self, _: Budget) -> Result<(RawOutcome, String), ExecError> {
-            Ok((exited(0), BASELINE_OUTPUT.to_string()))
+        fn baseline(&mut self, _: Budget) -> Result<Reported, ExecError> {
+            Ok(Reported {
+                outcome: exited(0),
+                tests: cherenkov_exec_dap::libtest::reports(BASELINE_OUTPUT),
+            })
         }
 
         fn driven(

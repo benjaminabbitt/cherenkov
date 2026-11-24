@@ -6,7 +6,7 @@ mod common;
 
 use std::time::Instant;
 
-use cherenkov_mutation::execution::{Budget, Observed, RawOutcome};
+use cherenkov_mutation::execution::{Budget, Observed};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_application::layer::Workers;
 use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
@@ -18,8 +18,8 @@ struct Instant8;
 impl MutantExecutor for Instant8 {
     fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         Ok(match plan.function.as_deref() {
-            Some("a") => exited(101),
-            _ => exited(0),
+            Some("a") => exited(101).into(),
+            _ => exited(0).into(),
         })
     }
 

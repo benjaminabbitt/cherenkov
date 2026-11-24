@@ -108,8 +108,8 @@ impl MutantExecutor for Fake {
     fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         self.runs.fetch_add(1, Ordering::SeqCst);
         Ok(match plan.function.as_deref() {
-            Some("a") => exited(101),
-            _ => exited(0),
+            Some("a") => exited(101).into(),
+            _ => exited(0).into(),
         })
     }
 
@@ -121,7 +121,6 @@ impl MutantExecutor for Fake {
         Some("calc-test".to_string())
     }
 }
-
 
 fn settings() -> Settings {
     Settings {

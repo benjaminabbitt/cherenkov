@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use cherenkov_mutation::execution::{Budget, RawOutcome, Observed, TestReport, classify};
+use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, TestReport, classify};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::executor::{Driven, MutantExecutor, Recording};
 
@@ -212,12 +212,7 @@ impl Worker {
 
     /// Run `plan` in test program `program`; then close the sessions beyond
     /// the cap, least recently used first.
-    pub fn run_in(
-        &mut self,
-        program: usize,
-        plan: &MutantPlan,
-        programs: &Programs,
-        ) -> Ran {
+    pub fn run_in(&mut self, program: usize, plan: &MutantPlan, programs: &Programs) -> Ran {
         let (Some(executor), Some(budget)) = (self.set.get_mut(program), programs.budget(program))
         else {
             return Ran {

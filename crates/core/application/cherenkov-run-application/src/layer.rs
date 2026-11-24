@@ -164,10 +164,7 @@ async fn work<C: Serving + 'static>(
     live: &LiveRuns,
     readers: Readers,
 ) -> Result<(), RunLayerError> {
-    let Workers {
-        mut sets,
-        jobs,
-    } = workers;
+    let Workers { mut sets, jobs } = workers;
     if sets.is_empty() {
         return Err(RunLayerError::Workers {
             reason: "no workers".to_string(),

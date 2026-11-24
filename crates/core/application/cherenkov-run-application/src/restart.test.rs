@@ -90,7 +90,6 @@ impl MutantExecutor for Executor {
     }
 }
 
-
 /// A runner of one worker over `core`, whose executor holds on its `hold`th
 /// run of the test.
 fn runner(
@@ -104,10 +103,7 @@ fn runner(
         hold,
         gate: gate.clone(),
     });
-    Runner::new(
-        core.clone(),
-        Pool::new(vec![Worker::new(vec![executor])]),
-    )
+    Runner::new(core.clone(), Pool::new(vec![Worker::new(vec![executor])]))
 }
 
 /// A run of `MUTANTS` mutants, planned and ready: its one program prepared,

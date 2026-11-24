@@ -103,7 +103,6 @@ impl MutantExecutor for Fake {
     }
 }
 
-
 fn settings() -> Settings {
     Settings {
         root: "/project".to_string(),

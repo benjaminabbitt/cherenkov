@@ -17,14 +17,14 @@ impl MutantExecutor for Quick {
         &mut self,
         _: &cherenkov_mutation::plan::MutantPlan,
         _: cherenkov_mutation::execution::Budget,
-    ) -> Result<cherenkov_mutation::execution::RawOutcome, ExecError> {
+    ) -> Result<cherenkov_mutation::execution::Observed, ExecError> {
         Ok(exited(0).into())
     }
 
     fn baseline(
         &mut self,
         _: cherenkov_mutation::execution::Budget,
-    ) -> Result<cherenkov_mutation::execution::RawOutcome, ExecError> {
+    ) -> Result<cherenkov_mutation::execution::Observed, ExecError> {
         Ok(exited(0).into())
     }
 }

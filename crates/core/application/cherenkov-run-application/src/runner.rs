@@ -36,8 +36,7 @@ use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, run_even
 use cherenkov_run_domain::observation;
 use cherenkov_run_domain::plan;
 use cherenkov_run_domain::{
-    DebuggerFailed, ProgramRun, ProgramRunReported, ProgramRunResult, Ran as Observed,
-    RunId, Unit,
+    DebuggerFailed, ProgramRun, ProgramRunReported, ProgramRunResult, Ran as Observed, RunId, Unit,
 };
 
 /// The runner's name, under which its positions are kept.
