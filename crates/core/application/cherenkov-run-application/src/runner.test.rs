@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use angzarr_embedded::v1::{Cover, EventBook, EventPage};
-use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
+use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, Tier};
 use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
 
 use super::*;
@@ -11,7 +11,7 @@ use crate::pool::Pool;
 use crate::test_plans::plans;
 use crate::testing::{Core, new_core, new_run};
 use crate::workers::Worker;
-use crate::workers::{self, Killer};
+use crate::workers;
 use cherenkov_run_domain::{PlanMutant, PlanRun, ProgramRunReported, Verdict};
 use cherenkov_run_ports::Edge;
 
@@ -29,16 +29,16 @@ fn exited(code: i32) -> RawOutcome {
 }
 
 impl MutantExecutor for Fake {
-    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         self.runs.fetch_add(1, Ordering::SeqCst);
         Ok(match plan.function.as_deref() {
-            Some("a") => exited(101),
-            _ => exited(0),
+            Some("a") => exited(101).into(),
+            _ => exited(0).into(),
         })
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 
     fn describe(&self) -> Option<String> {
@@ -46,9 +46,6 @@ impl MutantExecutor for Fake {
     }
 }
 
-fn explain(_: &str) -> Vec<Killer> {
-    Vec::new()
-}
 
 fn request(stream: &Cover, page: EventPage) -> ProjectRequest {
     ProjectRequest {
@@ -78,7 +75,7 @@ async fn projector(runs: &Arc<AtomicUsize>, programs: usize) -> (Arc<Core>, Uuid
         .map(|_| Box::new(Fake { runs: runs.clone() }) as Box<dyn MutantExecutor + Send>)
         .collect();
     let mut prepared = Vec::new();
-    workers::prepare(&plans, &mut set, 1, explain, &mut |p| {
+    workers::prepare(&plans, &mut set, 1, &mut |p| {
         prepared.push(p.unwrap())
     });
     for preparation in prepared {
@@ -89,7 +86,7 @@ async fn projector(runs: &Arc<AtomicUsize>, programs: usize) -> (Arc<Core>, Uuid
             .unwrap();
     }
     crate::test_plans::serve_policies(&core).await;
-    let projector = Runner::new(core.clone(), explain, Pool::new(vec![Worker::new(set)]));
+    let projector = Runner::new(core.clone(), Pool::new(vec![Worker::new(set)]));
     (core, run, projector)
 }
 
@@ -304,7 +301,7 @@ async fn test_a_ready_run_hands_its_mutants_on_with_their_plans_and_not_before()
     let runs = Arc::new(AtomicUsize::new(0));
     let mut set: Vec<Box<dyn MutantExecutor + Send>> = vec![Box::new(Fake { runs })];
     let mut prepared = Vec::new();
-    workers::prepare(&plans(), &mut set, 1, explain, &mut |p| {
+    workers::prepare(&plans(), &mut set, 1, &mut |p| {
         prepared.push(p.unwrap())
     });
     let fact = crate::programs::report(prepared.remove(0), &plans());
@@ -363,7 +360,7 @@ async fn run_a(known: Known) -> usize {
         run_reads: AtomicUsize::new(0),
     });
     let set: Vec<Box<dyn MutantExecutor + Send>> = vec![Box::new(Fake { runs })];
-    let mut runner = Runner::new(counting.clone(), explain, Pool::new(vec![Worker::new(set)]));
+    let mut runner = Runner::new(counting.clone(), Pool::new(vec![Worker::new(set)]));
     if let Known::Nothing | Known::Run = known {
         let live = LiveRuns::default();
         if let Known::Run = known {

@@ -26,7 +26,7 @@ use crate::pool::Pool;
 use crate::programs;
 use crate::resume;
 use crate::runner::Runner;
-use crate::workers::{self, Explain, Failed, Preparation, Worker};
+use crate::workers::{self, Failed, Preparation, Worker};
 use cherenkov_run_domain::events::{RunEvent, run_event};
 use cherenkov_run_domain::plan;
 use cherenkov_run_domain::{
@@ -42,12 +42,10 @@ pub struct Settings {
 }
 
 /// What the runner drives: one executor per test program for each
-/// worker, how many programs to prepare at once, and how a test program's
-/// output names its failing tests.
+/// worker, and how many programs to prepare at once.
 pub struct Workers {
     pub sets: Vec<Vec<Box<dyn MutantExecutor + Send>>>,
     pub jobs: usize,
-    pub explain: Explain,
 }
 
 /// What a started run came to: which run it was, how it ended, and whether
@@ -169,7 +167,6 @@ async fn work<C: Serving + 'static>(
     let Workers {
         mut sets,
         jobs,
-        explain,
     } = workers;
     if sets.is_empty() {
         return Err(RunLayerError::Workers {
@@ -184,11 +181,11 @@ async fn work<C: Serving + 'static>(
     }
     let instances = NonZeroUsize::MIN.saturating_add(sets.len());
     let pool = Pool::new(sets.into_iter().map(Worker::new).collect());
-    let runner = Runner::new(core.clone(), explain, pool.clone()).knowing(live.clone());
+    let runner = Runner::new(core.clone(), pool.clone()).knowing(live.clone());
     let subscriptions = host::subscriptions(live, readers, Some((Box::new(runner), instances)));
     let progress = Progress::default();
     let prepare = async {
-        let prepared = prepare_programs(core.as_ref(), run, plans, first, jobs, explain).await;
+        let prepared = prepare_programs(core.as_ref(), run, plans, first, jobs).await;
         progress.prepared(&prepared);
         prepared.map(|first| pool.give(Worker::new(first)))
     };
@@ -244,12 +241,11 @@ async fn prepare_programs<E: Edge>(
     plans: &[MutantPlan],
     mut first: Vec<Box<dyn MutantExecutor + Send>>,
     jobs: usize,
-    explain: Explain,
 ) -> Result<Vec<Box<dyn MutantExecutor + Send>>, RunLayerError> {
     let planned = plans.to_vec();
     let (to, mut told) = unbounded_channel();
     let preparing = tokio::task::spawn_blocking(move || {
-        workers::prepare(&planned, &mut first, jobs, explain, &mut |p| {
+        workers::prepare(&planned, &mut first, jobs, &mut |p| {
             let _ = to.send(p);
         });
         first

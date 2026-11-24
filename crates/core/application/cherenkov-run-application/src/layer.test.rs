@@ -5,7 +5,7 @@ use std::time::Duration;
 use angzarr_embedded::OnRetryable;
 use angzarr_embedded::angzarr_ports::memory::MemoryStore;
 use cherenkov_embedded_edge::RunStore;
-use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
+use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, Tier};
 use cherenkov_run_domain::Verdict;
 use cherenkov_run_domain::events::run_event;
 use cherenkov_run_ports::Edge;
@@ -15,7 +15,6 @@ use super::*;
 use crate::host::Readers;
 use crate::test_plans::{many, plans};
 use crate::testing::{new_core, new_core_on, new_run, recording, recording_to};
-use crate::workers::Killer;
 
 /// What a run came to: how it ended, what it printed (the names of the run's
 /// events in the order the output was handed them), and what its stream
@@ -87,16 +86,16 @@ fn exited(code: i32) -> RawOutcome {
 }
 
 impl MutantExecutor for Fake {
-    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         self.runs.fetch_add(1, Ordering::SeqCst);
         Ok(match plan.function.as_deref() {
-            Some("a") => exited(101),
-            _ => exited(0),
+            Some("a") => exited(101).into(),
+            _ => exited(0).into(),
         })
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 
     fn describe(&self) -> Option<String> {
@@ -104,9 +103,6 @@ impl MutantExecutor for Fake {
     }
 }
 
-fn explain(_: &str) -> Vec<Killer> {
-    Vec::new()
-}
 
 fn settings() -> Settings {
     Settings {
@@ -125,7 +121,6 @@ fn workers(runs: &Arc<AtomicUsize>) -> Workers {
     Workers {
         sets: vec![set(), set()],
         jobs: 2,
-        explain,
     }
 }
 
@@ -212,7 +207,6 @@ fn test_a_run_with_no_workers_or_no_test_programs_is_refused_saying_so() {
     let none = Workers {
         sets: Vec::new(),
         jobs: 1,
-        explain,
     };
     let Err(RunLayerError::Workers { reason }) = run(&plans(), Some(none)).status else {
         panic!("a run with no workers");
@@ -221,7 +215,6 @@ fn test_a_run_with_no_workers_or_no_test_programs_is_refused_saying_so() {
     let empty = Workers {
         sets: vec![Vec::new()],
         jobs: 1,
-        explain,
     };
     let Err(RunLayerError::Workers { reason }) = run(&plans(), Some(empty)).status else {
         panic!("a run with no test programs");
@@ -233,12 +226,12 @@ fn test_a_run_with_no_workers_or_no_test_programs_is_refused_saying_so() {
 struct Broken;
 
 impl MutantExecutor for Broken {
-    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(101))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(101).into())
     }
 }
 
@@ -247,7 +240,6 @@ fn test_a_run_whose_workers_cannot_run_fails_saying_why() {
     let broken = Workers {
         sets: vec![vec![Box::new(Broken)]],
         jobs: 1,
-        explain,
     };
     let ran = run(&plans(), Some(broken));
     let Err(RunLayerError::Workers { reason }) = ran.status else {
@@ -269,11 +261,11 @@ fn test_a_run_whose_workers_cannot_run_fails_saying_why() {
 struct Panicking;
 
 impl MutantExecutor for Panicking {
-    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
         panic!("the debugger fell over");
     }
 }
@@ -283,7 +275,6 @@ fn test_a_preparation_that_panics_finishes_the_run_failed_and_says_so() {
     let panicking = Workers {
         sets: vec![vec![Box::new(Panicking)]],
         jobs: 1,
-        explain,
     };
     let ran = run(&plans(), Some(panicking));
     let Err(RunLayerError::Workers { reason }) = ran.status else {
@@ -330,18 +321,18 @@ struct Slow {
 }
 
 impl MutantExecutor for Slow {
-    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         if plan.function.as_deref() == Some("b") {
             self.decided.wait();
         }
-        Ok(exited(101))
+        Ok(exited(101).into())
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
         if self.program == "slow" {
             self.prepared.wait();
         }
-        Ok(exited(0))
+        Ok(exited(0).into())
     }
 
     fn describe(&self) -> Option<String> {
@@ -369,7 +360,6 @@ fn test_each_event_is_printed_as_it_happens_while_later_work_is_still_running() 
             vec![set("quick"), set("slow")],
         ],
         jobs: 2,
-        explain,
     };
     let (to, names) = std::sync::mpsc::channel();
     let running = std::thread::spawn(move || {
@@ -420,7 +410,7 @@ struct AWaitsForB {
 }
 
 impl MutantExecutor for AWaitsForB {
-    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         if plan.function.as_deref() == Some("a") {
             let started = std::time::Instant::now();
             self.b_done.wait_for(Duration::from_secs(5));
@@ -430,11 +420,11 @@ impl MutantExecutor for AWaitsForB {
         } else {
             self.b_done.open();
         }
-        Ok(exited(101))
+        Ok(exited(101).into())
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 }
 
@@ -451,7 +441,6 @@ fn test_mutants_run_on_the_workers_at_once() {
     let workers = Workers {
         sets: vec![set(), set()],
         jobs: 2,
-        explain,
     };
     assert_eq!(
         run(&plans(), Some(workers)).status,
@@ -487,7 +476,6 @@ fn test_many_workers_decide_every_mutant_once_with_no_write_racing_on_any_stream
     let workers = Workers {
         sets: (0..8).map(|_| set()).collect(),
         jobs: 2,
-        explain,
     };
     let store = crate::yielding::Yielding::default();
     let ran = run_retrying(store.clone(), strict(), &plans, Some(workers));
@@ -566,7 +554,6 @@ fn test_measure_the_fan_in_s_cost_as_the_run_s_stream_grows() {
     let workers = Workers {
         sets: (0..8).map(|_| set()).collect(),
         jobs: 2,
-        explain,
     };
     let whole = std::time::Instant::now();
     run(&plans, Some(workers)).status.unwrap();

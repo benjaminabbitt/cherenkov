@@ -146,7 +146,8 @@ pub struct TestReport {
 }
 
 impl TestReport {
-    fn is_failed(&self) -> bool {
+    /// Whether the test failed.
+    pub fn is_failed(&self) -> bool {
         matches!(self.result, TestResult::Failed(_))
     }
 

@@ -273,9 +273,6 @@ fn populate(path: &Path, runs: usize) {
         }
     }
 
-    fn explain(_: &str) -> Vec<cherenkov_run_application::workers::Killer> {
-        Vec::new()
-    }
     for _ in 0..runs {
         let settings = Settings {
             root: "/project".to_string(),
@@ -285,7 +282,6 @@ fn populate(path: &Path, runs: usize) {
         let workers = Workers {
             sets: vec![Vec::new()],
             jobs: 1,
-            explain,
         };
         let readers = Readers::printing(Box::new(Silent));
         let started =

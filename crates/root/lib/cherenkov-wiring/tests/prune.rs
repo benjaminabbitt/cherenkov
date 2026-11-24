@@ -8,7 +8,7 @@ mod common;
 
 use cherenkov_run_application::layer::Workers;
 use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
-use common::{Kept, exited, explain, plans_of, readers, scratch, settings};
+use common::{Kept, exited, plans_of, readers, scratch, settings};
 
 struct Quick;
 
@@ -18,14 +18,14 @@ impl MutantExecutor for Quick {
         _: &cherenkov_mutation::plan::MutantPlan,
         _: cherenkov_mutation::execution::Budget,
     ) -> Result<cherenkov_mutation::execution::RawOutcome, ExecError> {
-        Ok(exited(0))
+        Ok(exited(0).into())
     }
 
     fn baseline(
         &mut self,
         _: cherenkov_mutation::execution::Budget,
     ) -> Result<cherenkov_mutation::execution::RawOutcome, ExecError> {
-        Ok(exited(0))
+        Ok(exited(0).into())
     }
 }
 
@@ -34,7 +34,6 @@ fn quick() -> Workers {
     Workers {
         sets: vec![vec![executor]],
         jobs: 1,
-        explain,
     }
 }
 

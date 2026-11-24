@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use angzarr_embedded::v1::Uuid;
-use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
+use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, Tier};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, run_event};
 use cherenkov_run_domain::{RunStatus, Verdict};
@@ -21,7 +21,6 @@ use crate::layer::{Settings, Started, Workers, plan_run, start};
 use crate::test_plans::many;
 use crate::testing::{Core, new_core, new_run, recording, silent};
 use crate::verdicts::VerdictFile;
-use crate::workers::Killer;
 
 const MUTANTS: usize = 6;
 
@@ -67,24 +66,21 @@ fn exited(code: i32) -> RawOutcome {
 }
 
 impl MutantExecutor for Executor {
-    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         if self.ledger.begin(&plan.id.0) == self.hold {
             let _ = self.gate.lock().unwrap().recv();
         }
         Ok(match plan.function.as_deref() {
-            Some("a") => exited(101),
-            _ => exited(0),
+            Some("a") => exited(101).into(),
+            _ => exited(0).into(),
         })
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 }
 
-fn explain(_: &str) -> Vec<Killer> {
-    Vec::new()
-}
 
 /// One worker, holding on the ledger's `hold`th run.
 fn workers(ledger: &Arc<Ledger>, hold: usize, gate: &Arc<Mutex<Receiver<()>>>) -> Workers {
@@ -96,7 +92,6 @@ fn workers(ledger: &Arc<Ledger>, hold: usize, gate: &Arc<Mutex<Receiver<()>>>) -
     Workers {
         sets: vec![vec![executor]],
         jobs: 1,
-        explain,
     }
 }
 
@@ -464,7 +459,6 @@ async fn test_a_run_planned_for_one_program_is_not_the_run_of_workers_driving_tw
         Workers {
             sets: vec![vec![program(), program()]],
             jobs: 1,
-            explain,
         }
     };
     let ran = started(&core, &new_run(), &plans, &settings(), Some(two(&ledger))).await;

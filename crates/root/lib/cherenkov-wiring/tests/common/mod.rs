@@ -18,7 +18,6 @@ use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::Settings;
 use cherenkov_run_application::verdicts::VerdictFile;
-use cherenkov_run_application::workers::Killer;
 use cherenkov_run_ports::Report;
 use cherenkov_run_ports::syntax::SyntaxPort;
 use cherenkov_run_wire::output::VerdictLine;
@@ -108,6 +107,3 @@ pub fn scratch(name: &str) -> PathBuf {
     dir
 }
 
-pub fn explain(_: &str) -> Vec<Killer> {
-    Vec::new()
-}

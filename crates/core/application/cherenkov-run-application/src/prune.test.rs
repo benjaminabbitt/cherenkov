@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use angzarr_embedded::v1::{Cover, EventPage, Uuid};
-use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
+use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, Tier};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
 use cherenkov_run_ports::{Edge, EdgeError, Listed, Listing, Purging, Recovery, Report};
@@ -18,18 +18,17 @@ use crate::layer::{Settings, Workers, plan_run, start};
 use crate::prune::{ATTEMPTS, prune};
 use crate::test_plans::many;
 use crate::testing::{Core, new_core, new_run, silent};
-use crate::workers::Killer;
 
 /// Kills nothing.
 struct Surviving;
 
 impl MutantExecutor for Surviving {
-    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited())
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited().into())
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited())
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited().into())
     }
 }
 
@@ -41,9 +40,6 @@ fn exited() -> RawOutcome {
     }
 }
 
-fn explain(_: &str) -> Vec<Killer> {
-    Vec::new()
-}
 
 fn settings() -> Settings {
     Settings {
@@ -63,7 +59,6 @@ async fn finished(core: &Arc<Core>, plans: &[MutantPlan]) -> Uuid {
     let workers = Workers {
         sets: vec![vec![executor]],
         jobs: 1,
-        explain,
     };
     let started = start(
         core,

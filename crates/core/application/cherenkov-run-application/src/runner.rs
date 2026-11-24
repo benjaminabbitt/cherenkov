@@ -31,12 +31,12 @@ use crate::live::LiveRuns;
 use crate::policies::{handed, handler_error};
 use crate::pool::Pool;
 use crate::programs;
-use crate::workers::{Explain, Programs, Ran, Seen};
+use crate::workers::{Programs, Ran, Seen};
 use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, run_event};
 use cherenkov_run_domain::observation;
 use cherenkov_run_domain::plan;
 use cherenkov_run_domain::{
-    DebuggerFailed, KilledBy, ProgramRun, ProgramRunReported, ProgramRunResult, Ran as Observed,
+    DebuggerFailed, ProgramRun, ProgramRunReported, ProgramRunResult, Ran as Observed,
     RunId, Unit,
 };
 
@@ -47,7 +47,6 @@ pub const RUNNER: &str = "runner";
 /// mutant in one program.
 pub struct Runner<E> {
     core: Arc<E>,
-    explain: Explain,
     /// The workers no instance holds.
     pool: Arc<Pool>,
     /// What the live runs read model knows of the runs' preparation, read
@@ -70,10 +69,9 @@ struct Done {
 impl<E> Runner<E> {
     /// The runner over `core`'s streams, on the workers of `pool`:
     /// subscribe it with one instance per worker.
-    pub fn new(core: Arc<E>, explain: Explain, pool: Arc<Pool>) -> Runner<E> {
+    pub fn new(core: Arc<E>, pool: Arc<Pool>) -> Runner<E> {
         Runner {
             core,
-            explain,
             pool,
             live: None,
             programs: Mutex::new(BTreeMap::new()),
@@ -98,9 +96,8 @@ impl<E> Runner<E> {
         programs: Arc<Programs>,
     ) -> Result<Ran, RunLayerError> {
         let mut worker = self.pool.take().await;
-        let explain = self.explain;
         let ran = tokio::task::spawn_blocking(move || {
-            let ran = worker.run_in(program, &plan, &programs, explain);
+            let ran = worker.run_in(program, &plan, &programs);
             (worker, ran)
         })
         .await;
@@ -268,20 +265,9 @@ fn program_run(ran: Ran, programs: &Programs) -> ProgramRun {
             Seen::Failed { reason } => ProgramRunResult::Failed(DebuggerFailed { reason }),
             Seen::Observed { raw, killed_by } => ProgramRunResult::Ran(Observed {
                 observation: Some(observation::encode(&raw)),
-                killed_by: killed_by.into_iter().map(killed).collect(),
+                killed_by: observation::killed_by(&killed_by),
             }),
         },
-    }
-}
-
-/// A failing test as the fact tells it.
-fn killed(killer: crate::workers::Killer) -> KilledBy {
-    KilledBy {
-        test: killer.test,
-        location: killer.location,
-        message: killer.message,
-        got: killer.got,
-        expected: killer.expected,
     }
 }
 

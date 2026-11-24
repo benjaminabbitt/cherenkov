@@ -6,25 +6,25 @@ mod common;
 
 use std::time::Instant;
 
-use cherenkov_mutation::execution::{Budget, RawOutcome};
+use cherenkov_mutation::execution::{Budget, Observed, RawOutcome};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_application::layer::Workers;
 use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
-use common::{Kept, exited, explain, plans_of, readers, scratch, settings};
+use common::{Kept, exited, plans_of, readers, scratch, settings};
 
 /// Kills the mutants in `a`, at once.
 struct Instant8;
 
 impl MutantExecutor for Instant8 {
-    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         Ok(match plan.function.as_deref() {
             Some("a") => exited(101),
             _ => exited(0),
         })
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 }
 
@@ -33,7 +33,6 @@ fn workers() -> Workers {
     Workers {
         sets: (0..8).map(|_| set()).collect(),
         jobs: 2,
-        explain,
     }
 }
 

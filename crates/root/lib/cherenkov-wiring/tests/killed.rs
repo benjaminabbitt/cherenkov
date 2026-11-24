@@ -14,12 +14,12 @@ use std::time::{Duration, Instant};
 
 mod common;
 
-use cherenkov_mutation::execution::{Budget, RawOutcome};
+use cherenkov_mutation::execution::{Budget, Observed, RawOutcome};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_application::layer::Workers;
 use cherenkov_run_domain::RunStatus;
 use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
-use common::{Kept, exited, explain, plans_of, readers, scratch, settings};
+use common::{Kept, exited, plans_of, readers, scratch, settings};
 
 const MUTANTS: usize = 6;
 
@@ -53,7 +53,7 @@ impl Logged {
 }
 
 impl MutantExecutor for Logged {
-    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         let begun = self.note(&plan.id.0);
         if self.hold && begun == HELD {
             std::thread::sleep(Duration::from_secs(3600));
@@ -64,8 +64,8 @@ impl MutantExecutor for Logged {
         })
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 }
 
@@ -77,7 +77,6 @@ fn workers(ledger: &Path, hold: bool) -> Workers {
     Workers {
         sets: vec![vec![executor]],
         jobs: 1,
-        explain,
     }
 }
 

@@ -10,7 +10,7 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use cherenkov_mutation::execution::{Budget, RawOutcome, classify};
+use cherenkov_mutation::execution::{Budget, RawOutcome, Observed, TestReport, classify};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::executor::{Driven, MutantExecutor, Recording};
 
@@ -22,39 +22,6 @@ const FIRST_RUN: Duration = Duration::from_secs(120);
 /// worker that has touched every program of a workspace would hold one for
 /// each.
 pub const SESSIONS_PER_WORKER: usize = 2;
-
-/// A test that failed, as the test runner's output says it did.
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct Killer {
-    pub test: String,
-    /// `file:line:col` of the failure.
-    pub location: Option<String>,
-    pub message: String,
-    /// For an equality assertion, the value the mutant produced.
-    pub got: Option<String>,
-    /// For an equality assertion, the value the test expects.
-    pub expected: Option<String>,
-}
-
-impl Killer {
-    /// `test at location: got X, expected Y`, or `test at location: message`.
-    pub fn line(&self) -> String {
-        let at = self
-            .location
-            .as_ref()
-            .map(|l| format!(" at {l}"))
-            .unwrap_or_default();
-        match (&self.got, &self.expected) {
-            (Some(got), Some(expected)) => {
-                format!("{}{at}: got {got}, expected {expected}", self.test)
-            }
-            _ => format!("{}{at}: {}", self.test, self.message),
-        }
-    }
-}
-
-/// The failing tests a test program's output reports.
-pub type Explain = fn(&str) -> Vec<Killer>;
 
 /// What preparing one test program found: its unmutated run as the
 /// executor observed it, and, when that passed, what recording it found.
@@ -94,7 +61,7 @@ pub enum Seen {
     /// mutant, the failing tests the program's output names.
     Observed {
         raw: RawOutcome,
-        killed_by: Vec<Killer>,
+        killed_by: Vec<TestReport>,
     },
     /// The debugger (or the harness driving it) failed on this mutant: it
     /// costs this mutant only, and the executor starts a fresh session for
@@ -169,7 +136,6 @@ pub fn prepare(
     plans: &[MutantPlan],
     set: &mut [Box<dyn MutantExecutor + Send>],
     jobs: usize,
-    explain: Explain,
     report: &mut dyn FnMut(Result<Preparation, Failed>),
 ) {
     if set.is_empty() {
@@ -191,7 +157,7 @@ pub fn prepare(
                 scope.spawn(move || {
                     let describe = executor.describe();
                     let prepared = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        prepare_one(executor.as_mut(), plans, explain)
+                        prepare_one(executor.as_mut(), plans)
                     }))
                     .unwrap_or_else(|_| Err("a test program's preparation panicked".into()));
                     let _ = sender.send((offset + i, describe, prepared));
@@ -251,8 +217,7 @@ impl Worker {
         program: usize,
         plan: &MutantPlan,
         programs: &Programs,
-        explain: Explain,
-    ) -> Ran {
+        ) -> Ran {
         let (Some(executor), Some(budget)) = (self.set.get_mut(program), programs.budget(program))
         else {
             return Ran {
@@ -267,7 +232,7 @@ impl Worker {
         let driven = programs
             .driven(program, &plan.id.0)
             .unwrap_or(Driven::Every);
-        let ran = run_one(program, executor.as_mut(), budget, driven, plan, explain);
+        let ran = run_one(program, executor.as_mut(), budget, driven, plan);
         if ran.seen != Seen::NotCalled {
             self.open.used(program, &mut self.set);
         }
@@ -282,7 +247,6 @@ fn run_one(
     budget: Budget,
     driven: Driven,
     plan: &MutantPlan,
-    explain: Explain,
 ) -> Ran {
     let started = Instant::now();
     let tests = match driven {
@@ -304,29 +268,8 @@ fn run_one(
             Vec::new()
         }
     };
-    let seen = match executor.run_with_output(plan, budget) {
-        Ok((raw, output)) => {
-            let detected = classify(&raw).verdict.detected();
-            let killed_by = explain(&output);
-            if !detected && !killed_by.is_empty() {
-                // The exit status and the report disagree: neither can be
-                // trusted, and a survivor is not to be claimed from either.
-                let tests: Vec<&str> = killed_by.iter().map(|k| k.test.as_str()).collect();
-                Seen::Failed {
-                    reason: format!(
-                        "the run's exit status says it passed (exit code 0) but its output reports failed test(s): {}",
-                        tests.join(", ")
-                    ),
-                }
-            } else if detected {
-                Seen::Observed { raw, killed_by }
-            } else {
-                Seen::Observed {
-                    raw,
-                    killed_by: Vec::new(),
-                }
-            }
-        }
+    let seen = match executor.run(plan, budget) {
+        Ok(observed) => seen_of(observed),
         Err(e) => Seen::Failed {
             reason: e.to_string(),
         },
@@ -336,6 +279,29 @@ fn run_one(
         took: started.elapsed(),
         tests,
         seen,
+    }
+}
+
+/// What an executor's observation of a run says: a kill names the tests
+/// that failed, and a run whose exit status and test reports disagree is a
+/// failure of the run, not a verdict.
+fn seen_of(observed: Observed) -> Seen {
+    let detected = classify(&observed.outcome).verdict.detected();
+    let killed_by = observed.failures();
+    if !detected && !killed_by.is_empty() {
+        // The exit status and the report disagree: neither can be
+        // trusted, and a survivor is not to be claimed from either.
+        let tests: Vec<&str> = killed_by.iter().map(|k| k.test.as_str()).collect();
+        return Seen::Failed {
+            reason: format!(
+                "the run's exit status says it passed (exit code 0) but its output reports failed test(s): {}",
+                tests.join(", ")
+            ),
+        };
+    }
+    Seen::Observed {
+        raw: observed.outcome,
+        killed_by: if detected { killed_by } else { Vec::new() },
     }
 }
 
@@ -361,11 +327,13 @@ impl OpenSessions {
 fn prepare_one(
     executor: &mut (dyn MutantExecutor + Send),
     plans: &[MutantPlan],
-    explain: Explain,
 ) -> Result<Preparation, String> {
     let started = Instant::now();
-    let (baseline, output) = executor
-        .baseline_with_output(Budget::from_baseline(FIRST_RUN))
+    let Observed {
+        outcome: baseline,
+        tests,
+    } = executor
+        .baseline(Budget::from_baseline(FIRST_RUN))
         .map_err(|e| e.to_string())?;
     let describe = executor.describe();
     let RawOutcome::Exited { code: 0, wall, .. } = &baseline else {
@@ -374,7 +342,11 @@ fn prepare_one(
         return Ok(Preparation {
             program: 0,
             describe,
-            baseline_failures: explain(&output).iter().map(Killer::line).collect(),
+            baseline_failures: tests
+                .iter()
+                .filter(|t| t.is_failed())
+                .map(TestReport::line)
+                .collect(),
             baseline,
             took: started.elapsed(),
             recording: None,

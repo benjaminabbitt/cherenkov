@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use angzarr_embedded::angzarr_router::router::DynProjectorHandler;
 use angzarr_embedded::v1::Uuid;
-use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
+use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, Tier};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, run_event};
 use cherenkov_run_domain::{PlanRun, RunStatus};
@@ -28,7 +28,7 @@ use crate::pool::Pool;
 use crate::runner::Runner;
 use crate::test_plans::{executables, many, prepared};
 use crate::testing::silent;
-use crate::workers::{Killer, Worker};
+use crate::workers::Worker;
 
 const MUTANTS: usize = 6;
 
@@ -74,25 +74,22 @@ fn exited(code: i32) -> RawOutcome {
 }
 
 impl MutantExecutor for Executor {
-    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         if self.ledger.begin(&plan.id.0) == self.hold {
             // Released when the test lets go of the gate's sender.
             let _ = self.gate.lock().unwrap().recv();
         }
         Ok(match plan.function.as_deref() {
-            Some("a") => exited(101),
-            _ => exited(0),
+            Some("a") => exited(101).into(),
+            _ => exited(0).into(),
         })
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 }
 
-fn explain(_: &str) -> Vec<Killer> {
-    Vec::new()
-}
 
 /// A runner of one worker over `core`, whose executor holds on its `hold`th
 /// run of the test.
@@ -109,7 +106,6 @@ fn runner(
     });
     Runner::new(
         core.clone(),
-        explain,
         Pool::new(vec![Worker::new(vec![executor])]),
     )
 }

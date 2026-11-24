@@ -28,7 +28,7 @@ use cherenkov_mutation::types::DefaultFacts;
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::{Settings, Workers};
 use cherenkov_run_application::verdicts::VerdictFile;
-use cherenkov_run_application::workers::{Killer, SESSIONS_PER_WORKER};
+use cherenkov_run_application::workers::SESSIONS_PER_WORKER;
 use cherenkov_run_ports::executor::MutantExecutor;
 use cherenkov_syntax::TreeSitterSyntax;
 
@@ -411,7 +411,6 @@ fn workers_of(sets: Vec<Vec<Box<dyn MutantExecutor + Send>>>, jobs: usize) -> Wo
     Workers {
         sets,
         jobs,
-        explain,
     }
 }
 
@@ -575,22 +574,6 @@ fn machine_jobs(programs: &[cherenkov_exec_dap::toolchain::TestProgram]) -> usiz
         per_worker / MIB
     );
     jobs
-}
-
-/// What caught a mutant: each failing test with where it failed and, for an
-/// equality assertion, the value the mutant produced against the value the
-/// test expects (`assert_eq!(actual, expected)`).
-fn explain(output: &str) -> Vec<Killer> {
-    cherenkov_exec_dap::libtest::failures(output)
-        .into_iter()
-        .map(|(test, f)| Killer {
-            test,
-            location: f.location,
-            message: f.message,
-            got: f.left,
-            expected: f.right,
-        })
-        .collect()
 }
 
 /// An explicit path, else `name` on PATH, else `$HOME/go/bin/name`.

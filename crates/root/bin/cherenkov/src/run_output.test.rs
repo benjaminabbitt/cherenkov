@@ -7,14 +7,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
+use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, Tier};
 use cherenkov_mutation::operator::catalog;
 use cherenkov_mutation::plan::{MutantPlan, plan_file};
 use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_run_application::error::RunLayerError;
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::{Settings, Workers};
-use cherenkov_run_application::workers::Killer;
 use cherenkov_run_domain::{OperatorSet, RunStatus};
 use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
 use cherenkov_run_ports::syntax::SyntaxPort;
@@ -106,7 +105,7 @@ fn exited(code: i32) -> RawOutcome {
 }
 
 impl MutantExecutor for Fake {
-    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         self.runs.fetch_add(1, Ordering::SeqCst);
         Ok(match plan.function.as_deref() {
             Some("a") => exited(101),
@@ -114,8 +113,8 @@ impl MutantExecutor for Fake {
         })
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 
     fn describe(&self) -> Option<String> {
@@ -123,9 +122,6 @@ impl MutantExecutor for Fake {
     }
 }
 
-fn explain(_: &str) -> Vec<Killer> {
-    Vec::new()
-}
 
 fn settings() -> Settings {
     Settings {
@@ -144,7 +140,6 @@ fn workers(runs: &Arc<AtomicUsize>) -> Workers {
     Workers {
         sets: vec![set(), set()],
         jobs: 2,
-        explain,
     }
 }
 
@@ -243,12 +238,12 @@ fn test_a_dry_run_plans_the_run_and_runs_nothing() {
 struct Broken;
 
 impl MutantExecutor for Broken {
-    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(101))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(101).into())
     }
 }
 
@@ -257,7 +252,6 @@ fn test_a_run_whose_workers_cannot_run_fails_saying_why() {
     let broken = Workers {
         sets: vec![vec![Box::new(Broken)]],
         jobs: 1,
-        explain,
     };
     let out = Shared::default();
     let error = run(
@@ -349,18 +343,18 @@ struct Slow {
 }
 
 impl MutantExecutor for Slow {
-    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         if plan.function.as_deref() == Some("b") {
             self.decided.wait();
         }
-        Ok(exited(101))
+        Ok(exited(101).into())
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
         if self.program == "slow" {
             self.prepared.wait();
         }
-        Ok(exited(0))
+        Ok(exited(0).into())
     }
 
     fn describe(&self) -> Option<String> {
@@ -400,7 +394,6 @@ fn test_each_event_is_written_as_it_happens_while_later_work_is_still_running() 
             vec![set("quick"), set("slow")],
         ],
         jobs: 2,
-        explain,
     };
     let (to, lines) = std::sync::mpsc::channel();
     let running = std::thread::spawn(move || {

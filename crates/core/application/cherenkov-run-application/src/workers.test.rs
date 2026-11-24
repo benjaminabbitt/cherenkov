@@ -1,4 +1,4 @@
-use cherenkov_mutation::execution::Tier;
+use cherenkov_mutation::execution::{Failure, Observed, TestResult, Tier};
 use cherenkov_run_ports::executor::{ExecError, Selection};
 
 use super::*;
@@ -20,26 +20,20 @@ struct Fake {
 }
 
 impl MutantExecutor for Fake {
-    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
-        self.run_with_output(plan, Budget::from_baseline(Duration::ZERO))
-            .map(|(raw, _)| raw)
-    }
-
-    fn run_with_output(
-        &mut self,
-        plan: &MutantPlan,
-        _: Budget,
-    ) -> Result<(RawOutcome, String), ExecError> {
+    fn run(&mut self, plan: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         let function = plan.function.clone().unwrap_or_default();
         self.runs.push(function.clone());
         Ok(match function.as_str() {
-            "a" => (exited(101), "FAILED test_a".to_string()),
-            _ => (exited(0), String::new()),
+            "a" => Observed {
+                outcome: exited(101),
+                tests: vec![killer("test_a")],
+            },
+            _ => exited(0).into(),
         })
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 
     fn driven(
@@ -64,19 +58,17 @@ impl MutantExecutor for Fake {
     }
 }
 
-/// `test_a` failed, at the line the fake's output names.
-fn explain(output: &str) -> Vec<Killer> {
-    output
-        .strip_prefix("FAILED ")
-        .map(|test| Killer {
-            test: test.to_string(),
+/// `test` failed, at the line the fake's output names.
+fn killer(test: &str) -> TestReport {
+    TestReport {
+        test: test.to_string(),
+        result: TestResult::Failed(Failure {
             location: Some("tests/calc.rs:5:5".to_string()),
             message: "assertion failed".to_string(),
             got: Some("-1".to_string()),
             expected: Some("5".to_string()),
-        })
-        .into_iter()
-        .collect()
+        }),
+    }
 }
 
 /// What preparing and then running every plan in every program in turn on
@@ -122,11 +114,10 @@ fn run(
     plans: &[MutantPlan],
     mut sets: Vec<Vec<Box<dyn MutantExecutor + Send>>>,
     jobs: usize,
-    explain: Explain,
     told: &mut Told,
 ) -> Result<(), Failed> {
     let mut failed = None;
-    prepare(plans, &mut sets[0], jobs, explain, &mut |p| match p {
+    prepare(plans, &mut sets[0], jobs, &mut |p| match p {
         Ok(preparation) => told.prepared.push(preparation),
         Err(f) => failed = Some(f),
     });
@@ -142,7 +133,7 @@ fn run(
     }
     for (k, plan) in plans.iter().enumerate() {
         let ran = (0..programs.len())
-            .map(|program| workers[k % n].run_in(program, plan, &programs, explain))
+            .map(|program| workers[k % n].run_in(program, plan, &programs))
             .collect();
         told.ran.push(ran);
     }
@@ -156,7 +147,7 @@ fn run_fake(b_called: bool) -> Told {
         b_called,
     })];
     let mut told = Told::default();
-    run(&plans, vec![set], 1, explain, &mut told).unwrap();
+    run(&plans, vec![set], 1, &mut told).unwrap();
     told
 }
 
@@ -183,7 +174,7 @@ fn test_a_run_that_fails_a_test_is_told_with_the_tests_that_killed_it_and_those_
         a.seen,
         Seen::Observed {
             raw: exited(101),
-            killed_by: explain("FAILED test_a")
+            killed_by: vec![killer("test_a")]
         }
     );
     let [b] = &told.ran[1][..] else {
@@ -214,12 +205,12 @@ fn test_a_mutant_no_test_calls_is_told_not_called_without_a_run() {
 struct Loses;
 
 impl MutantExecutor for Loses {
-    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         Err(ExecError("evaluate: dap connection closed".into()))
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 }
 
@@ -228,7 +219,7 @@ fn test_a_mutant_the_debugger_fails_on_is_told_with_what_failed_and_the_run_goes
     let plans = plans();
     let set: Vec<Box<dyn MutantExecutor + Send>> = vec![Box::new(Loses)];
     let mut told = Told::default();
-    run(&plans, vec![set], 1, explain, &mut told).unwrap();
+    run(&plans, vec![set], 1, &mut told).unwrap();
     assert_eq!(told.ran.len(), 2, "the run went on");
     assert!(told.ran.iter().flatten().all(|ran| ran.seen
         == Seen::Failed {
@@ -240,16 +231,15 @@ fn test_a_mutant_the_debugger_fails_on_is_told_with_what_failed_and_the_run_goes
 struct Broken;
 
 impl MutantExecutor for Broken {
-    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 
-    fn baseline_with_output(&mut self, _: Budget) -> Result<(RawOutcome, String), ExecError> {
-        Ok((exited(101), "FAILED test_a".to_string()))
-    }
-
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(101))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(Observed {
+            outcome: exited(101),
+            tests: vec![killer("test_a")],
+        })
     }
 }
 
@@ -259,7 +249,7 @@ fn test_a_program_whose_tests_fail_unmutated_is_reported_with_the_failing_tests_
     let plans = plans();
     let set: Vec<Box<dyn MutantExecutor + Send>> = vec![Box::new(Broken)];
     let mut told = Told::default();
-    run(&plans, vec![set], 1, explain, &mut told).unwrap();
+    run(&plans, vec![set], 1, &mut told).unwrap();
     let [broken] = &told.prepared[..] else {
         panic!("{:?}", told.prepared);
     };
@@ -276,17 +266,17 @@ fn test_a_program_whose_tests_fail_unmutated_is_reported_with_the_failing_tests_
 fn test_a_program_the_executor_cannot_baseline_is_a_failure_of_the_preparation() {
     struct Dead;
     impl MutantExecutor for Dead {
-        fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
-            Ok(exited(0))
+        fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+            Ok(exited(0).into())
         }
 
-        fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+        fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
             Err(ExecError("no debugger".into()))
         }
     }
     let plans = plans();
     let set: Vec<Box<dyn MutantExecutor + Send>> = vec![Box::new(Dead)];
-    let error = run(&plans, vec![set], 1, explain, &mut Told::default()).unwrap_err();
+    let error = run(&plans, vec![set], 1, &mut Told::default()).unwrap_err();
     assert_eq!(error.reason, "no debugger");
 }
 
@@ -297,15 +287,15 @@ struct Tracked {
 }
 
 impl MutantExecutor for Tracked {
-    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         self.open.lock().unwrap().insert(self.program);
         // Survives: every program runs every mutant.
-        Ok(exited(0))
+        Ok(exited(0).into())
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
         self.open.lock().unwrap().insert(self.program);
-        Ok(exited(0))
+        Ok(exited(0).into())
     }
 
     fn close_session(&mut self) {
@@ -327,7 +317,7 @@ fn test_a_worker_keeps_its_open_sessions_to_its_cap() {
             }) as Box<dyn MutantExecutor + Send>
         })
         .collect();
-    run(&plans, vec![set], 1, explain, &mut Told::default()).unwrap();
+    run(&plans, vec![set], 1, &mut Told::default()).unwrap();
     let left = open.lock().unwrap().len();
     assert!(left <= SESSIONS_PER_WORKER, "{left} sessions open");
 }
@@ -349,20 +339,18 @@ fn test_a_mutant_in_awaiting_code_runs_every_test_whatever_the_recording_saw() {
 struct FailsWithoutReport;
 
 impl MutantExecutor for FailsWithoutReport {
-    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(101))
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        Ok(Observed {
+            outcome: exited(101),
+            tests: vec![TestReport {
+                test: "a".to_string(),
+                result: TestResult::Passed,
+            }],
+        })
     }
 
-    fn run_with_output(
-        &mut self,
-        _: &MutantPlan,
-        _: Budget,
-    ) -> Result<(RawOutcome, String), ExecError> {
-        Ok((exited(101), "test a ... ok\n".to_string()))
-    }
-
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 }
 
@@ -376,7 +364,6 @@ fn test_a_failing_exit_with_no_failed_test_in_the_output_is_killed_not_survived(
         Budget::from_baseline(Duration::from_secs(1)),
         Driven::Every,
         &plan,
-        |_| Vec::new(),
     );
     let Seen::Observed { raw, killed_by } = ran.seen else {
         panic!("{:?}", ran.seen);
@@ -392,20 +379,15 @@ fn test_a_failing_exit_with_no_failed_test_in_the_output_is_killed_not_survived(
 struct PassesWithAFailure;
 
 impl MutantExecutor for PassesWithAFailure {
-    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        Ok(Observed {
+            outcome: exited(0),
+            tests: vec![killer("test_a")],
+        })
     }
 
-    fn run_with_output(
-        &mut self,
-        _: &MutantPlan,
-        _: Budget,
-    ) -> Result<(RawOutcome, String), ExecError> {
-        Ok((exited(0), "FAILED test_a".to_string()))
-    }
-
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(exited(0))
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
     }
 }
 
@@ -419,7 +401,6 @@ fn test_a_passing_exit_whose_output_names_a_failed_test_is_a_failure_not_a_survi
         Budget::from_baseline(Duration::from_secs(1)),
         Driven::Every,
         &plan,
-        explain,
     );
     let Seen::Failed { reason } = ran.seen else {
         panic!("a contradictory run was judged: {:?}", ran.seen);
