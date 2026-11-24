@@ -90,9 +90,9 @@ fn test_a_text_notice_is_the_program_s_name_and_its_message_on_a_line() {
         ),
         (
             Notice::ViabilitySkipped {
-                detail: "no cargo".into(),
+                cause: Report::new("cherenkov-run-application-no-workers"),
             },
-            "cherenkov: viability check skipped (no cargo): mutants rustc would reject stay unsupported; --no-viability-check turns it off\n",
+            "cherenkov: viability check skipped (no workers): mutants rustc would reject stay unsupported; --no-viability-check turns it off\n",
         ),
         (
             Notice::CarriedOn { run: "r1".into() },

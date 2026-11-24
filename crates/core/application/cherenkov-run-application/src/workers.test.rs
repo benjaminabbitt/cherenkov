@@ -1,7 +1,7 @@
 use cherenkov_mutation::execution::{Failure, Observed, TestResult, Tier};
 use cherenkov_run_ports::executor::{ExecError, Selection};
 
-use angzarr_diagnostic::Report;
+use coded_diagnostic::Report;
 
 use super::*;
 use crate::reason::Reason;

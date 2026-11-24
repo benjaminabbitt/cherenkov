@@ -10,10 +10,10 @@
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use angzarr_diagnostic::Report;
 use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, TestReport, classify};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::executor::{Driven, MutantExecutor, Recording};
+use coded_diagnostic::Report;
 
 use crate::reason::Reason;
 

@@ -25,7 +25,7 @@ use angzarr_embedded::v1::{Cover, EventPage, Uuid};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::Edge;
 
-use angzarr_diagnostic::Report;
+use coded_diagnostic::Report;
 
 use crate::covers::run_cover;
 use crate::error::RunLayerError;

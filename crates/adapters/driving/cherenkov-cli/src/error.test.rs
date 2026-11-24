@@ -11,7 +11,9 @@ fn test_a_request_the_state_forbids_is_declined_and_a_breakage_failed() {
     // Refused (48) tells a caller to change the request; failed (32), to look at what broke.
     let missing = CliError::ToolMissing { tool: "gdb".into() };
     assert_eq!(missing.exit(), Exit::REFUSED);
-    let broke = CliError::Toolchain { reason: "r".into() };
+    let broke = CliError::Toolchain {
+        cause: Report::new("x-r"),
+    };
     assert_eq!(broke.exit(), Exit::FAILED);
 }
 
@@ -69,11 +71,14 @@ fn test_the_catalog_renders_every_error_and_the_run_layer_s_within_it() {
         assert!(message.is_ok(), "{sample}: {message:?}");
     }
     let run = CliError::Run {
-        cause: Report::new("cherenkov-run-application-workers").arg("reason", "no gdb"),
+        cause: Report::new("cherenkov-run-application-workers").arg(
+            "cause",
+            coded_diagnostic::Arg::nested(&Report::new("cherenkov-run-application-no-workers")),
+        ),
     };
     assert_eq!(
         catalog.render(&run).unwrap(),
-        "the run could not run: the mutants could not run: no gdb"
+        "the run could not run: the mutants could not run: no workers"
     );
 }
 

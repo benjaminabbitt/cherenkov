@@ -125,8 +125,8 @@ pub enum Notice {
         compiles: u64,
         tenths: u64,
     },
-    /// The viability check could not run: `detail` is what stopped it.
-    ViabilitySkipped { detail: String },
+    /// The viability check could not run: `cause` is what stopped it.
+    ViabilitySkipped { cause: Report },
     /// A run carried on a run an earlier process began.
     CarriedOn { run: String },
     /// The workers chosen, one for each core, when the machine's memory is not
@@ -222,7 +222,7 @@ impl Diagnostic for Notice {
                 args.extend(seconds(*tenths));
                 args
             }
-            Notice::ViabilitySkipped { detail } => vec![("detail", detail.as_str().into())],
+            Notice::ViabilitySkipped { cause } => vec![("cause", Arg::nested(cause))],
             Notice::CarriedOn { run } => vec![("run", run.as_str().into())],
             Notice::Workers { cpus } => vec![("cpus", (*cpus).into())],
             Notice::WorkersSized {
@@ -337,7 +337,9 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             compiles: 2,
             tenths: 12,
         }),
-        Box::new(Notice::ViabilitySkipped { detail: "d".into() }),
+        Box::new(Notice::ViabilitySkipped {
+            cause: Report::new("cherenkov-run-application-no-workers"),
+        }),
         Box::new(Notice::CarriedOn { run: "r".into() }),
         Box::new(Notice::Workers { cpus: 4 }),
         Box::new(Notice::WorkersSized {

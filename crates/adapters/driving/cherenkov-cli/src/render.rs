@@ -7,6 +7,7 @@
 use angzarr_embedded::v1::{EventPage, Uuid};
 use cherenkov_mutation::deficiency;
 use cherenkov_run_domain::events::{RunEvent, recorded_at, run_event};
+use cherenkov_run_domain::why;
 use cherenkov_run_domain::{
     MutantDecided, Outcome, PlannedMutant, ProgramPrepared, RunFinished, Selection, Verdict,
 };
@@ -15,11 +16,14 @@ use cherenkov_run_wire::output::{
     Prepared, Started, document::Event,
 };
 use cherenkov_run_wire::{self as wire, names};
+use coded_diagnostic::Report;
+use presentation::Catalog;
 
 /// The documents `page` of run `run`'s stream prints as: one per mutant for
 /// the mutants planned, one for a mutant's decision (the run records it
-/// whole), one for each other run event, and none for anything else.
-pub fn documents(run: &Uuid, page: &EventPage) -> Vec<Document> {
+/// whole), one for each other run event, and none for anything else. A
+/// reason the run recorded coded is said in `catalog`'s words.
+pub fn documents(run: &Uuid, page: &EventPage, catalog: &Catalog) -> Vec<Document> {
     let at = recorded_at(page);
     let document = |event| Document { event: Some(event) };
     let Some(event) = run_event(page) else {
@@ -55,13 +59,13 @@ pub fn documents(run: &Uuid, page: &EventPage) -> Vec<Document> {
             })
             .collect(),
         RunEvent::ProgramPrepared(p) => {
-            vec![document(Event::Prepared(prepared(run, at, p)))]
+            vec![document(Event::Prepared(prepared(run, at, p, catalog)))]
         }
         RunEvent::ProgramFailed(f) => vec![document(Event::Failed(Failed {
             run: Some(run.clone()),
             at: Some(at),
             program: f.program,
-            reason: f.reason,
+            reason: said(catalog, &why::decode(f.why.as_ref(), &f.reason)),
         }))],
         RunEvent::DecisionRecorded(record) => record
             .decision
@@ -85,7 +89,12 @@ fn millis(ms: u64) -> u32 {
 /// A prepared program's document: its timings, its tests, and how its
 /// mutants choose their tests (with the tests that failed recording, or
 /// why every test runs).
-fn prepared(run: &Uuid, at: angzarr_embedded::Timestamp, p: ProgramPrepared) -> Prepared {
+fn prepared(
+    run: &Uuid,
+    at: angzarr_embedded::Timestamp,
+    p: ProgramPrepared,
+    catalog: &Catalog,
+) -> Prepared {
     Prepared {
         run: Some(run.clone()),
         at: Some(at),
@@ -97,8 +106,22 @@ fn prepared(run: &Uuid, at: angzarr_embedded::Timestamp, p: ProgramPrepared) -> 
         failures: (p.selection == Selection::RecordedWithFailures).then_some(FailedTests {
             failed_tests: p.failed_tests,
         }),
-        reason: p.selection_reason,
+        reason: match (&p.selection_why, p.selection_reason) {
+            (None, None) => None,
+            (why_, text) => Some(said(
+                catalog,
+                &why::decode(why_.as_ref(), text.as_deref().unwrap_or_default()),
+            )),
+        },
     }
+}
+
+/// `report` in words: the catalog's, or its keyed form where the catalog
+/// holds no message for it.
+fn said(catalog: &Catalog, report: &Report) -> String {
+    catalog
+        .render(report)
+        .unwrap_or_else(|_| report.to_string())
 }
 
 /// A decided mutant's document: the mutant, its verdict, and what the

@@ -20,13 +20,14 @@ pub enum CliError {
     ToolMissing { tool: String },
     /// A file or directory could not be read (or a pattern for one is not
     /// valid).
-    Unreadable { path: String, reason: String },
+    Unreadable { path: String, detail: String },
     /// The parsers did not load: `cause` says why.
     Syntax { cause: Report },
-    /// The project's sources could not be planned.
-    Planning { reason: String },
+    /// The project's sources could not be planned; `detail` is what the
+    /// operating system said.
+    Planning { path: String, detail: String },
     /// The toolchain could not build or describe the project's tests.
-    Toolchain { reason: String },
+    Toolchain { cause: Report },
     /// The run could not run.
     Run { cause: Report },
     /// Another process holds the store a run or a prune was asked to use:
@@ -50,6 +51,13 @@ impl CliError {
     pub fn bad_operator_set(path: impl Into<String>, cause: &dyn Diagnostic) -> CliError {
         CliError::BadOperatorSet {
             path: path.into(),
+            cause: Report::of(cause),
+        }
+    }
+
+    /// The toolchain's `cause`, captured.
+    pub fn toolchain(cause: &dyn Diagnostic) -> CliError {
+        CliError::Toolchain {
             cause: Report::of(cause),
         }
     }
@@ -104,16 +112,15 @@ impl Diagnostic for CliError {
                     ("cause", Arg::nested(cause)),
                 ]
             }
-            CliError::Unreadable { path, reason } => {
+            CliError::Unreadable { path, detail } | CliError::Planning { path, detail } => {
                 vec![
                     ("path", path.as_str().into()),
-                    ("reason", reason.as_str().into()),
+                    ("detail", detail.as_str().into()),
                 ]
             }
-            CliError::Planning { reason } | CliError::Toolchain { reason } => {
-                vec![("reason", reason.as_str().into())]
-            }
-            CliError::Syntax { cause } | CliError::Run { cause } => {
+            CliError::Syntax { cause }
+            | CliError::Toolchain { cause }
+            | CliError::Run { cause } => {
                 vec![("cause", Arg::nested(cause))]
             }
             CliError::StoreLocked { path, holder } | CliError::StoreHeld { path, holder } => {
@@ -150,10 +157,19 @@ pub const EN_US: (&str, &str) = (
     include_str!("../locales/en-US/messages.ftl"),
 );
 
+/// The catalog the cli's tests say things in: this crate's messages and the
+/// run layer's.
+#[cfg(test)]
+pub fn test_catalog() -> std::sync::Arc<presentation::Catalog> {
+    let mut sources = vec![EN_US];
+    sources.extend(cherenkov_run_application::error::CATALOG_SOURCES);
+    std::sync::Arc::new(presentation::Catalog::en_us(&sources).unwrap())
+}
+
 /// One value of every error, for the catalog test.
 #[cfg(test)]
 pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
-    let reason = || "r".to_string();
+    let detail = || "r".to_string();
     let mut samples: Vec<Box<dyn Diagnostic>> = vec![
         Box::new(CliError::UnknownOperatorSet {
             name: "nope".into(),
@@ -167,17 +183,22 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(CliError::ToolMissing { tool: "gdb".into() }),
         Box::new(CliError::Unreadable {
             path: "p".into(),
-            reason: reason(),
+            detail: detail(),
         }),
         Box::new(CliError::Syntax {
             cause: Report::new("cherenkov-syntax-unknown-token")
                 .arg("lang", "go")
                 .arg("name", "n"),
         }),
-        Box::new(CliError::Planning { reason: reason() }),
-        Box::new(CliError::Toolchain { reason: reason() }),
+        Box::new(CliError::Planning {
+            path: "p".to_string(),
+            detail: detail(),
+        }),
+        Box::new(CliError::Toolchain {
+            cause: Report::new("cherenkov-run-application-no-workers"),
+        }),
         Box::new(CliError::Run {
-            cause: Report::new("cherenkov-run-application-runtime").arg("reason", "r"),
+            cause: Report::new("cherenkov-run-application-runtime").arg("detail", "r"),
         }),
         Box::new(CliError::StoreLocked {
             path: "p".into(),

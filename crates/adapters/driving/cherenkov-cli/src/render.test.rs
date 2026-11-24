@@ -74,7 +74,11 @@ fn recorded(decision: MutantDecided) -> Any {
 }
 
 fn one(any: Any) -> Value {
-    let docs = json_of(&documents(&run(), &page(any)));
+    let docs = json_of(&documents(
+        &run(),
+        &page(any),
+        &crate::error::test_catalog(),
+    ));
     assert_eq!(docs.len(), 1, "{docs:?}");
     docs.into_iter().next().unwrap()
 }
@@ -110,6 +114,7 @@ fn test_the_mutants_planned_are_one_document_each() {
         &page(pack_message(&MutantsPlanned {
             mutants: vec![executable(), executable()],
         })),
+        &crate::error::test_catalog(),
     ));
     assert_eq!(docs.len(), 2);
     assert_eq!(docs[0]["event"], "mutant.planned");
@@ -202,10 +207,17 @@ fn test_a_record_of_a_decision_holding_none_prints_nothing() {
         verdict: Verdict::Killed,
         decision: None,
     };
-    assert!(documents(&run(), &page(pack_message(&record))).is_empty());
+    assert!(
+        documents(
+            &run(),
+            &page(pack_message(&record)),
+            &crate::error::test_catalog()
+        )
+        .is_empty()
+    );
     // A decision with no outcome is no document either.
     let bare = recorded(MutantDecided::default());
-    assert!(documents(&run(), &page(bare)).is_empty());
+    assert!(documents(&run(), &page(bare), &crate::error::test_catalog()).is_empty());
 }
 
 #[test]
@@ -214,7 +226,14 @@ fn test_a_mutant_s_own_event_prints_nothing() {
         mutant: Some(mutant()),
         ..MutantDecided::default()
     };
-    assert!(documents(&run(), &page(pack_message(&decided))).is_empty());
+    assert!(
+        documents(
+            &run(),
+            &page(pack_message(&decided)),
+            &crate::error::test_catalog()
+        )
+        .is_empty()
+    );
 }
 
 #[test]
@@ -227,6 +246,7 @@ fn test_a_prepared_program_and_the_run_s_finish_are_documents_of_their_own() {
         selection: Selection::RecordedWithFailures,
         failed_tests: vec!["test_flaky".to_string()],
         selection_reason: None,
+        selection_why: None,
         index: 0,
         budget_ms: 200,
         drives: None,
@@ -247,6 +267,7 @@ fn test_a_prepared_program_and_the_run_s_finish_are_documents_of_their_own() {
         selection: Selection::EveryTest,
         failed_tests: Vec::new(),
         selection_reason: Some("no list".to_string()),
+        selection_why: None,
         index: 1,
         budget_ms: 2_000,
         drives: None,
@@ -257,10 +278,40 @@ fn test_a_prepared_program_and_the_run_s_finish_are_documents_of_their_own() {
     let failed = one(pack_message(&ProgramFailed {
         program: Some("calc-1".to_string()),
         reason: "unmutated tests do not pass".to_string(),
+        why: None,
     }));
     assert_eq!(failed["event"], "program.failed");
     assert_eq!(failed["program"], "calc-1");
     assert_eq!(failed["reason"], "unmutated tests do not pass");
+    let coded = one(pack_message(&ProgramFailed {
+        program: Some("calc-1".to_string()),
+        reason: String::new(),
+        why: Some(cherenkov_run_domain::angzarr::Diagnostic {
+            code: "cherenkov-run-application-no-program".to_string(),
+            args: [("program".to_string(), "3".to_string())].into(),
+        }),
+    }));
+    assert_eq!(coded["reason"], "the worker has no test program 3");
+    let blind_coded = one(pack_message(&cherenkov_run_domain::ProgramPrepared {
+        program: "calc-1".to_string(),
+        baseline_ms: 40,
+        prepared_ms: 90,
+        tests: None,
+        selection: Selection::EveryTest,
+        failed_tests: Vec::new(),
+        selection_reason: None,
+        index: 1,
+        budget_ms: 2_000,
+        drives: None,
+        selection_why: Some(cherenkov_run_domain::angzarr::Diagnostic {
+            code: "cherenkov-run-application-baseline-failed".to_string(),
+            args: Default::default(),
+        }),
+    }));
+    assert_eq!(
+        blind_coded["reason"],
+        "not recorded: the baseline did not pass"
+    );
     let finished = one(pack_message(&RunFinished {
         counts: vec![
             VerdictCount {

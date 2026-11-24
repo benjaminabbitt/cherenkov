@@ -16,8 +16,8 @@ use cherenkov_run_ports::{Edge, Listing};
 use crate::covers::run_cover;
 use crate::error::RunLayerError;
 use crate::reason::Reason;
-use angzarr_diagnostic::Report;
 use cherenkov_run_domain::why;
+use coded_diagnostic::Report;
 
 /// An unfinished run, as its first events record it.
 pub(crate) struct Unfinished {

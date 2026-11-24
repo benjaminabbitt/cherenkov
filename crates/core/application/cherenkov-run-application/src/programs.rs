@@ -17,8 +17,8 @@ use cherenkov_run_ports::executor::{self as core, Selection as Chosen};
 
 use crate::reason::Reason;
 use crate::workers::{Preparation, Programs};
-use angzarr_diagnostic::Report;
 use cherenkov_run_domain::why;
+use coded_diagnostic::Report;
 
 /// `preparation` of a program, as the fact the run is told: its baseline
 /// as observed, and what recording found, for each of `plans`.

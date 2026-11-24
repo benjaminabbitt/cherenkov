@@ -11,12 +11,12 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use angzarr_diagnostic::Report;
 use angzarr_embedded::angzarr_bus::Outcome;
 use angzarr_embedded::v1::Uuid;
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::executor::MutantExecutor;
 use cherenkov_run_ports::{Edge, Listing, Serving, Subscriptions};
+use coded_diagnostic::Report;
 use tokio::sync::mpsc::unbounded_channel;
 
 use crate::covers::run_cover;

@@ -9,7 +9,7 @@
 
 use std::io::Write;
 use std::path::PathBuf;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::notice::{Notice, Say};
 use crate::render::documents;
@@ -27,7 +27,7 @@ use cherenkov_run_wire::{KilledBy, PlannedMutant};
 use cherenkov_run_wire::{RunStatus, Selection, Verdict};
 use cli_support::Exit;
 use coded_diagnostic::Report;
-use presentation::Format;
+use presentation::{Catalog, Format};
 
 /// Where a run's documents go, each as soon as it is recorded.
 pub trait Sink: Send {
@@ -54,6 +54,7 @@ pub const OUTPUT: &str = "output";
 /// else: the run records each decision whole.
 struct Printing {
     sink: Mutex<Box<dyn Sink>>,
+    catalog: Arc<Catalog>,
 }
 
 impl ProjectorHandler for Printing {
@@ -69,7 +70,11 @@ impl ProjectorHandler for Printing {
             return Ok(ProjectResponse::default());
         };
         let mut sink = self.sink.lock().unwrap_or_else(PoisonError::into_inner);
-        for doc in book.pages.iter().flat_map(|page| documents(run, page)) {
+        for doc in book
+            .pages
+            .iter()
+            .flat_map(|page| documents(run, page, &self.catalog))
+        {
             sink.document(&doc);
         }
         Ok(ProjectResponse::default())
@@ -103,7 +108,7 @@ impl JsonVerdictFile {
     fn unwritable(&self, reason: &dyn std::fmt::Display) -> Report {
         Report::new("cherenkov-cli-unreadable")
             .arg("path", self.path.display().to_string())
-            .arg("reason", reason.to_string())
+            .arg("detail", reason.to_string())
     }
 }
 
@@ -126,10 +131,11 @@ impl VerdictFile for JsonVerdictFile {
     }
 }
 
-/// The output of a run that prints to `sink`.
-pub fn printing(sink: Box<dyn Sink>) -> Output {
+/// The output of a run that prints to `sink`, a reason in `catalog`'s words.
+pub fn printing(sink: Box<dyn Sink>, catalog: Arc<Catalog>) -> Output {
     Box::new(Printing {
         sink: Mutex::new(sink),
+        catalog,
     })
 }
 

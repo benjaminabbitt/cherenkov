@@ -274,7 +274,9 @@ async fn test_a_mutant_planned_for_a_run_that_prepared_no_program_is_a_bug() {
         .await
         .unwrap_err();
     assert!(
-        error.to_string().contains("cherenkov-run-application-none-prepared"),
+        error
+            .to_string()
+            .contains("cherenkov-run-application-none-prepared"),
         "{error}"
     );
     assert_eq!(runs.load(Ordering::SeqCst), 0);

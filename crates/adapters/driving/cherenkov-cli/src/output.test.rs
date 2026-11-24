@@ -353,13 +353,14 @@ mod printing {
         pack_message(&ProgramFailed {
             program: None,
             reason: "no debugger".to_string(),
+            why: None,
         })
     }
 
     #[tokio::test]
     async fn test_each_page_handed_is_printed_as_its_documents_in_order() {
         let kept = Kept::default();
-        let output = printing(Box::new(kept.clone()));
+        let output = printing(Box::new(kept.clone()), crate::error::test_catalog());
         let run = Uuid::from_bytes([3; 16]);
         output
             .dispatch(&request(
@@ -388,7 +389,7 @@ mod printing {
     #[tokio::test]
     async fn test_a_stream_with_no_root_or_a_book_with_no_cover_prints_nothing() {
         let kept = Kept::default();
-        let output = printing(Box::new(kept.clone()));
+        let output = printing(Box::new(kept.clone()), crate::error::test_catalog());
         output
             .dispatch(&request(None, vec![page(0, started())]))
             .await
@@ -402,7 +403,7 @@ mod printing {
 
     #[test]
     fn test_the_output_is_named() {
-        let output = printing(Box::new(Kept::default()));
+        let output = printing(Box::new(Kept::default()), crate::error::test_catalog());
         assert_eq!(output.name(), OUTPUT);
     }
 
