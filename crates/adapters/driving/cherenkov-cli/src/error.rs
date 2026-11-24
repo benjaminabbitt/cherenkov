@@ -29,6 +29,13 @@ pub enum CliError {
     Toolchain { reason: String },
     /// The run could not run.
     Run { cause: Report },
+    /// Another process holds the store a run or a prune was asked to use:
+    /// `holder` says who.
+    StoreLocked { path: String, holder: String },
+    /// `store unlock` was asked of a store a process still holds.
+    StoreHeld { path: String, holder: String },
+    /// There is no store at the path a prune was asked to use.
+    NoStore { path: String },
 }
 
 impl CliError {
@@ -60,6 +67,9 @@ impl Diagnostic for CliError {
             CliError::Planning { .. } => code!("planning"),
             CliError::Toolchain { .. } => code!("toolchain"),
             CliError::Run { .. } => code!("run"),
+            CliError::StoreLocked { .. } => code!("store-locked"),
+            CliError::StoreHeld { .. } => code!("store-held"),
+            CliError::NoStore { .. } => code!("no-store"),
         }
     }
 
@@ -83,6 +93,13 @@ impl Diagnostic for CliError {
             | CliError::Planning { reason }
             | CliError::Toolchain { reason } => vec![("reason", reason.as_str().into())],
             CliError::Run { cause } => vec![("cause", Arg::nested(cause))],
+            CliError::StoreLocked { path, holder } | CliError::StoreHeld { path, holder } => {
+                vec![
+                    ("path", path.as_str().into()),
+                    ("holder", holder.as_str().into()),
+                ]
+            }
+            CliError::NoStore { path } => vec![("path", path.as_str().into())],
         }
     }
 }
@@ -95,7 +112,10 @@ impl ExitClass for CliError {
             CliError::UnknownOperatorSet { .. }
             | CliError::BadOperatorSet { .. }
             | CliError::NoProject { .. }
-            | CliError::ToolMissing { .. } => Exit::REFUSED,
+            | CliError::ToolMissing { .. }
+            | CliError::StoreLocked { .. }
+            | CliError::StoreHeld { .. }
+            | CliError::NoStore { .. } => Exit::REFUSED,
             _ => Exit::FAILED,
         }
     }
@@ -132,6 +152,15 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(CliError::Run {
             cause: Report::new("cherenkov-run-application-runtime").arg("reason", "r"),
         }),
+        Box::new(CliError::StoreLocked {
+            path: "p".into(),
+            holder: "pid 7".into(),
+        }),
+        Box::new(CliError::StoreHeld {
+            path: "p".into(),
+            holder: "pid 7".into(),
+        }),
+        Box::new(CliError::NoStore { path: "p".into() }),
     ]
 }
 

@@ -86,3 +86,14 @@ fn a_projects_store_is_under_its_cherenkov_directory_and_git_ignores_itself() {
     );
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn a_projects_store_is_under_its_cherenkov_directory_and_naming_it_makes_nothing() {
+    let dir = scratch("project-store");
+    let path = project_store(&dir);
+    assert_eq!(path, dir.join(".cherenkov/store/runs.sqlite"));
+    assert!(!dir.join(".cherenkov").exists());
+    assert_eq!(in_project(&dir).unwrap(), path);
+    assert!(dir.join(".cherenkov/store/.gitignore").is_file());
+    std::fs::remove_dir_all(&dir).unwrap();
+}

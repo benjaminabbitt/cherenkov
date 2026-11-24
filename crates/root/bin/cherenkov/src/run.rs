@@ -138,6 +138,10 @@ pub fn run(
         tests,
         format,
     };
+    // One run at a time keeps a store: a second is refused before any work.
+    let _held = store_file(&asked)?
+        .map(|path| crate::store::lock(&path))
+        .transpose()?;
     if lang == "go" {
         run_go(&asked)
     } else {

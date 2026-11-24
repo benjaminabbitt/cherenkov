@@ -10,3 +10,6 @@ cherenkov-cli-syntax = the parsers did not load: { $reason }
 cherenkov-cli-planning = the sources could not be planned: { $reason }
 cherenkov-cli-toolchain = { $reason }
 cherenkov-cli-run = the run could not run: { $cause }
+cherenkov-cli-store-locked = { $path } is in use by { $holder }: wait for it to finish, name another store with --store FILE, or keep nothing with --ephemeral
+cherenkov-cli-store-held = { $path } is held by { $holder }, which is still running: stop it first (a lock is released when its process ends, so only a running process holds one)
+cherenkov-cli-no-store = { $path }: no store there

@@ -33,8 +33,13 @@ pub async fn open(path: &Path) -> Result<SqliteStore, StoreError> {
     SqliteStore::open(path).await
 }
 
-/// Where a project's store is: `.cherenkov/store/runs.sqlite` under its root.
-/// The directory is made, holding a `.gitignore` of everything, so the store
+/// Where a project's store is: `.cherenkov/store/runs.sqlite` under its
+/// root. Nothing is made.
+pub fn project_store(root: &Path) -> PathBuf {
+    root.join(".cherenkov").join("store").join("runs.sqlite")
+}
+
+/// Where a project's store is, as [`project_store`] says. The directory is made, holding a `.gitignore` of everything, so the store
 /// is never committed whatever the project's own ignore rules say (the
 /// project's verdict file, beside it, is).
 pub fn in_project(root: &Path) -> io::Result<PathBuf> {
@@ -44,7 +49,7 @@ pub fn in_project(root: &Path) -> io::Result<PathBuf> {
     if !ignore.exists() {
         std::fs::write(&ignore, "*\n")?;
     }
-    Ok(directory.join("runs.sqlite"))
+    Ok(project_store(root))
 }
 
 #[cfg(test)]

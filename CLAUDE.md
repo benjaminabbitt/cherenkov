@@ -58,6 +58,21 @@ with. An edge the rules refuse is fixed, never added to the `[[exception]]`s
 of `arch-rules.toml` without the owner's ruling (the six there are marked
 `TODO(owner ruling)`; `docs/runlayer-plan.md`, 5.8).
 
+# The store
+
+`cherenkov run` keeps its run in a SQLite store (`.cherenkov/store/runs.sqlite`
+under the project, or `--store FILE`; `--ephemeral` keeps nothing). One
+process holds a store at a time: `cherenkov-run-store`'s `lock` takes
+angzarr's `file-lock` (`flock` on `<store>.lock`, never waited for) with the
+holder's record beside it (`<store>.holder`), and a second run, or a `store
+prune`, is refused at once (`store-locked`, exit 48) naming the holder. The
+OS releases a lock with its process, so none outlives its holder; `cherenkov
+store unlock` refuses while the holder is alive and otherwise clears the
+record a killed holder left. Every run is kept by default; `cherenkov store
+prune --keep N [--dry-run]` keeps the last N finished runs and every
+unfinished one, and a mutant's stream (shared by every run that plans it)
+goes only when no run that stays plans it.
+
 # Hooks and CI
 
 Secrets are scanned with gitleaks in a pinned container (`just scan-secrets`

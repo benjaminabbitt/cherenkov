@@ -18,6 +18,7 @@ use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_application::error::RunLayerError;
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::{self, Settings, Started, Workers};
+use cherenkov_run_application::prune::{self, Pruned};
 use cherenkov_run_domain::RunStatus;
 
 /// The instant and the fresh command id a call is handled at: this is the
@@ -111,6 +112,29 @@ pub fn start_in_file(
             })
     };
     start_on(opening, plans, settings, workers, readers)
+}
+
+/// Prune the durable store in the file at `path` to its last `keep`
+/// finished runs (and every unfinished one), or, with `dry_run`, say what
+/// that would remove. The caller holds the store's lock. See
+/// [`cherenkov_run_application::prune::prune`].
+pub fn prune_in_file(path: &Path, keep: usize, dry_run: bool) -> Result<Pruned, RunLayerError> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .map_err(|e| RunLayerError::Runtime {
+            reason: e.to_string(),
+        })?;
+    runtime.block_on(async {
+        let store =
+            cherenkov_run_store::open(path)
+                .await
+                .map_err(|cause| RunLayerError::Store {
+                    cause: Report::of(&cause),
+                })?;
+        let core = core(store, OnRetryable::default()).await?;
+        prune::prune(&core, keep, dry_run).await
+    })
 }
 
 /// [`start`], and the status the run finished with: none for a run that has

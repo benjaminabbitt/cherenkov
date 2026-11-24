@@ -63,11 +63,11 @@ and `encodings.txt` pins their bytes. 5.3 and 5.4 (below) made the streams
 executable and put the run on the bus.
 
 ## Decided
-- **Rulings after 5.7** (not built yet, later steps): the store keeps every
-  run, `cherenkov store prune` will keep the last N finished runs; the
+- **Rulings after 5.7** (built, see 5.7): the store keeps every run,
+  `cherenkov store prune --keep N` keeps the last N finished runs; the
   verdict file stays opt-in (`--verdicts FILE`); an exclusive lock on the
   store file makes a second `cherenkov run` refuse with a diagnostic naming
-  the holder, and `cherenkov store unlock` clears it.
+  the holder, and `cherenkov store unlock` clears what a killed holder left.
 - **Arch rules follow the code** (5.8): the core owns its ports. A driven
   adapter may see `core/domain`, a driving adapter `core/wire`; the CLI's
   edges to `cherenkov-run-domain` and `cherenkov-mutation` are ruled debt
@@ -755,12 +755,39 @@ has it; no bump was needed). What was done:
   39 s. The store costs about 4 to 8 ms a mutant under that load, in commits
   (each step is a transaction); and the earlier runs' streams are read at each
   start. See the open question on retention.
-- **Ruled (owner)**: retention keeps every run, with a later
-  `cherenkov store prune` that keeps the last N finished runs (not built
-  yet); the verdict file stays opt-in (`--verdicts FILE`, unchanged from
-  5.6); concurrent runs take an exclusive lock on the store file, a second
-  `cherenkov run` refuses with a diagnostic naming the holder, and
-  `cherenkov store unlock` clears the lock (not built yet, a later step).
+- **Ruled (owner), built**: retention keeps every run; `cherenkov store
+  prune --keep N [--dry-run]` removes the older finished runs and keeps the
+  last N. The verdict file stays opt-in (`--verdicts FILE`, unchanged from
+  5.6). Concurrent runs take an exclusive lock on the store file; a second
+  `cherenkov run` refuses with a diagnostic naming the holder, and `cherenkov
+  store unlock` clears what a holder left. What was built:
+  - **The lock** (`cherenkov-run-store`'s `lock`): angzarr's `file-lock`
+    (`flock(2)` on `<store>.lock`, taken without waiting), through the
+    file-system seam and host `os` crates of the same angzarr rev. It is an
+    OS advisory lock, so it is released when its process ends however it
+    ends: **a lock cannot outlive its holder**. What can is the holder's
+    record, `<store>.holder` (pid, start time, command line), which the lock
+    crate has no room for; the next holder overwrites it and the holder
+    removes it on drop. `store unlock` therefore refuses while any process
+    holds the lock (and names it), and otherwise removes the record a killed
+    holder left (it does not remove the lock file). `--store FILE` and
+    `--ephemeral` take another lock or none, so a second run on another
+    store goes at once. The refusal is `cherenkov-cli-store-locked`
+    (`store-held` for unlock, `no-store` for a prune of no store), exit 48
+    (declined, as every request the state forbids), a coded document on
+    stderr under JSON. A run takes the lock before any work (before the
+    toolchain is touched), a prune before it opens the store.
+  - **Prune** (`cherenkov-run-application`'s `prune`, on a new `Purging`
+    port served by the edge over angzarr's `Purge`, which the SQLite store
+    implements): the newest N finished runs stay (a run's id is a UUIDv7,
+    ordered by when it was made), every unfinished run stays and is not
+    counted, and a run's stream goes with it. A mutant's stream is shared by
+    every run that plans the mutant, so it goes only when a removed run
+    planned it and no run that stays does, finished or not. Each purge is
+    guarded by the head read; a lost race (`Conflict`, retryable) reads the
+    store again and decides again, five times, then reports it unavailable.
+    A prune says what it removed (or would, with `--dry-run`) and what
+    stays. It does not shrink the file (SQLite keeps the freed pages).
 Upstream: none. Exit met: a fixture run killed partway and run again with
 the same plan resumes on its own, runs no decided mutant again, and writes
 the same verdict file as an uninterrupted run; run again with a changed plan,
@@ -919,7 +946,7 @@ no test builds its own kernel, clock or ids.
   all three.
 - **Wire churn after 5.7** needs upcasters or new package versions; the
   enums and facts are cheapest to get right in 5.2 to 5.4.
-- **A durable store grows**: every run is kept (no retention rule yet) and
+- **A durable store grows**: every run is kept unless `cherenkov store prune` is run, and
   each start reads the earlier runs' streams (5.7's measurement).
 - **Generated serde** keeps pbjson's traps unless 5.1 closes them.
 - **Speed**: more facts per mutant, the fan-out and fan-in hops and durable

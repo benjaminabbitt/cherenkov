@@ -16,6 +16,50 @@ fn test_a_request_the_state_forbids_is_declined_and_a_breakage_failed() {
 }
 
 #[test]
+fn test_a_store_another_process_holds_is_declined_not_failed() {
+    // Wait, or stop the holder, or name another store: a change of request.
+    let locked = CliError::StoreLocked {
+        path: "s.sqlite".into(),
+        holder: "pid 7".into(),
+    };
+    assert_eq!(locked.exit(), Exit::REFUSED);
+    let held = CliError::StoreHeld {
+        path: "s.sqlite".into(),
+        holder: "pid 7".into(),
+    };
+    assert_eq!(held.exit(), Exit::REFUSED);
+    assert_eq!(
+        CliError::NoStore {
+            path: "s.sqlite".into()
+        }
+        .exit(),
+        Exit::REFUSED
+    );
+}
+
+#[test]
+fn test_the_refusals_of_a_held_store_name_the_holder_and_the_way_out() {
+    let catalog = angzarr_presentation::Catalog::en_us(&[EN_US]).unwrap();
+    let locked = CliError::StoreLocked {
+        path: "s.sqlite".into(),
+        holder: "pid 7, held for 3s".into(),
+    };
+    let text = catalog.render(&locked).unwrap();
+    for wanted in ["s.sqlite", "pid 7, held for 3s", "--store", "--ephemeral"] {
+        assert!(text.contains(wanted), "{wanted}: {text}");
+    }
+    let held = CliError::StoreHeld {
+        path: "s.sqlite".into(),
+        holder: "pid 7".into(),
+    };
+    let text = catalog.render(&held).unwrap();
+    assert!(
+        text.contains("pid 7") && text.contains("still running"),
+        "{text}"
+    );
+}
+
+#[test]
 fn test_the_catalog_renders_every_error_and_the_run_layer_s_within_it() {
     let mut sources = vec![EN_US];
     sources.extend(cherenkov_run_application::error::CATALOG_SOURCES);

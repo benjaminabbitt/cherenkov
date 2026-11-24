@@ -21,6 +21,7 @@ mod run;
 #[path = "run_output.test.rs"]
 mod run_output;
 mod selection;
+mod store;
 mod test_scope;
 
 use std::collections::BTreeMap;
@@ -71,6 +72,9 @@ enum Command {
     /// Run every mutant of a Go package (Delve) or Cargo project (GDB) and
     /// print each verdict as it is decided.
     Run(Box<RunArgs>),
+    /// Keep up the store the runs are kept in: prune it, or clear what a
+    /// killed run left of its hold on it.
+    Store(store::StoreArgs),
     /// List the named operator sets, their sources, and what each does not cover yet.
     Sets,
     /// List every named mutation, where its definition came from, and peers
@@ -195,7 +199,9 @@ struct RunArgs {
     /// Keep the run in this SQLite file, so a run killed part way is carried
     /// on by the next `cherenkov run` of the same plan, and the mutants it
     /// had decided are not run again. Default:
-    /// `.cherenkov/store/runs.sqlite` under DIR (git-ignored).
+    /// `.cherenkov/store/runs.sqlite` under DIR (git-ignored). One run at a
+    /// time keeps a store: a second is refused at once, naming the holder
+    /// (see `cherenkov store`); another `--store` or `--ephemeral` goes on.
     #[arg(long, value_name = "FILE")]
     store: Option<PathBuf>,
     /// Keep nothing: the run lives in memory and is lost with the process.
@@ -292,6 +298,7 @@ fn main() -> ExitCode {
             (format, result)
         }
         Command::Run(args) => run_command(*args),
+        Command::Store(args) => (Format::Text, store::command(args)),
         Command::Sets => {
             sets();
             (Format::Text, Ok(()))

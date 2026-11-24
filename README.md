@@ -216,10 +216,17 @@ cherenkov run . | jq 'select(.event == "mutant.decided" and .verdict == "survive
 An error is `{"code", "args", "message"}` on stderr under JSON (a line
 `cherenkov: message` under text), with exit code 32 when something broke
 and 48 when the request cannot be done (no project, no debugger, no such
-operator set). Every success exits 0, or 16 under the global
+operator set, a store another run holds). Every success exits 0, or 16 under the global
 `--detailed-exitcode` flag (failures and refusals keep 32 and 48, a usage
 error is 48); no success says more than "ok", so 17 ("would change") is
 never used.
+
+A run is kept in a store (`.cherenkov/store/runs.sqlite`, or `--store FILE`;
+`--ephemeral` keeps nothing), one process at a time: a second `cherenkov run`
+on a held store is refused at once, naming the holder. Every run is kept;
+`cherenkov store prune --keep N [--dry-run]` keeps the last N finished runs,
+and `cherenkov store unlock` clears what a killed run left of its hold (it
+refuses while the holder is alive).
 
 Development recipes (`justfile`):
 
