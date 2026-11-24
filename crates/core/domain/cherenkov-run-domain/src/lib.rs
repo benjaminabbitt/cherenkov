@@ -72,7 +72,9 @@ pub mod run {
 }
 
 /// angzarr's `Diagnostic`, as the run layers hold it.
-pub mod angzarr;
+pub mod angzarr {
+    include!(concat!(env!("OUT_DIR"), "/io.angzarr.v1.domain.rs"));
+}
 
 /// The mutant's domain layer (`cherenkov.mutant.v1`), generated from the
 /// protos.

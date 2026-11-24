@@ -558,6 +558,29 @@ fn why() -> angzarr::Diagnostic {
     }
 }
 
+/// A converted `Report` with several args, one a nested cause: its map is
+/// ordered by key, so its bytes are the same every time.
+fn why_many() -> angzarr::Diagnostic {
+    let cause = Report::new("cherenkov-exec-dap-rpc").arg("detail", "connection closed");
+    why::encode(
+        &Report::new("cherenkov-exec-dap-session")
+            .arg("program", "calc-0123")
+            .arg("count", 3_u32)
+            .arg("cause", coded_diagnostic::Arg::nested(&cause)),
+    )
+}
+
+#[test]
+fn test_a_report_with_several_args_encodes_to_the_same_bytes_every_time() {
+    let bytes = |why: angzarr::Diagnostic| {
+        prost::Message::encode_to_vec(&angzarr_embedded::v1::Diagnostic::from(why))
+    };
+    let first = bytes(why_many());
+    for _ in 0..16 {
+        assert_eq!(bytes(why_many()), first);
+    }
+}
+
 #[tokio::test]
 async fn test_a_coded_failure_is_recorded_as_it_was_reported() {
     let core = core();
@@ -1186,6 +1209,11 @@ fn test_every_refusal_encodes_to_the_bytes_it_always_has() {
             program: Some("calc-1".to_string()),
             reason: String::new(),
             why: Some(why()),
+        }),
+        refusal_line(&ProgramFailed {
+            program: None,
+            reason: String::new(),
+            why: Some(why_many()),
         }),
     ];
     let expected: Vec<&str> = include_str!("encodings.txt").lines().collect();

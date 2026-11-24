@@ -186,12 +186,29 @@ fn drives() -> Drives {
     }
 }
 
-/// A coded reason with one arg: angzarr's `Diagnostic` holds its args in a
-/// `HashMap`, so a message with two would encode in either order.
+/// A coded reason with one arg.
 fn why() -> angzarr_embedded::v1::Diagnostic {
     angzarr_embedded::v1::Diagnostic {
         code: "cherenkov-exec-dap-session".to_string(),
         args: [("detail".to_string(), "connection closed".to_string())].into(),
+    }
+}
+
+/// A coded reason with several args (a nested cause is its flattened keys):
+/// angzarr's `Diagnostic` holds its args in a `BTreeMap`, so they encode in
+/// key order, whatever order they were put in.
+fn why_many() -> angzarr_embedded::v1::Diagnostic {
+    angzarr_embedded::v1::Diagnostic {
+        code: "cherenkov-exec-dap-session".to_string(),
+        args: [
+            ("program", "calc-0123"),
+            ("count", "3"),
+            ("cause.detail", "connection closed"),
+            ("cause", "cherenkov-exec-dap-rpc"),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name.to_string(), value.to_string()))
+        .collect(),
     }
 }
 
@@ -503,6 +520,16 @@ fn coded_lines() -> Vec<String> {
             reason: String::new(),
             why: Some(why()),
         }),
+        line(&PreparationFailed {
+            program: Some("target/debug/deps/calc-0123".to_string()),
+            reason: String::new(),
+            why: Some(why_many()),
+        }),
+        line(&ProgramFailed {
+            program: None,
+            reason: String::new(),
+            why: Some(why_many()),
+        }),
     ]
 }
 
@@ -782,6 +809,16 @@ fn documents() -> Vec<output::Document> {
     .into_iter()
     .map(|event| output::Document { event: Some(event) })
     .collect()
+}
+
+#[test]
+fn test_a_reason_with_several_args_encodes_to_the_same_bytes_every_time() {
+    let first = coded_lines();
+    for _ in 0..16 {
+        assert_eq!(coded_lines(), first);
+    }
+    let once = why_many().encode_to_vec();
+    assert_eq!(once, why_many().encode_to_vec());
 }
 
 #[test]
