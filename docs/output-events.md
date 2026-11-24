@@ -18,12 +18,16 @@
   - Plain documents, no envelope.
   - Errors as `{"code": "<kebab-case>", "args": {..}, "message": ".."}`
     with a non-zero exit code. A cause is an envelope in its turn, under
-    `args.cause` (`syntax`, `bad-operator-set` and `run`: the parsers'
-    failure, what is wrong with an operator set's file, the run layer's).
+    `args.cause` (`syntax`, `bad-operator-set`, `toolchain` and `run`: the
+    parsers' failure, what is wrong with an operator set's file, the
+    toolchain's, the run layer's). What the operating system or a tool said
+    is `args.detail`, as text (`unreadable`, `planning`, `runtime`).
   - Under JSON, what a command notices on its way (what was planned, the
     phases' times, the viability check, the workers chosen) is on stderr as
     one such envelope each, `cherenkov-cli-notice-*`, and stderr holds
-    nothing else. Under text each is a line, `cherenkov: message`. The set
+    nothing else. A notice's cause (`cherenkov-cli-notice-viability-skipped`)
+  is `args.cause`, an envelope in its turn. Under text each is a line,
+  `cherenkov: message`. The set
     in use, a run carried on and the `--in-diff` note are said under text
     only (`run.started` names the first two under JSON).
 
@@ -60,13 +64,15 @@ fields as `mutant.decided` has them, without a verdict. A dry run
 A test program ready to run mutants: `program` (binary path), `baseline_ms`,
 `prepared_ms`, `tests` (count; `null` when the executor cannot list them),
 `selection` (`"recorded"`, `"recorded-with-failures"` plus `failed_tests`,
-or `"every-test"` with `reason`). Written as each program is ready, not
-once all are.
+or `"every-test"` with `reason`). `reason` is the run's recorded reason in
+words (the catalog's); the run records it coded, and an older stream's
+reason as the text it was. Written as each program is ready, not once all
+are.
 
 ### `program.failed`
 A test program that could not be prepared (its tests fail unmutated, the
-debugger cannot run it): `program` (when known) and `reason`. The run
-stops; `run.finished` follows with `status` `"failed"`.
+debugger cannot run it): `program` (when known) and `reason`, in words as
+for `program.prepared`. The run stops; `run.finished` follows with `status` `"failed"`.
 
 ### `mutant.decided`
 One per mutant, in completion order. Self-contained:
