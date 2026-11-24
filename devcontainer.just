@@ -14,12 +14,13 @@ devcontainer-build:
     "$rt" build -f .devcontainer/Containerfile -t "{{DEVCONTAINER_IMAGE}}" .devcontainer
 
 # Enter the dev container with this checkout mounted at /workspaces/cherenkov.
-# ptrace is enabled for GDB and Delve (see .devcontainer/devcontainer.json).
+# ptrace is enabled for GDB and Delve, and perfmon for perf and samply (see
+# .devcontainer/devcontainer.json).
 devcontainer-shell:
     #!/usr/bin/env bash
     set -euo pipefail
     if docker info >/dev/null 2>&1; then rt=docker; else rt=podman; fi
-    "$rt" run --rm -it --cap-add=SYS_PTRACE --security-opt=seccomp=unconfined \
+    "$rt" run --rm -it --cap-add=SYS_PTRACE --cap-add=PERFMON --security-opt=seccomp=unconfined \
         --userns=keep-id -v "{{justfile_directory()}}:/workspaces/cherenkov" \
         -w /workspaces/cherenkov "{{DEVCONTAINER_IMAGE}}" bash
 
