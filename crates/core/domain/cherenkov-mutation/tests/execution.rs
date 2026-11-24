@@ -1,6 +1,8 @@
 use std::time::Duration;
 
-use cherenkov_mutation::execution::{Budget, Outcome, RawOutcome, Tier, classify, combine};
+use cherenkov_mutation::execution::{
+    Budget, Failure, Observed, Outcome, RawOutcome, Tier, TestReport, TestResult, classify, combine,
+};
 use cherenkov_mutation::verdict::Verdict;
 
 fn exited(code: i32) -> RawOutcome {
@@ -218,4 +220,93 @@ fn test_combine_unviable_anywhere_without_a_detection_is_unviable() {
         },
     ]);
     assert!(matches!(got, RawOutcome::Unviable { .. }), "{got:?}");
+}
+
+fn failed(test: &str, location: Option<&str>, message: &str) -> TestReport {
+    TestReport {
+        test: test.into(),
+        result: TestResult::Failed(Failure {
+            location: location.map(Into::into),
+            message: message.into(),
+            got: None,
+            expected: None,
+        }),
+    }
+}
+
+#[test]
+fn test_bare_observation_reports_no_tests() {
+    let observed = Observed::bare(exited(1));
+    assert_eq!(observed.outcome, exited(1));
+    assert!(observed.tests.is_empty());
+    assert!(!observed.failed());
+}
+
+#[test]
+fn test_observation_with_a_failed_test_is_failed_and_one_that_only_passed_is_not() {
+    let passed = TestReport {
+        test: "a".into(),
+        result: TestResult::Passed,
+    };
+    let ignored = TestReport {
+        test: "b".into(),
+        result: TestResult::Ignored,
+    };
+    let only_passes = Observed {
+        outcome: exited(0),
+        tests: vec![passed.clone(), ignored],
+    };
+    assert!(!only_passes.failed());
+    let mixed = Observed {
+        outcome: exited(1),
+        tests: vec![passed, failed("c", None, "boom")],
+    };
+    assert!(mixed.failed());
+}
+
+#[test]
+fn test_failing_reports_are_only_the_failed_ones() {
+    let observed = Observed {
+        outcome: exited(1),
+        tests: vec![
+            TestReport {
+                test: "a".into(),
+                result: TestResult::Passed,
+            },
+            failed("c", None, "boom"),
+        ],
+    };
+    assert_eq!(observed.failures(), vec![failed("c", None, "boom")]);
+}
+
+#[test]
+fn test_report_line_names_the_place_and_the_message() {
+    assert_eq!(
+        failed("TestX", Some("x_test.go:6"), "Total").line(),
+        "TestX at x_test.go:6: Total"
+    );
+    assert_eq!(failed("TestX", None, "Total").line(), "TestX: Total");
+}
+
+#[test]
+fn test_report_line_of_an_equality_failure_gives_both_values() {
+    let report = TestReport {
+        test: "t".into(),
+        result: TestResult::Failed(Failure {
+            location: Some("a.rs:1:2".into()),
+            message: "assertion".into(),
+            got: Some("-1".into()),
+            expected: Some("5".into()),
+        }),
+    };
+    assert_eq!(report.line(), "t at a.rs:1:2: got -1, expected 5");
+}
+
+#[test]
+fn test_report_line_of_a_test_that_did_not_fail_is_its_name_and_result() {
+    let report = TestReport {
+        test: "t".into(),
+        result: TestResult::Passed,
+    };
+    assert_eq!(report.line(), "t: passed");
 }

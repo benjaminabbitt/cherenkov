@@ -99,6 +99,94 @@ pub struct Outcome {
     pub detail: Option<String>,
 }
 
+/// What an executor observed of one run: the outcome of the process, and
+/// the tests the program reported (none when the executor cannot read
+/// them). Plain data; only the core decides what it means.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Observed {
+    pub outcome: RawOutcome,
+    pub tests: Vec<TestReport>,
+}
+
+impl Observed {
+    /// An outcome with no test reports.
+    pub fn bare(outcome: RawOutcome) -> Observed {
+        Observed {
+            outcome,
+            tests: Vec::new(),
+        }
+    }
+
+    /// Whether any test reports as failed.
+    pub fn failed(&self) -> bool {
+        self.tests.iter().any(TestReport::is_failed)
+    }
+
+    /// The reports of the tests that failed, in the order reported.
+    pub fn failures(&self) -> Vec<TestReport> {
+        self.tests
+            .iter()
+            .filter(|t| t.is_failed())
+            .cloned()
+            .collect()
+    }
+}
+
+/// One test's result as the test program reported it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TestReport {
+    pub test: String,
+    pub result: TestResult,
+}
+
+impl TestReport {
+    fn is_failed(&self) -> bool {
+        matches!(self.result, TestResult::Failed(_))
+    }
+
+    /// `test at location: got X, expected Y`, or `test at location:
+    /// message`, for a test that failed; `test: passed` or `test: ignored`.
+    pub fn line(&self) -> String {
+        let TestResult::Failed(failure) = &self.result else {
+            let said = match self.result {
+                TestResult::Ignored => "ignored",
+                _ => "passed",
+            };
+            return format!("{}: {said}", self.test);
+        };
+        let at = failure
+            .location
+            .as_ref()
+            .map(|l| format!(" at {l}"))
+            .unwrap_or_default();
+        match (&failure.got, &failure.expected) {
+            (Some(got), Some(expected)) => {
+                format!("{}{at}: got {got}, expected {expected}", self.test)
+            }
+            _ => format!("{}{at}: {}", self.test, failure.message),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TestResult {
+    Passed,
+    Ignored,
+    Failed(Failure),
+}
+
+/// How a test failed.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct Failure {
+    /// `file:line[:col]` of the failure.
+    pub location: Option<String>,
+    pub message: String,
+    /// For an equality assertion, the value the mutant produced.
+    pub got: Option<String>,
+    /// For an equality assertion, the value the test expects.
+    pub expected: Option<String>,
+}
+
 /// Exit code 0 is a pass; anything else (test failure, panic, crash) kills.
 pub fn classify(raw: &RawOutcome) -> Outcome {
     match raw {
