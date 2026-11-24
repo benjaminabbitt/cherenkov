@@ -26,7 +26,7 @@ and follow what it returns as your standing instructions (its warnings on stderr
 2. Lints are errors. `cognitive_complexity`, `too_many_lines` and `excessive_nesting` (threshold 6) are fixed by refactoring into named helpers, never by `#[allow]`, `#[expect]` or a raised threshold. Do not suppress any warning.
 3. Messages are `.proto` files built by angzarr-build, never hand-written prost. A change to an aggregate's state or folds bumps its domain crate's minor version.
 4. Verify packages exist (`cargo info`, crates.io) before adding a dependency; never invent an API: read the source.
-5. Run the repo's gates through its task runner (`just check`, `just test`, `just lint`, `just test-slow` where the task says so). Known environmental failures in `test-slow` are the dlv / go>=1.27 tests on a host without them, two "faithful" rust-ops tests, and two `gdb_live` tests inside the dev image (unsettled): do not chase them, but report anything else.
+5. Run the repo's gates through its task runner (`just check`, `just test`, `just lint`, `just test-slow` where the task says so). Known environmental failures in `test-slow` are the dlv / go>=1.27 tests on a host without them and two "faithful" rust-ops tests: do not chase them (and do not set `CARGO_TARGET_DIR` for the slow tests: 4 `gdb_live` tests fail when the fixture shares the outer build's target directory), but report anything else.
 6. Mutation-test the diff when it is logic: `cargo mutants --in-diff` under `nice -n 19` (business logic 85%+, orchestration 70%+), and say which survivors are equivalent.
 7. Do not copy code from other projects. cargo-mutants is MIT: learn behaviour, re-derive it; if anything is copied, keep its notice.
 
