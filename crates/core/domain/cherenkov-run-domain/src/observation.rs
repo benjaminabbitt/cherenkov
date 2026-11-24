@@ -7,11 +7,11 @@
 
 use std::time::Duration;
 
-use cherenkov_mutation::execution::{RawOutcome, Tier as CoreTier};
+use cherenkov_mutation::execution::{RawOutcome, TestReport, TestResult, Tier as CoreTier};
 use prost_types::Duration as WireDuration;
 
 use crate::mutant::{
-    Crashed, Exited, NotReached, Observation, ObservationKind, Tier, TimedOut, Unsupported,
+    Crashed, Exited, KilledBy, NotReached, Observation, ObservationKind, Tier, TimedOut, Unsupported,
     Unviable,
 };
 use crate::rejection::Unreadable;
@@ -51,6 +51,24 @@ pub fn encode(raw: &RawOutcome) -> Observation {
             }),
         },
     }
+}
+
+/// The failed tests among `tests`, as the run layer records what killed a
+/// mutant; a test that passed or was ignored killed nothing.
+pub fn killed_by(tests: &[TestReport]) -> Vec<KilledBy> {
+    tests
+        .iter()
+        .filter_map(|report| match &report.result {
+            TestResult::Failed(failure) => Some(KilledBy {
+                test: report.test.clone(),
+                location: failure.location.clone(),
+                message: failure.message.clone(),
+                got: failure.got.clone(),
+                expected: failure.expected.clone(),
+            }),
+            TestResult::Passed | TestResult::Ignored => None,
+        })
+        .collect()
 }
 
 /// The executor's outcome for `observation`.
