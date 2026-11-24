@@ -13,7 +13,7 @@ the runners), resume after a crash, incremental runs, and a committed
 verdict file that diffs as one line per changed verdict.
 
 ## Where it stands
-After 5.6 the output and the verdict file are projectors on the bus and after 5.5 the root hosts the core (below); after 5.4 the aggregates decide (the Mutant its own verdict, from the facts
+After 5.7 the run is kept in SQLite and resumed; after 5.6 the output and the verdict file are projectors on the bus and after 5.5 the root hosts the core (below); after 5.4 the aggregates decide (the Mutant its own verdict, from the facts
 of its programs' runs), the streams can be executed (a runner needs the
 streams alone), and the run is served by angzarr's bus: the runners, both
 policies and the live-runs read model, built in one place
@@ -28,7 +28,7 @@ works its own way:
 - **The bus scans all of a subscription's streams on each commit**, which
   makes a run of n mutants cost O(n squared) in the bus (see 5.4).
 - **Layering**: flat, no arch-lint, presentation and infrastructure in the
-  application, `Diagnostic` only at the top, the store in memory.
+  application, `Diagnostic` only at the top (5.8).
 
 ## Done
 1. **Spike**: events, aggregate, a projector over the workers, follow, dry
@@ -684,6 +684,9 @@ has it; no bump was needed). What was done:
   new messages. A runner handed a mutant planned for a run that has ended
   (a crash left it) runs nothing: it reads the run's end from the live runs
   model, else from the run's stream.
+- **On the operator sets of main**: a run is the same plan when its
+  `operators` (one set for each language) are equal, so a run planned with
+  another set, or for another language, is not carried on.
 - **Ephemeral subscriptions: reprint, not resume.** The output, the verdict
   projection and the live runs keep their positions in memory, so a serve
   hands them every run's stream from its first event. They are scoped to the
