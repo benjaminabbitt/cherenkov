@@ -22,9 +22,12 @@ works its own way:
 
 - **The store is SQLite** (5.7, below): a run survives the process, and a
   killed run is carried on by the next `cherenkov run` of the same plan.
-- **The executor port returns raw outcomes**, and the CLI hands the
-  workers a libtest parser (`Explain`). Typed observations from each
-  adapter are the next step.
+- **The executor port returns typed observations** (`Observed`: the
+  outcome and the tests the program reported, each passed, ignored or
+  failed with where and why). Each adapter reads its own program's output
+  (libtest under GDB, Go's plain output under Delve) and the run layer
+  parses nothing; a killed mutant names its failing tests for Rust and Go
+  alike, and a Go failure has a place and a message but no values.
 - **The bus no longer scans every stream on each commit**: the edge follows
   the store's change feed (`Following::Changes`), so a commit costs the feed
   only the streams it touched (angzarr-bus's
@@ -189,7 +192,7 @@ In ctxloom's layout, `crates/<ring>/<role>/<crate>`:
 | core/domain | `cherenkov-mutation` | the mutation domain: concepts, operators, operator sets, the planner, verdicts and ids; `classify` and `combine`; the mutant plan's domain types, generated |
 | core/domain | `cherenkov-run-domain` | the run and mutant aggregates and the fan-out and fan-in policies, from `markup_domain`: the run judges its programs' preparation and records `RunReady` and finishes; the mutant decides its verdict |
 | core/read-model | `cherenkov-run-reads` | live runs (resume, completion, and each run's programs' preparation, which the runner reads), the verdict projection |
-| core/ports | `cherenkov-run-ports` | the edge to the core (handle, report, read, wait for a commit); the executor port, the source port and the syntax port, moved out of `cherenkov-mutation` (5.8); typed observations and `Diagnostic` errors come with 5.9 |
+| core/ports | `cherenkov-run-ports` | the edge to the core (handle, report, read, wait for a commit); the executor port, the source port and the syntax port, moved out of `cherenkov-mutation` (5.8); the executor's `Observed` (outcome and typed test reports); `Diagnostic` errors come with 5.9 |
 | core/application | `cherenkov-run-application` | plan a project's files (`session`, moved from `cherenkov-mutation` because it drives the ports), plan a run, prepare its programs, the runner projector (a mutant's program runs, each recorded as a fact through the kernel, stopping at `MutantDecided`), resume or abandon |
 | adapters/driven | `cherenkov-exec-dap`, `cherenkov-syntax`, `cherenkov-fs`, `cherenkov-run-store` | executors, each parsing its own runner's output; parsing; sources; the store with Cherenkov's codec |
 | adapters/driving | `cherenkov-cli` | what a run prints as (JSON Lines or text, the output projector) and the errors a command fails with |
@@ -523,11 +526,14 @@ classes as retryable is held and retried by the bus after a delay
 run then ends `Stalled`, naming how many mutants it owes).
 
 **Deviations and what is left.**
-- The executor port still returns raw outcomes, and `Explain` (the
-  libtest parser the CLI hands the workers) stays: typed observations from
-  each adapter, and Go runs not meeting the libtest parser, are the next
-  step and independent of the bus. `NOT_CALLED` and `ERROR` were gone
-  already (5.2).
+- The executor port returns typed observations (`Observed`), and the
+  libtest parser the CLI handed the workers (`Explain`) is gone: each
+  adapter's launcher reads its program's output into `TestReport`s
+  (`Launcher::tests_of`), and the wire `KilledBy` is made from them in
+  `cherenkov_run_domain::observation::killed_by`. Delve's session keeps
+  the program's stdout, which it used to discard after the banner, so a
+  Go run is explained too. `NOT_CALLED` and `ERROR` were gone already
+  (5.2).
 - Both policies and the runner are registered in `host::serve`, not
   generated: `register` waits for the codegen to cover policies.
 - cli-support (rust-support `d543b4e`) is on the same angzarr commit as the
@@ -588,9 +594,8 @@ here, because the in-memory store lists streams cheaply. The fan in costs
 
 Exit: `workers.rs` names no verdict; `FanIn`, `NOT_CALLED` and `ERROR` are
 gone; no policy runs inline; a runner stops at `MutantDecided`; a `Harness`
-test per verdict path. Not met: a killed Go fixture mutant naming its
-killer (the Go run's output is still parsed by the libtest parser; with
-typed observations it will). Unblocks: 5.6, phase 6.
+test per verdict path; a killed Go fixture mutant names its killer
+(`test_run_reports_what_killed_a_go_mutant`). Unblocks: 5.6, phase 6.
 
 **5.5 App and core_link.** Done. Goal: the root hosts the core; the
 application sees ports. What was done:
