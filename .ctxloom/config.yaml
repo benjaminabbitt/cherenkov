@@ -4,10 +4,78 @@ agents:
     engines:
       claude-code:
         model: opus
+        permissions:
+          defaultMode: acceptEdits
     profiles:
       - default
     runtime: host
+  developer:
+    engine: claude-code
+    engines:
+      claude-code:
+        model: claude-sonnet-5-5
+        permissions:
+          defaultMode: bypassPermissions
+          allow:
+            - Bash(git:*)
+            - Bash(just:*)
+            - Bash(cargo:*)
+            - Bash(wc:*)
+            - Bash(find:*)
+            - Bash(grep:*)
+            - Bash(cat:*)
+            - Bash(sed:*)
+            - Bash(head:*)
+            - Bash(tail:*)
+            - Bash(ls:*)
+    profiles:
+      - default
+    runtime: host
+  finder:
+    engine: claude-code
+    engines:
+      claude-code:
+        model: haiku
+    profiles:
+      - finder
+    runtime: container-rootless
+  haiku:
+    engine: claude-code
+    engines:
+      claude-code:
+        model: haiku
+    runtime: host
+  orchestrator:
+    engine: claude-code
+    engines:
+      claude-code:
+        model: opus
+        permissions:
+          defaultMode: bypassPermissions
+    profiles:
+      - orchestrator
+      - captain
+    runtime: host
+  reviewer-rust:
+    engine: claude-code
+    engines:
+      claude-code:
+        model: opus
+        permissions:
+          defaultMode: bypassPermissions
+    profiles:
+      - reviewer-rust
+    runtime: host
+  worker:
+    engine: claude-code
+    engines:
+      claude-code:
+        model: sonnet
+    profiles:
+      - orchestrator
+      - captain
+    runtime: host
 config:
   content_form: distilled
-default_agent: default
+default_agent: orchestrator
 schema_version: 9
