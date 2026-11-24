@@ -6,7 +6,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use angzarr_presentation::Format;
+use presentation::Format;
 
 use cherenkov_exec_dap::delve::{DelveConfig, DelveExecutor};
 use cherenkov_exec_dap::gdb::{GdbConfig, GdbExecutor};

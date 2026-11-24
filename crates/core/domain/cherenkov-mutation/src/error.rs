@@ -10,10 +10,10 @@ pub const EN_US: (&str, &str) = (
 
 /// One value of every error, for the catalog test.
 #[cfg(test)]
-pub fn diagnostic_samples() -> Vec<Box<dyn angzarr_diagnostic::Diagnostic>> {
+pub fn diagnostic_samples() -> Vec<Box<dyn coded_diagnostic::Diagnostic>> {
     use crate::set_spec::SetError;
     use crate::token::TokenTableError;
-    use angzarr_diagnostic::Report;
+    use coded_diagnostic::Report;
     vec![
         Box::new(TokenTableError::BadNotTemplate {
             template: "t".into(),

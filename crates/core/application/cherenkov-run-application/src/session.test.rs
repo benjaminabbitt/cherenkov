@@ -10,12 +10,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use super::{FileProblem, plan_project};
-use angzarr_diagnostic::Report;
 use cherenkov_mutation::operator::catalog;
 use cherenkov_mutation::profile::Profile;
 use cherenkov_mutation::syntax::{FileSyntax, LanguageId};
 use cherenkov_run_ports::source::SourceReader;
 use cherenkov_run_ports::syntax::{SyntaxError, SyntaxPort};
+use coded_diagnostic::Report;
 use common::{TOY_SRC, toy_file, toy_profile};
 
 const SYNTAX_ERROR: &str = "<syntax error>";

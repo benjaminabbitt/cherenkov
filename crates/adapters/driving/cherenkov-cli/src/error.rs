@@ -4,8 +4,8 @@
 
 use std::fmt;
 
-use angzarr_diagnostic::{Arg, Diagnostic, Report, code};
 use cli_support::{Exit, ExitClass};
+use coded_diagnostic::{Arg, Diagnostic, Report, code};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CliError {
@@ -64,7 +64,7 @@ impl CliError {
 
 impl fmt::Display for CliError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 

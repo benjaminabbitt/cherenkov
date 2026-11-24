@@ -2,11 +2,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use angzarr_diagnostic::{Arg, Diagnostic, Report, code};
 use cherenkov_mutation::concept::{Capture, Concept};
 use cherenkov_mutation::profile::{FileRules, Profile, ReturnValues};
 use cherenkov_mutation::syntax::{LanguageId, SkipKind, StmtKind};
 use cherenkov_mutation::token::{Token, TokenTable};
+use coded_diagnostic::{Arg, Diagnostic, Report, code};
 use serde::Deserialize;
 
 /// The three data files that make up a profile, plus its grammar.
@@ -53,7 +53,7 @@ pub enum ProfileError {
 
 impl std::fmt::Display for ProfileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 

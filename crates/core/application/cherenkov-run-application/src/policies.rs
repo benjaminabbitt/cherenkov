@@ -16,12 +16,12 @@
 //! crash or a held failure, re-derives the same ids, and what it records
 //! twice is a duplicate.
 
-use angzarr_diagnostic::Diagnostic;
 use angzarr_embedded::angzarr_router::error::{CodedError, RetryableStatus};
 use angzarr_embedded::angzarr_router::hpb::ProjectRequest;
 use angzarr_embedded::markup::{Commands, PolicyContext};
 use angzarr_embedded::v1::EventPage;
 use angzarr_embedded_macros::{on_event, policy};
+use coded_diagnostic::Diagnostic;
 
 use crate::error::RunLayerError;
 use cherenkov_run_domain::{DecisionReported, MutantDecided, PlanMutant, RunReady};

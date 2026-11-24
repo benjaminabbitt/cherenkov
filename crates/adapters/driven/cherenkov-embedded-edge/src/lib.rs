@@ -90,7 +90,7 @@ impl<S> RunStore for S where
 
 /// `error`, captured, with who must act on it.
 fn failed(
-    error: &dyn angzarr_embedded::angzarr_diagnostic::Diagnostic,
+    error: &dyn angzarr_embedded::coded_diagnostic::Diagnostic,
     recovery: Recovery,
 ) -> EdgeError {
     EdgeError {

@@ -2,8 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use angzarr_diagnostic::{Arg, Diagnostic, code};
 use cherenkov_mutation::token::Token;
+use coded_diagnostic::{Arg, Diagnostic, code};
 use serde::Deserialize;
 
 use crate::shapes::{Check, Kind, Shape, Table};
@@ -29,7 +29,7 @@ pub enum IsaError {
 
 impl std::fmt::Display for IsaError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 

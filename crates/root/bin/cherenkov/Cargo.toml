@@ -9,9 +9,9 @@ publish.workspace = true
 
 [dependencies]
 cherenkov-run-ports.workspace = true
-angzarr-diagnostic.workspace = true
+coded-diagnostic.workspace = true
 angzarr-embedded.workspace = true
-angzarr-presentation.workspace = true
+presentation.workspace = true
 cli-support.workspace = true
 sysinfo.workspace = true
 cherenkov-cli.workspace = true

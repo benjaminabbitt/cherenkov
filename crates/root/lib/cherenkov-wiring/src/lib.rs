@@ -10,7 +10,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use angzarr_embedded::angzarr_diagnostic::Report;
+use angzarr_embedded::coded_diagnostic::Report;
 use angzarr_embedded::v1::Uuid;
 use angzarr_embedded::{OnRetryable, Registry, Sampled, Timestamp};
 use cherenkov_embedded_edge::{EmbeddedEdge, RunStore, TokioWait};
@@ -53,7 +53,7 @@ pub async fn core<S: RunStore>(
 ) -> Result<EmbeddedEdge<S>, RunLayerError> {
     let mut registry = Registry::new();
     cherenkov_run_domain::register(&mut registry).map_err(|e| RunLayerError::Misconfigured {
-        cause: angzarr_embedded::angzarr_diagnostic::Report::of(&e),
+        cause: angzarr_embedded::coded_diagnostic::Report::of(&e),
     })?;
     Ok(EmbeddedEdge::start(store, registry, retry, sample, Arc::new(TokioWait)).await)
 }

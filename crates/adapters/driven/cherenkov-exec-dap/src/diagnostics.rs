@@ -9,7 +9,7 @@ pub const EN_US: (&str, &str) = (
 
 /// One value of every error, for the catalog test.
 #[cfg(test)]
-pub fn diagnostic_samples() -> Vec<Box<dyn angzarr_diagnostic::Diagnostic>> {
+pub fn diagnostic_samples() -> Vec<Box<dyn coded_diagnostic::Diagnostic>> {
     use crate::isa::IsaError;
     vec![
         Box::new(IsaError::Toml { detail: "d".into() }),

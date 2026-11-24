@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use angzarr_diagnostic::{Arg, Diagnostic, Report, code};
 use cherenkov_mutation::operator::Operator;
 use cherenkov_mutation::operator_set::OperatorSet;
 use cherenkov_mutation::plan::{Diagnostics, MutantPlan, PlanOutput, Provenance, plan_file};
@@ -12,6 +11,7 @@ use cherenkov_mutation::profile::Profile;
 use cherenkov_mutation::syntax::{FileSyntax, LanguageId};
 use cherenkov_run_ports::source::SourceReader;
 use cherenkov_run_ports::syntax::SyntaxPort;
+use coded_diagnostic::{Arg, Diagnostic, Report, code};
 
 /// Why a file was not planned: coded, with named data (the messages are
 /// `locales/en-US/messages.ftl`'s).
@@ -27,7 +27,7 @@ pub enum FileProblem {
 
 impl std::fmt::Display for FileProblem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 

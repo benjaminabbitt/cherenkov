@@ -175,7 +175,7 @@ async fn test_the_fan_in_passes_over_a_mutant_planned() {
 #[test]
 fn test_a_failure_worth_making_again_is_a_retryable_handler_error_and_others_are_not() {
     use angzarr_embedded::{Class, class};
-    let cause = angzarr_diagnostic::Report::new("angzarr-embedded-x");
+    let cause = coded_diagnostic::Report::new("angzarr-embedded-x");
     let class_of = |error: RunLayerError| class(handler_error(&error).grpc as i32);
     assert_eq!(
         class_of(RunLayerError::Unavailable {

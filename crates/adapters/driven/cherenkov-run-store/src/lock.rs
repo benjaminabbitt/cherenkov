@@ -1,7 +1,7 @@
 //! The store's exclusive lock: one process at a time keeps a run in a store
 //! file (`cherenkov run`) or prunes it (`cherenkov store prune`).
 //!
-//! The lock is angzarr's advisory file lock (`file-lock`: `flock(2)` on a
+//! The lock is rust-support's advisory file lock (`file-lock`: `flock(2)` on a
 //! lock file) taken on `<store>.lock`, never waited for: a second taker is
 //! refused at once, naming the holder. The operating system releases the
 //! lock when the holder's process ends, however it ends, so **a lock cannot

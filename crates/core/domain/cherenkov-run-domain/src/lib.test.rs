@@ -787,8 +787,7 @@ fn test_a_root_that_cannot_be_derived_is_an_error_and_not_the_nil_uuid() {
 
 #[test]
 fn test_every_refusal_has_a_message_using_exactly_its_args() {
-    let problems =
-        angzarr_diagnostic::catalog::check(EN_US.0, EN_US.1, &crate::diagnostic_samples());
+    let problems = coded_diagnostic::catalog::check(EN_US.0, EN_US.1, &crate::diagnostic_samples());
     assert!(problems.is_empty(), "{problems:?}");
 }
 

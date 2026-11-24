@@ -39,9 +39,14 @@ the `encodings.txt` beside `cherenkov-run-wire`'s and `cherenkov-run-domain`'s
 tests holds every message's and refusal's bytes, and those tests fail on any
 change to them.
 
-The angzarr pins are one full commit, `71b453a` of github.com/angzarr-io/angzarr
-(core, embedded, router, build and platform are crates of that one workspace),
-and rust-support (cli-support) is on the same one, so the lock holds one core. A change to what an aggregate's state holds or how its events
+The angzarr pins are one full commit, `04107e5` of github.com/angzarr-io/angzarr
+(core, embedded, router, build and platform are crates of that one workspace).
+The generic substrate is rust-support's (github.com/benjaminabbitt/rust-support),
+every crate of it at one full commit, `2f7d267`, the one angzarr pins:
+`coded-diagnostic` (imported as `coded_diagnostic`), `presentation`,
+`cli-support`, `file-lock`, `file-system` and `os`. The lock holds one core and
+one `coded-diagnostic`. `Recovery` is angzarr-ports'
+(`cherenkov_run_ports::Recovery` re-exports it). A change to what an aggregate's state holds or how its events
 fold bumps `cherenkov-run-domain`'s minor version: it is the rules version
 under which snapshots are kept.
 
@@ -66,7 +71,7 @@ of `arch-rules.toml` without the owner's ruling (the six there are marked
 `cherenkov run` keeps its run in a SQLite store (`.cherenkov/store/runs.sqlite`
 under the project, or `--store FILE`; `--ephemeral` keeps nothing). One
 process holds a store at a time: `cherenkov-run-store`'s `lock` takes
-angzarr's `file-lock` (`flock` on `<store>.lock`, never waited for) with the
+rust-support's `file-lock` (`flock` on `<store>.lock`, never waited for) with the
 holder's record beside it (`<store>.holder`), and a second run, or a `store
 prune`, is refused at once (`store-locked`, exit 48) naming the holder. The
 OS releases a lock with its process, so none outlives its holder; `cherenkov

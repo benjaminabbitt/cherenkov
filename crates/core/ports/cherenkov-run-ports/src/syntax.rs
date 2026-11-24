@@ -3,8 +3,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use angzarr_diagnostic::{Arg, Diagnostic, code};
 use cherenkov_mutation::syntax::{FileSyntax, LanguageId};
+use coded_diagnostic::{Arg, Diagnostic, code};
 
 /// Why a file could not be analyzed: coded, with named data (the messages
 /// are `locales/en-US/messages.ftl`'s).
@@ -20,7 +20,7 @@ pub enum SyntaxError {
 
 impl std::fmt::Display for SyntaxError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 

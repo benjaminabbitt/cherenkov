@@ -421,9 +421,9 @@ mod verdict_file {
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU32, Ordering};
 
-    use angzarr_diagnostic::Diagnostic;
     use cherenkov_run_application::verdicts::VerdictFile;
     use cherenkov_run_wire::output::VerdictLine;
+    use coded_diagnostic::Diagnostic;
 
     use super::*;
 
@@ -523,7 +523,7 @@ impl Write for Note {
 
 /// Notices said in `format` into `note`.
 fn says(format: Format, note: &Note) -> Say {
-    let catalog = angzarr_presentation::Catalog::en_us(&[crate::error::EN_US]).unwrap();
+    let catalog = presentation::Catalog::en_us(&[crate::error::EN_US]).unwrap();
     Say::to(format, std::sync::Arc::new(catalog), note.clone())
 }
 

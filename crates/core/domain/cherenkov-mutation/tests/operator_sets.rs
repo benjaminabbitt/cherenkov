@@ -232,8 +232,8 @@ fn test_token_names_cover_the_new_operators() {
 
 // --- Asking for several sets: `a,b,custom.toml`.
 
-use angzarr_diagnostic::Report;
 use cherenkov_mutation::operator_set::{CustomSet, SetError, custom_set, resolve_sets};
+use coded_diagnostic::Report;
 
 fn custom(mutations: &[&str], skips: &[&str]) -> CustomSet {
     CustomSet {

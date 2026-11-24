@@ -1,5 +1,5 @@
-use angzarr_diagnostic::Report;
 use cherenkov_cli::error::CliError;
+use coded_diagnostic::Report;
 
 use super::catalog;
 

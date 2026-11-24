@@ -9,7 +9,7 @@ publish.workspace = true
 
 # Allowed dependencies are enforced by tests/architecture.rs: pure computation only.
 [dependencies]
-angzarr-diagnostic.workspace = true
+coded-diagnostic.workspace = true
 bitflags.workspace = true
 serde.workspace = true
 sha2.workspace = true

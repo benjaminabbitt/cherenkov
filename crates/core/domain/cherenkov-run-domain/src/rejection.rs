@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use angzarr_diagnostic::{Arg, Diagnostic, code};
+use coded_diagnostic::{Arg, Diagnostic, code};
 
 /// Why the run refused a command.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -13,7 +13,7 @@ pub enum RunRejection {
 
 impl fmt::Display for RunRejection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 
@@ -42,7 +42,7 @@ pub enum MutantRejection {
 
 impl fmt::Display for MutantRejection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 
@@ -82,7 +82,7 @@ pub enum SnapshotRejection {
 
 impl fmt::Display for SnapshotRejection {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 
@@ -123,7 +123,7 @@ pub enum Unreadable {
 
 impl fmt::Display for Unreadable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 
@@ -159,7 +159,7 @@ pub struct UnderivableRoot {
 
 impl fmt::Display for UnderivableRoot {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 

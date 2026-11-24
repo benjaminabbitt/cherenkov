@@ -26,7 +26,8 @@ use angzarr_embedded::v1::{
     Command, CommandBook, CommandPage, Cover, EventPage, Fact, FactOrigin, command_page,
 };
 
-pub use angzarr_embedded::angzarr_diagnostic::{Recovery, Report};
+pub use angzarr_embedded::angzarr_ports::Recovery;
+pub use angzarr_embedded::coded_diagnostic::Report;
 
 /// Why the core did not take a call: what failed, captured, and who must
 /// act on it. A call that failed with [`Recovery::Retry`] (a store down for

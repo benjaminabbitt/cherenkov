@@ -9,11 +9,11 @@ use std::fmt;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 
-use angzarr_diagnostic::{Arg, Diagnostic, Report, code};
-use angzarr_presentation::{Catalog, Format};
 use cherenkov_mutation::concept::Concept;
 use cherenkov_mutation::plan::{Diagnostics, SkipReason};
 use cli_support::say_warning;
+use coded_diagnostic::{Arg, Diagnostic, Report, code};
+use presentation::{Catalog, Format};
 
 /// The program's name, as a notice is prefixed with it under text.
 const PROG: &str = "cherenkov";
@@ -157,7 +157,7 @@ impl Notice {
 
 impl fmt::Display for Notice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 

@@ -11,7 +11,7 @@
 //! skips = ["test", "annotated"]     # optional region kinds to plan nothing in
 //! ```
 
-use angzarr_diagnostic::{Arg, Diagnostic, Report, code};
+use coded_diagnostic::{Arg, Diagnostic, Report, code};
 use serde::Deserialize;
 
 use crate::inventory::canonical_names;
@@ -38,7 +38,7 @@ pub enum SetError {
 
 impl std::fmt::Display for SetError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 

@@ -3,8 +3,8 @@
 
 use std::fmt;
 
-use angzarr_diagnostic::{Arg, Diagnostic, Report, code};
 use cherenkov_run_ports::EdgeError;
+use coded_diagnostic::{Arg, Diagnostic, Report, code};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RunLayerError {
@@ -50,7 +50,7 @@ impl From<EdgeError> for RunLayerError {
 
 impl fmt::Display for RunLayerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 

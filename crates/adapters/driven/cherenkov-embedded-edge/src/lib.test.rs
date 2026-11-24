@@ -2,11 +2,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use angzarr_embedded::angzarr_bus::{Credit, Scope, Subscription};
-use angzarr_embedded::angzarr_diagnostic::Report;
 use angzarr_embedded::angzarr_ports::memory::MemoryStore;
 use angzarr_embedded::angzarr_router::error::CodedError;
 use angzarr_embedded::angzarr_router::hpb::{ProjectRequest, ProjectResponse};
 use angzarr_embedded::angzarr_router::router::DynProjectorHandler;
+use angzarr_embedded::coded_diagnostic::Report;
 use angzarr_embedded::testing::Samples;
 use angzarr_embedded::v1::{Cover, Uuid};
 use angzarr_embedded::{BusPolicy, ProjectorHandler, Registry};

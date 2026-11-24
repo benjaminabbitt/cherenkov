@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-const ALLOWED_DEPENDENCIES: &[&str] = &["angzarr-diagnostic", "bitflags", "serde", "sha2"];
+const ALLOWED_DEPENDENCIES: &[&str] = &["coded-diagnostic", "bitflags", "serde", "sha2"];
 
 fn manifest_dir() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))

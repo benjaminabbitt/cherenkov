@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn test_every_error_has_a_message_using_exactly_its_args() {
-    let problems = angzarr_diagnostic::catalog::check(EN_US.0, EN_US.1, &diagnostic_samples());
+    let problems = coded_diagnostic::catalog::check(EN_US.0, EN_US.1, &diagnostic_samples());
     assert!(problems.is_empty(), "{problems:?}");
 }
 
@@ -39,7 +39,7 @@ fn test_a_store_another_process_holds_is_declined_not_failed() {
 
 #[test]
 fn test_the_refusals_of_a_held_store_name_the_holder_and_the_way_out() {
-    let catalog = angzarr_presentation::Catalog::en_us(&[EN_US]).unwrap();
+    let catalog = presentation::Catalog::en_us(&[EN_US]).unwrap();
     let locked = CliError::StoreLocked {
         path: "s.sqlite".into(),
         holder: "pid 7, held for 3s".into(),
@@ -63,7 +63,7 @@ fn test_the_refusals_of_a_held_store_name_the_holder_and_the_way_out() {
 fn test_the_catalog_renders_every_error_and_the_run_layer_s_within_it() {
     let mut sources = vec![EN_US];
     sources.extend(cherenkov_run_application::error::CATALOG_SOURCES);
-    let catalog = angzarr_presentation::Catalog::en_us(&sources).unwrap();
+    let catalog = presentation::Catalog::en_us(&sources).unwrap();
     for sample in diagnostic_samples() {
         let message = catalog.render(&*sample);
         assert!(message.is_ok(), "{sample}: {message:?}");
@@ -86,37 +86,37 @@ struct Inner;
 
 impl std::fmt::Display for Inner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 
 impl std::fmt::Display for Cause {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 
-impl angzarr_diagnostic::Diagnostic for Inner {
+impl coded_diagnostic::Diagnostic for Inner {
     fn code(&self) -> &str {
         "inner-code"
     }
 
-    fn args(&self) -> Vec<(&str, angzarr_diagnostic::Arg)> {
+    fn args(&self) -> Vec<(&str, coded_diagnostic::Arg)> {
         vec![("why", "because".into())]
     }
 }
 
-impl angzarr_diagnostic::Diagnostic for Cause {
+impl coded_diagnostic::Diagnostic for Cause {
     fn code(&self) -> &str {
         "outer-code"
     }
 
-    fn args(&self) -> Vec<(&str, angzarr_diagnostic::Arg)> {
+    fn args(&self) -> Vec<(&str, coded_diagnostic::Arg)> {
         vec![
-            ("signed", angzarr_diagnostic::Arg::Int(-3)),
-            ("count", angzarr_diagnostic::Arg::Uint(7)),
+            ("signed", coded_diagnostic::Arg::Int(-3)),
+            ("count", coded_diagnostic::Arg::Uint(7)),
             ("text", "a b".into()),
-            ("cause", angzarr_diagnostic::Arg::Nested(Box::new(Inner))),
+            ("cause", coded_diagnostic::Arg::Nested(Box::new(Inner))),
         ]
     }
 }
@@ -146,7 +146,7 @@ fn test_a_run_layer_cause_is_held_with_its_code_its_args_and_its_nested_cause() 
 fn test_a_bad_operator_set_and_a_parser_that_did_not_load_render_their_causes() {
     let mut sources = vec![EN_US];
     sources.extend(cherenkov_run_application::error::CATALOG_SOURCES);
-    let catalog = angzarr_presentation::Catalog::en_us(&sources).unwrap();
+    let catalog = presentation::Catalog::en_us(&sources).unwrap();
     let cause = cherenkov_mutation::set_spec::SetError::UnknownSkip {
         name: "moon".into(),
     };

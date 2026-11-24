@@ -13,11 +13,9 @@ use std::sync::{Mutex, PoisonError};
 
 use crate::notice::{Notice, Say};
 use crate::render::documents;
-use angzarr_diagnostic::Report;
 use angzarr_embedded::ProjectorHandler;
 use angzarr_embedded::angzarr_router::error::CodedError;
 use angzarr_embedded::angzarr_router::hpb::{ProjectRequest, ProjectResponse};
-use angzarr_presentation::Format;
 use cherenkov_run_application::host::Output;
 use cherenkov_run_application::verdicts::VerdictFile;
 use cherenkov_run_wire::names;
@@ -28,6 +26,8 @@ use cherenkov_run_wire::output::{
 use cherenkov_run_wire::{KilledBy, PlannedMutant};
 use cherenkov_run_wire::{RunStatus, Selection, Verdict};
 use cli_support::Exit;
+use coded_diagnostic::Report;
+use presentation::Format;
 
 /// Where a run's documents go, each as soon as it is recorded.
 pub trait Sink: Send {

@@ -28,28 +28,29 @@ cherenkov-wiring = { path = "crates/root/lib/cherenkov-wiring" }
 # The angzarr family, pinned by full commit to one revision of the one angzarr
 # workspace (github.com/angzarr-io/angzarr), so the lock holds one core:
 # angzarr-embedded (its kernel, bus and markup macros), angzarr-ports (the
-# in-memory store), the diagnostics and the presentation the CLI renders
-# through, angzarr-proto and angzarr-build (with angzarr-codegen: the wire and
+# in-memory store, and its `Recovery`),
+# angzarr-proto and angzarr-build (with angzarr-codegen: the wire and
 # domain crates' build dependency, generating from proto/ into OUT_DIR).
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr", rev = "04107e5453377ad1ea6cfe2ed6eae05cf4336058" }
 # The kernel's App: the application over a store, its registry and settings.
-angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
-angzarr-store-sqlite = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
-angzarr-diagnostic = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
-angzarr-presentation = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
-angzarr-ports = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59", features = ["memory"] }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr", rev = "04107e5453377ad1ea6cfe2ed6eae05cf4336058" }
+angzarr-store-sqlite = { git = "https://github.com/angzarr-io/angzarr", rev = "04107e5453377ad1ea6cfe2ed6eae05cf4336058" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr", rev = "04107e5453377ad1ea6cfe2ed6eae05cf4336058" }
+angzarr-ports = { git = "https://github.com/angzarr-io/angzarr", rev = "04107e5453377ad1ea6cfe2ed6eae05cf4336058", features = ["memory"] }
 # angzarr's own messages, which the run layer's protos embed (its UUID).
-angzarr-proto = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
-angzarr-build = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
-# The store's exclusive lock (`cherenkov-run-store`): angzarr's advisory file
-# lock, and the file-system seam and host it is taken through.
-file-lock = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
-file-system = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
-os = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
-# rust-support, shared with ctxloom, taskloom and angzarr-cli: the CLI's
-# failure, its reporter and the exit-code convention, on the same angzarr rev.
-cli-support = { git = "https://github.com/benjaminabbitt/rust-support", rev = "5bc1d60f1a10d4902b2daad36c348e9bc39c15fa" }
+angzarr-proto = { git = "https://github.com/angzarr-io/angzarr", rev = "04107e5453377ad1ea6cfe2ed6eae05cf4336058" }
+angzarr-build = { git = "https://github.com/angzarr-io/angzarr", rev = "04107e5453377ad1ea6cfe2ed6eae05cf4336058" }
+# rust-support (github.com/benjaminabbitt/rust-support), the generic substrate, at the
+# one commit angzarr pins: the coded errors and the presentation the CLI renders
+# through, cli-support (the CLI's failure, its reporter and the exit-code
+# convention), and the store's exclusive lock (`cherenkov-run-store`): the
+# advisory file lock, and the file-system seam and host it is taken through.
+coded-diagnostic = { git = "https://github.com/benjaminabbitt/rust-support", rev = "2f7d2670a66f00dcf9ad4b2b5a8e20e5d9d3e479" }
+presentation = { git = "https://github.com/benjaminabbitt/rust-support", rev = "2f7d2670a66f00dcf9ad4b2b5a8e20e5d9d3e479" }
+cli-support = { git = "https://github.com/benjaminabbitt/rust-support", rev = "2f7d2670a66f00dcf9ad4b2b5a8e20e5d9d3e479" }
+file-lock = { git = "https://github.com/benjaminabbitt/rust-support", rev = "2f7d2670a66f00dcf9ad4b2b5a8e20e5d9d3e479" }
+file-system = { git = "https://github.com/benjaminabbitt/rust-support", rev = "2f7d2670a66f00dcf9ad4b2b5a8e20e5d9d3e479" }
+os = { git = "https://github.com/benjaminabbitt/rust-support", rev = "2f7d2670a66f00dcf9ad4b2b5a8e20e5d9d3e479" }
 # prost must be the version angzarr-proto generates for.
 prost = "0.14"
 prost-types = "0.14"

@@ -587,7 +587,7 @@ impl Edge for Flaky {
             && self.reads.fetch_add(1, Ordering::SeqCst) == 0
         {
             return Err(cherenkov_run_ports::EdgeError {
-                cause: angzarr_diagnostic::Report::new("test-store-down"),
+                cause: coded_diagnostic::Report::new("test-store-down"),
                 recovery: self.recovery,
             });
         }

@@ -1,13 +1,13 @@
 use std::sync::{Arc, Mutex};
 
 use super::*;
-use angzarr_presentation::Format;
 use cherenkov_run_wire::output::{Finished, Prepared};
+use presentation::Format;
 use std::io::Write;
 
 /// Phases said as text into `written`.
 fn says(written: &Written) -> Say {
-    let catalog = angzarr_presentation::Catalog::en_us(&[cherenkov_cli::error::EN_US]).unwrap();
+    let catalog = presentation::Catalog::en_us(&[cherenkov_cli::error::EN_US]).unwrap();
     Say::to(Format::Text, Arc::new(catalog), written.clone())
 }
 
