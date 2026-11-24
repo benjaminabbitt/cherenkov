@@ -5,6 +5,8 @@
 //! by the next, `layer::start`), or angzarr-ports' in-memory store
 //! ([`memory`]), which keeps one for the process's life.
 
+pub mod lock;
+
 use std::io;
 use std::path::{Path, PathBuf};
 

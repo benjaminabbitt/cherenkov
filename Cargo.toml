@@ -42,6 +42,11 @@ angzarr-ports = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4
 # angzarr's own messages, which the run layer's protos embed (its UUID).
 angzarr-proto = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
 angzarr-build = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
+# The store's exclusive lock (`cherenkov-run-store`): angzarr's advisory file
+# lock, and the file-system seam and host it is taken through.
+file-lock = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
+file-system = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
+os = { git = "https://github.com/angzarr-io/angzarr", rev = "71b453a4c0ee43bf9de3659f1a9339c110f6ae59" }
 # rust-support, shared with ctxloom, taskloom and angzarr-cli: the CLI's
 # failure, its reporter and the exit-code convention, on the same angzarr rev.
 cli-support = { git = "https://github.com/benjaminabbitt/rust-support", rev = "5bc1d60f1a10d4902b2daad36c348e9bc39c15fa" }

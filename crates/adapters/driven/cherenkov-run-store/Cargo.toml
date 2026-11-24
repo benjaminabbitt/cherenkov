@@ -10,6 +10,11 @@ publish.workspace = true
 [dependencies]
 angzarr-ports.workspace = true
 angzarr-store-sqlite.workspace = true
+file-lock.workspace = true
+file-system.workspace = true
+os.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread"] }
