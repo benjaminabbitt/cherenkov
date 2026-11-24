@@ -102,3 +102,9 @@ fn test_a_lock_that_could_not_be_made_is_unreadable_not_held() {
         "{error:?}"
     );
 }
+
+#[test]
+fn test_the_clock_reads_the_present() {
+    // After 2023-11-14, before 2100.
+    assert!((1_700_000_000..4_100_000_000).contains(&now()));
+}

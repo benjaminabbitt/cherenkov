@@ -23,7 +23,7 @@ use crate::resume::{beginning, ended};
 
 /// How many times a prune reads the store and decides again after a purge
 /// lost a race.
-const ATTEMPTS: usize = 5;
+pub(crate) const ATTEMPTS: usize = 5;
 
 /// What a prune removed, or, for a dry run, would.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

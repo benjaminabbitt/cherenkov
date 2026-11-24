@@ -219,3 +219,24 @@ fn test_a_holder_says_how_long_it_has_held_and_never_a_negative_time() {
     assert_eq!(holder.held_for(160), Duration::from_secs(60));
     assert_eq!(holder.held_for(50), Duration::ZERO);
 }
+
+#[test]
+fn test_a_refusal_says_which_lock_is_held() {
+    let _serial = serial();
+    let held = LockError::Held {
+        lock: PathBuf::from("/s/runs.sqlite.lock"),
+        holder: None,
+    };
+    assert_eq!(held.to_string(), "/s/runs.sqlite.lock is held");
+}
+
+#[test]
+fn test_unlock_of_a_store_a_process_holds_that_left_no_record_is_refused() {
+    let _serial = serial();
+    let dir = scratch("unlock-foreign");
+    let store = dir.join("runs.sqlite");
+    let mut other = foreign_holder(&lock_file(&store));
+    assert_eq!(held_by(unlock(&store).unwrap_err()), None);
+    stop(&mut other);
+    std::fs::remove_dir_all(&dir).unwrap();
+}

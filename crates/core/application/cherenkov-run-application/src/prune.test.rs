@@ -15,7 +15,7 @@ use crate::covers::{mutant_cover, run_cover};
 use crate::error::RunLayerError;
 use crate::host::Readers;
 use crate::layer::{Settings, Workers, plan_run, start};
-use crate::prune::prune;
+use crate::prune::{ATTEMPTS, prune};
 use crate::test_plans::many;
 use crate::testing::{Core, new_core, new_run, silent};
 use crate::workers::Killer;
@@ -109,9 +109,11 @@ async fn test_prune_keeps_the_last_n_finished_runs_and_removes_the_older() {
         finished(&core, &plans).await,
         finished(&core, &plans).await,
     ];
+    // Made last: a later run of the plan would carry it on, or abandon it.
+    unfinished(&core, &plans).await;
     let pruned = prune(&*core, 2, false).await.unwrap();
     assert_eq!(pruned.runs, [runs[0].clone()]);
-    assert_eq!(pruned.kept_finished, 2);
+    assert_eq!((pruned.kept_finished, pruned.kept_unfinished), (2, 1));
     assert!(!has_run(&core, &runs[0]).await);
     assert!(has_run(&core, &runs[1]).await);
     assert!(has_run(&core, &runs[2]).await);
@@ -140,9 +142,17 @@ async fn test_prune_never_removes_an_unfinished_run_and_does_not_count_it_among_
 async fn test_prune_removes_the_mutant_streams_only_the_removed_runs_planned() {
     let core = Arc::new(new_core().await);
     let plans = many(4);
-    finished(&core, &plans[..2]).await;
+    let old = finished(&core, &plans[..2]).await;
     finished(&core, &plans[2..]).await;
+    let mut gone = held(&core, &run_cover(&old)).await;
+    for plan in &plans[..2] {
+        gone += held(&core, &mutant_cover(&plan.id.0).unwrap()).await;
+    }
     let pruned = prune(&*core, 1, false).await.unwrap();
+    assert_eq!(
+        pruned.events as usize, gone,
+        "every event of every stream removed"
+    );
     assert_eq!(pruned.mutants, 2);
     assert!(!has_mutant(&core, &plans, 0).await);
     assert!(!has_mutant(&core, &plans, 1).await);
@@ -309,7 +319,11 @@ async fn test_prune_gives_up_when_every_purge_loses_its_race_and_says_it_may_be_
         matches!(error, RunLayerError::Unavailable { .. }),
         "{error:?}"
     );
-    assert!(*edge.purges.lock().unwrap() < 20, "it gives up");
+    assert_eq!(
+        *edge.purges.lock().unwrap(),
+        ATTEMPTS,
+        "it reads the store again after each lost race, and then gives up"
+    );
 }
 
 #[tokio::test]
