@@ -286,10 +286,10 @@ fn test_a_prepared_program_and_the_run_s_finish_are_documents_of_their_own() {
     let coded = one(pack_message(&ProgramFailed {
         program: Some("calc-1".to_string()),
         reason: String::new(),
-        why: Some(cherenkov_run_domain::angzarr::Diagnostic {
-            code: "cherenkov-run-application-no-program".to_string(),
-            args: [("program".to_string(), "3".to_string())].into(),
-        }),
+        why: Some(cherenkov_run_domain::why::encode(
+            &coded_diagnostic::Report::new("cherenkov-run-application-no-program")
+                .arg("program", "3"),
+        )),
     }));
     assert_eq!(coded["reason"], "the worker has no test program 3");
     let blind_coded = one(pack_message(&cherenkov_run_domain::ProgramPrepared {
@@ -303,10 +303,9 @@ fn test_a_prepared_program_and_the_run_s_finish_are_documents_of_their_own() {
         index: 1,
         budget_ms: 2_000,
         drives: None,
-        selection_why: Some(cherenkov_run_domain::angzarr::Diagnostic {
-            code: "cherenkov-run-application-baseline-failed".to_string(),
-            args: Default::default(),
-        }),
+        selection_why: Some(cherenkov_run_domain::why::encode(
+            &coded_diagnostic::Report::new("cherenkov-run-application-baseline-failed"),
+        )),
     }));
     assert_eq!(
         blind_coded["reason"],

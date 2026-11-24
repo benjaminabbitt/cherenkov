@@ -6,6 +6,7 @@
 
 use angzarr_embedded::Timestamp;
 use angzarr_embedded::v1::Uuid;
+use angzarr_embedded::v1::diagnostic_arg::Value;
 use prost::{Message, Name};
 
 use super::*;
@@ -186,29 +187,60 @@ fn drives() -> Drives {
     }
 }
 
+/// A text arg.
+fn text(name: &str, value: &str) -> angzarr_embedded::v1::DiagnosticArg {
+    angzarr_embedded::v1::DiagnosticArg::text(name, value)
+}
+
+/// An arg of any type.
+fn typed(name: &str, value: Value) -> angzarr_embedded::v1::DiagnosticArg {
+    angzarr_embedded::v1::DiagnosticArg {
+        name: name.to_string(),
+        value: Some(value),
+    }
+}
+
 /// A coded reason with one arg.
 fn why() -> angzarr_embedded::v1::Diagnostic {
     angzarr_embedded::v1::Diagnostic {
         code: "cherenkov-exec-dap-session".to_string(),
-        args: [("detail".to_string(), "connection closed".to_string())].into(),
+        typed_args: vec![text("detail", "connection closed")],
     }
 }
 
-/// A coded reason with several args (a nested cause is its flattened keys):
-/// angzarr's `Diagnostic` holds its args in a `BTreeMap`, so they encode in
-/// key order, whatever order they were put in.
+/// A coded reason with several args of every type and a nested cause, in
+/// the reason's own order (not name order): a list encodes in the order
+/// it is given.
 fn why_many() -> angzarr_embedded::v1::Diagnostic {
     angzarr_embedded::v1::Diagnostic {
         code: "cherenkov-exec-dap-session".to_string(),
-        args: [
-            ("program", "calc-0123"),
-            ("count", "3"),
-            ("cause.detail", "connection closed"),
-            ("cause", "cherenkov-exec-dap-rpc"),
-        ]
-        .into_iter()
-        .map(|(name, value)| (name.to_string(), value.to_string()))
-        .collect(),
+        typed_args: vec![
+            text("program", "calc-0123"),
+            typed("count", Value::Uint(3)),
+            typed("delta", Value::Int(-3)),
+            typed(
+                "cause",
+                Value::Nested(angzarr_embedded::v1::Diagnostic {
+                    code: "cherenkov-exec-dap-rpc".to_string(),
+                    typed_args: vec![text("detail", "connection closed")],
+                }),
+            ),
+        ],
+    }
+}
+
+/// A coded reason whose cause has no args of its own: still a nested
+/// cause on the wire, not its code as text.
+fn why_bare() -> angzarr_embedded::v1::Diagnostic {
+    angzarr_embedded::v1::Diagnostic {
+        code: "cherenkov-exec-dap-session".to_string(),
+        typed_args: vec![typed(
+            "cause",
+            Value::Nested(angzarr_embedded::v1::Diagnostic {
+                code: "cherenkov-exec-dap-closed".to_string(),
+                typed_args: vec![],
+            }),
+        )],
     }
 }
 
@@ -398,6 +430,7 @@ fn lines() -> Vec<String> {
         .chain(snapshot_lines())
         .chain(documents().iter().map(line))
         .chain(verdict_lines().iter().map(line))
+        .chain(nested_lines())
         .collect()
 }
 
@@ -531,6 +564,15 @@ fn coded_lines() -> Vec<String> {
             why: Some(why_many()),
         }),
     ]
+}
+
+/// The lines that carry a reason whose cause has no args of its own.
+fn nested_lines() -> Vec<String> {
+    vec![line(&ProgramFailed {
+        program: None,
+        reason: String::new(),
+        why: Some(why_bare()),
+    })]
 }
 
 /// A test program's run of a mutant that observed a failing test.
@@ -973,4 +1015,26 @@ fn test_a_verdict_line_is_the_json_the_verdict_file_holds() {
         let read: output::VerdictLine = serde_json::from_str(text).unwrap();
         assert_eq!(read, line);
     }
+}
+
+/// A cause with no args of its own must come back nested, not as its code
+/// held as text: the two differ on the wire.
+#[test]
+fn test_an_argless_nested_cause_decodes_as_nested_not_text() {
+    let bytes = why_bare().encode_to_vec();
+    let back = angzarr_embedded::v1::Diagnostic::decode(&*bytes).expect("decodes");
+    assert_eq!(back, why_bare());
+    assert!(matches!(
+        &back.typed_args[0].value,
+        Some(Value::Nested(cause)) if cause.typed_args.is_empty()
+    ));
+}
+
+/// The reason's args are typed on the wire: a count is a number, not its
+/// decimal text.
+#[test]
+fn test_a_reasons_count_is_a_number_on_the_wire() {
+    let back = angzarr_embedded::v1::Diagnostic::decode(&*why_many().encode_to_vec()).unwrap();
+    assert_eq!(back.typed_args[1].value, Some(Value::Uint(3)));
+    assert_eq!(back.typed_args[2].value, Some(Value::Int(-3)));
 }

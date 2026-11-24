@@ -1,6 +1,7 @@
 use coded_diagnostic::{Arg, Diagnostic, Report};
 
 use super::*;
+use crate::angzarr::DiagnosticArgValue;
 
 fn session() -> Report {
     let cause = Report::new("cherenkov-exec-dap-rpc").arg("detail", "connection closed");
@@ -9,20 +10,55 @@ fn session() -> Report {
         .arg("cause", Arg::nested(&cause))
 }
 
-#[test]
-fn test_encoding_a_report_keeps_its_code_and_plain_args() {
-    let wire = encode(&Report::new("c-x").arg("detail", "d").arg("count", 3_u32));
-    assert_eq!(wire.code, "c-x");
-    assert_eq!(wire.args["detail"], "d");
-    assert_eq!(wire.args["count"], "3");
+/// The value of the arg `name` of `wire`.
+fn value<'a>(wire: &'a angzarr::Diagnostic, name: &str) -> &'a DiagnosticArgValue {
+    &wire
+        .typed_args
+        .iter()
+        .find(|arg| arg.name == name)
+        .unwrap_or_else(|| panic!("no {name} in {wire:?}"))
+        .value
 }
 
 #[test]
-fn test_encoding_flattens_a_nested_cause_under_its_arg_name() {
+fn test_encoding_a_report_keeps_its_code_and_types_its_plain_args() {
+    let wire = encode(
+        &Report::new("c-x")
+            .arg("detail", "d")
+            .arg("count", 3_u32)
+            .arg("delta", -3_i32),
+    );
+    assert_eq!(wire.code, "c-x");
+    assert_eq!(
+        value(&wire, "detail"),
+        &DiagnosticArgValue::Text("d".into())
+    );
+    assert_eq!(value(&wire, "count"), &DiagnosticArgValue::Uint(3));
+    assert_eq!(value(&wire, "delta"), &DiagnosticArgValue::Int(-3));
+}
+
+#[test]
+fn test_encoding_keeps_the_args_in_the_reports_order() {
+    let wire = encode(&Report::new("c").arg("zeta", "1").arg("alpha", "2"));
+    let names: Vec<&str> = wire.typed_args.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, ["zeta", "alpha"]);
+}
+
+#[test]
+fn test_encoding_holds_a_nested_cause_as_a_nested_arg() {
     let wire = encode(&session());
-    assert_eq!(wire.args["cause"], "cherenkov-exec-dap-rpc");
-    assert_eq!(wire.args["cause.detail"], "connection closed");
-    assert_eq!(wire.args["program"], "calc-0123");
+    let DiagnosticArgValue::Nested(cause) = value(&wire, "cause") else {
+        panic!("a nested cause: {wire:?}");
+    };
+    assert_eq!(cause.code, "cherenkov-exec-dap-rpc");
+    assert_eq!(
+        value(cause, "detail"),
+        &DiagnosticArgValue::Text("connection closed".into())
+    );
+    assert_eq!(
+        value(&wire, "program"),
+        &DiagnosticArgValue::Text("calc-0123".into())
+    );
 }
 
 #[test]
@@ -45,7 +81,10 @@ fn test_decoding_reads_a_nested_cause_back_as_nested() {
 fn test_a_cause_with_no_args_is_still_read_back_as_a_cause() {
     let outer = Report::new("o").arg("cause", Arg::nested(&Report::new("c-closed")));
     let wire = encode(&outer);
-    assert_eq!(wire.args["cause"], "c-closed");
+    assert!(
+        matches!(value(&wire, "cause"), DiagnosticArgValue::Nested(cause) if cause.typed_args.is_empty()),
+        "{wire:?}"
+    );
     let decoded = decode(Some(&wire), "");
     assert!(
         matches!(&decoded.args()[..], [("cause", Arg::Nested(cause))] if cause.code() == "c-closed"),

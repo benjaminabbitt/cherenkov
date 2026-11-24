@@ -278,10 +278,10 @@ fn test_a_coded_debugger_failure_is_named_by_its_code_in_the_reason() {
         ProgramRun {
             result: ProgramRunResult::Failed(DebuggerFailed {
                 reason: String::new(),
-                why: Some(crate::angzarr::Diagnostic {
-                    code: "cherenkov-exec-dap-rpc".to_string(),
-                    args: [("detail".to_string(), "closed".to_string())].into(),
-                }),
+                why: Some(crate::why::encode(
+                    &coded_diagnostic::Report::new("cherenkov-exec-dap-rpc")
+                        .arg("detail", "closed"),
+                )),
             }),
             ..ran(0, &exited(0, 1), 5, &["calc::test_total"])
         },

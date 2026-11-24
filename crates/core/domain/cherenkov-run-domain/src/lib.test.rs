@@ -480,10 +480,15 @@ async fn test_a_baseline_that_fails_finishes_the_run_failed_and_it_is_never_read
     assert_eq!(program.reason, "", "a coded failure leaves the text empty");
     let why = program.why.as_ref().expect("a coded reason");
     assert_eq!(why.code, "cherenkov-run-domain-program-baseline-failed");
-    assert_eq!(why.args["program"], "calc-1");
-    assert!(why.args["outcome"].contains("code: 101"), "{why:?}");
+    let args: std::collections::BTreeMap<String, String> =
+        angzarr_embedded::v1::Diagnostic::from(why.clone())
+            .flat_args()
+            .into_iter()
+            .collect();
+    assert_eq!(args["program"], "calc-1");
+    assert!(args["outcome"].contains("code: 101"), "{why:?}");
     assert!(
-        why.args["failing"].contains("calc::test_total at tests/calc.rs:5:5: boom"),
+        args["failing"].contains("calc::test_total at tests/calc.rs:5:5: boom"),
         "{why:?}"
     );
     assert_eq!(finished.status, RunStatus::Failed);
@@ -552,10 +557,7 @@ async fn test_a_program_that_does_not_prepare_is_recorded_and_finishes_the_run_f
 }
 
 fn why() -> angzarr::Diagnostic {
-    angzarr::Diagnostic {
-        code: "cherenkov-exec-dap-session".to_string(),
-        args: [("detail".to_string(), "closed".to_string())].into(),
-    }
+    crate::why::encode(&Report::new("cherenkov-exec-dap-session").arg("detail", "closed"))
 }
 
 /// A converted `Report` with several args, one a nested cause: its map is
@@ -566,8 +568,17 @@ fn why_many() -> angzarr::Diagnostic {
         &Report::new("cherenkov-exec-dap-session")
             .arg("program", "calc-0123")
             .arg("count", 3_u32)
+            .arg("delta", -3_i32)
             .arg("cause", coded_diagnostic::Arg::nested(&cause)),
     )
+}
+
+/// A reason whose cause has no args of its own.
+fn why_bare() -> angzarr::Diagnostic {
+    why::encode(&Report::new("cherenkov-exec-dap-session").arg(
+        "cause",
+        coded_diagnostic::Arg::nested(&Report::new("cherenkov-exec-dap-closed")),
+    ))
 }
 
 #[test]
@@ -1214,6 +1225,11 @@ fn test_every_refusal_encodes_to_the_bytes_it_always_has() {
             program: None,
             reason: String::new(),
             why: Some(why_many()),
+        }),
+        refusal_line(&ProgramFailed {
+            program: None,
+            reason: String::new(),
+            why: Some(why_bare()),
         }),
     ];
     let expected: Vec<&str> = include_str!("encodings.txt").lines().collect();
