@@ -24,6 +24,7 @@ pub mod live;
 pub mod policies;
 pub mod pool;
 pub mod programs;
+pub mod prune;
 pub mod resume;
 pub mod runner;
 pub mod session;
@@ -48,3 +49,7 @@ mod resumed;
 #[cfg(test)]
 #[path = "yielding.test.rs"]
 mod yielding;
+
+#[cfg(test)]
+#[path = "prune.test.rs"]
+mod pruned;

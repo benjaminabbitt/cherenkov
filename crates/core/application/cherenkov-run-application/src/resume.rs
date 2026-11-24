@@ -17,10 +17,10 @@ use crate::covers::run_cover;
 use crate::error::RunLayerError;
 
 /// An unfinished run, as its first events record it.
-struct Unfinished {
-    run: Uuid,
-    started: Option<RunStarted>,
-    planned: Option<MutantsPlanned>,
+pub(crate) struct Unfinished {
+    pub(crate) run: Uuid,
+    pub(crate) started: Option<RunStarted>,
+    pub(crate) planned: Option<MutantsPlanned>,
 }
 
 impl Unfinished {
@@ -40,13 +40,16 @@ impl Unfinished {
 }
 
 /// Whether the events of a run's last page say it ended.
-fn ended(last: &[angzarr_embedded::v1::EventPage]) -> bool {
+pub(crate) fn ended(last: &[angzarr_embedded::v1::EventPage]) -> bool {
     last.iter()
         .any(|page| matches!(run_event(page), Some(RunEvent::RunFinished(_))))
 }
 
 /// The run's start and its plan, the first two events of its stream.
-async fn beginning<C: Listing>(core: &C, cover: &Cover) -> Result<Unfinished, RunLayerError> {
+pub(crate) async fn beginning<C: Listing>(
+    core: &C,
+    cover: &Cover,
+) -> Result<Unfinished, RunLayerError> {
     let mut found = Unfinished {
         run: cover.root.clone().unwrap_or_default(),
         started: None,

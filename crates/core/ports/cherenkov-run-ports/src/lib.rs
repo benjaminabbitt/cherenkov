@@ -165,6 +165,21 @@ pub trait Listing: Edge {
     ) -> impl Future<Output = Result<Vec<EventPage>, EdgeError>> + Send;
 }
 
+/// What the core can do to a stream beyond writing to it: delete it. Only
+/// pruning asks for it.
+pub trait Purging: Edge {
+    /// Delete `stream` with its snapshot, if it still holds `expected`
+    /// events (the head the caller read); answers how many events it
+    /// removed. A stream written in between is refused with a retryable
+    /// error and nothing is removed: the caller reads it again and decides
+    /// again.
+    fn purge(
+        &self,
+        stream: &Cover,
+        expected: u64,
+    ) -> impl Future<Output = Result<u64, EdgeError>> + Send;
+}
+
 /// The core serving the bus: the root builds the bus over the core's store
 /// with the clock, timer and retry it owns.
 pub trait Serving: Edge {

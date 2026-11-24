@@ -199,3 +199,23 @@ async fn a_window_of_a_stream_is_the_pages_between_two_sequences() {
     assert_eq!(window[0].sequence, all[1].sequence);
     assert!(edge.window(&run(), 3, 9).await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn a_stream_is_purged_when_it_is_still_as_long_as_the_caller_read_it() {
+    let edge = edge().await;
+    edge.command(run(), &PlanRun::default()).await.unwrap();
+    let head = edge.streams(RUN_DOMAIN).await.unwrap()[0].head;
+    let removed = edge.purge(&run(), head).await.unwrap();
+    assert_eq!(removed, head);
+    assert!(edge.events(&run(), 0).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_purge_of_a_stream_written_since_it_was_read_is_refused_and_removes_nothing() {
+    let edge = edge().await;
+    edge.command(run(), &PlanRun::default()).await.unwrap();
+    let head = edge.streams(RUN_DOMAIN).await.unwrap()[0].head;
+    let error = edge.purge(&run(), head - 1).await.unwrap_err();
+    assert!(error.retryable(), "a lost race is worth reading again");
+    assert_eq!(edge.events(&run(), 0).await.unwrap().len() as u64, head);
+}
