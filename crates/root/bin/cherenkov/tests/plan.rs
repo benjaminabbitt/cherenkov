@@ -140,7 +140,7 @@ fn test_plan_summary_omits_sections_with_nothing_to_report() {
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert_eq!(
         stderr.trim_end(),
-        "operators: breadth\ngo: 15 mutants; concepts mapped 13/16; unmapped: expr, name, block"
+        "cherenkov: operators: breadth\ncherenkov: go: 15 mutants; concepts mapped 13/16; unmapped: expr, name, block"
     );
 }
 
@@ -241,6 +241,43 @@ fn test_an_error_under_json_is_its_code_args_and_message_on_stderr() {
     );
 }
 
+/// The JSON documents `out`'s stderr is, one after another: all of it.
+fn stderr_documents(out: &Output) -> Vec<serde_json::Value> {
+    let stderr = String::from_utf8(out.stderr.clone()).unwrap();
+    serde_json::Deserializer::from_str(&stderr)
+        .into_iter::<serde_json::Value>()
+        .collect::<Result<_, _>>()
+        .unwrap_or_else(|e| panic!("stderr is not JSON only: {e}: {stderr}"))
+}
+
+#[test]
+fn test_plan_under_json_writes_its_notices_to_stderr_as_json_only() {
+    let out = plan(
+        &fixtures().join("rust"),
+        &["--operators", "breadth,cargo-mutants", "--format", "json"],
+    );
+    let documents = stderr_documents(&out);
+    let codes: Vec<&str> = documents
+        .iter()
+        .map(|d| d["code"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        codes,
+        [
+            "cherenkov-cli-notice-planned",
+            "cherenkov-cli-notice-provenance"
+        ]
+    );
+    assert_eq!(documents[0]["args"]["lang"], "rust");
+    assert!(
+        documents[1]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("provenance: breadth "),
+        "{documents:?}"
+    );
+}
+
 #[test]
 fn test_a_request_the_state_forbids_is_declined() {
     let out = cherenkov(&[
@@ -332,7 +369,7 @@ fn test_sets_and_mutations_list_other_tools_names_beside_the_canonical_ones() {
 #[test]
 fn test_plan_defaults_to_cargo_mutants_for_rust_and_breadth_for_go() {
     let rust = plan(&fixtures().join("rust"), &[]);
-    assert!(String::from_utf8_lossy(&rust.stderr).starts_with("operators: cargo-mutants\n"));
+    assert!(String::from_utf8_lossy(&rust.stderr).starts_with("cherenkov: operators: cargo-mutants\n"));
     let explicit = plan(&fixtures().join("rust"), &["--operators", "cargo-mutants"]);
     assert_eq!(listing(&rust), listing(&explicit));
     let go = plan(&fixtures().join("go"), &[]);

@@ -52,3 +52,19 @@ fn test_an_instruction_table_error_renders_through_the_program_s_catalog() {
         "isa table: no return stub for ABI \"vax\""
     );
 }
+
+/// How many `eprintln!` calls `source` holds, its tests included: the
+/// program's tests are in files of their own, and run.rs's print nothing.
+fn eprintlns(source: &str) -> usize {
+    source.matches(concat!("eprint", "ln!")).count()
+}
+
+#[test]
+fn test_the_program_says_nothing_on_stderr_but_through_the_catalog() {
+    // The one that stays is the failure reporter's fallback, for a catalog
+    // that did not load: it has no catalog to say it with.
+    assert_eq!(eprintlns(include_str!("main.rs")), 1);
+    assert_eq!(eprintlns(include_str!("run.rs")), 0);
+    assert_eq!(eprintlns(include_str!("selection.rs")), 0);
+    assert_eq!(eprintlns(include_str!("phases.rs")), 0);
+}
