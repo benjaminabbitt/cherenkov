@@ -10,6 +10,7 @@ use cherenkov_exec_dap::viability::{
 };
 use cherenkov_mutation::execution::RawOutcome;
 use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
+use coded_diagnostic::{Diagnostic, Report};
 
 fn candidate(file: &str, start: usize, end: usize) -> Candidate {
     Candidate {
@@ -170,8 +171,9 @@ fn test_an_error_nobody_owns_bisects_the_batch_down_to_the_one_that_causes_it() 
 
 #[test]
 fn test_a_failed_check_ends_the_settling() {
-    let got = settle(2, &mut |_: &[usize]| Err(ExecError("no cargo".into())));
-    assert_eq!(got, Err(ExecError("no cargo".into())));
+    let no_cargo = || ExecError::of(&Report::new("test-no-cargo"));
+    let got = settle(2, &mut |_: &[usize]| Err(no_cargo()));
+    assert_eq!(got, Err(no_cargo()));
 }
 
 // --- The executor that reports what rustc rejects.
@@ -368,8 +370,11 @@ fn test_a_project_that_does_not_pass_cargo_check_is_not_checked() {
     std::fs::write(dir.join("member/src/lib.rs"), &broken).unwrap();
     let cs = [candidate_at(&broken, "{ 4 }", "{ 5 }")];
     let err = check(Path::new("cargo"), &dir, &dir.join("member"), &[], &cs).unwrap_err();
-    assert!(err.0.contains("does not pass cargo check"), "{err}");
-    assert!(err.0.contains("could not compile"), "{err}");
+    assert_eq!(
+        err.code(),
+        "cherenkov-exec-dap-toolchain-baseline-unchecked"
+    );
+    assert!(err.to_string().contains("could not compile"), "{err}");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

@@ -53,6 +53,7 @@ pub const EN_US: (&str, &str) = (
 /// One value of every error, for the catalog test.
 #[cfg(test)]
 pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
+    use coded_diagnostic::Report;
     vec![
         Box::new(SyntaxError::UnknownLanguage {
             lang: LanguageId::new("cobol"),

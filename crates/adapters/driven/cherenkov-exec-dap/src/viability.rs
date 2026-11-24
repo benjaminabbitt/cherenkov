@@ -16,6 +16,7 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::error::Toolchain;
 use cherenkov_mutation::execution::{Budget, Observed, RawOutcome};
 use cherenkov_mutation::id::MutantId;
 use cherenkov_mutation::plan::MutantPlan;
@@ -325,7 +326,12 @@ impl Rustc<'_> {
             .env("RUSTFLAGS", format!("{flags} --cap-lints=warn"))
             .current_dir(self.tree.join(&self.below))
             .output()
-            .map_err(|e| ExecError(format!("running {}: {e}", self.cargo.display())))?;
+            .map_err(|e| {
+                ExecError::of(&Toolchain::Spawn {
+                    tool: self.cargo.display().to_string(),
+                    detail: e.to_string(),
+                })
+            })?;
         Ok((
             out.status.success(),
             String::from_utf8_lossy(&out.stdout).into_owned(),
@@ -392,10 +398,9 @@ impl Rustc<'_> {
         }
         let (passes, _, stderr) = self.cargo_check()?;
         if !passes {
-            return Err(ExecError(format!(
-                "the unmutated project does not pass cargo check: {}",
-                last_line(&stderr)
-            )));
+            return Err(ExecError::of(&Toolchain::BaselineUnchecked {
+                detail: last_line(&stderr),
+            }));
         }
         self.baseline_passes = true;
         Ok(())
@@ -403,7 +408,9 @@ impl Rustc<'_> {
 }
 
 fn io_error(e: std::io::Error) -> ExecError {
-    ExecError(format!("viability check: {e}"))
+    ExecError::of(&Toolchain::Viability {
+        detail: e.to_string(),
+    })
 }
 
 fn last_line(text: &str) -> String {

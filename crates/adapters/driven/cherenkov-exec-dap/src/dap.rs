@@ -10,6 +10,7 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use coded_diagnostic::{Arg, Diagnostic, code};
 use serde_json::{Value, json};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -29,12 +30,32 @@ pub enum DapError {
 
 impl std::fmt::Display for DapError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        coded_diagnostic::display(self, f)
+    }
+}
+
+impl Diagnostic for DapError {
+    fn code(&self) -> &str {
         match self {
-            DapError::Io(m) => write!(f, "dap i/o: {m}"),
-            DapError::Protocol(m) => write!(f, "dap protocol: {m}"),
-            DapError::Failed { command, message } => write!(f, "dap {command} failed: {message}"),
-            DapError::Timeout(what) => write!(f, "dap timed out waiting for {what}"),
-            DapError::Closed => write!(f, "dap connection closed"),
+            DapError::Io(_) => code!("dap-io"),
+            DapError::Protocol(_) => code!("dap-protocol"),
+            DapError::Failed { .. } => code!("dap-failed"),
+            DapError::Timeout(_) => code!("dap-timeout"),
+            DapError::Closed => code!("dap-closed"),
+        }
+    }
+
+    fn args(&self) -> Vec<(&str, Arg)> {
+        match self {
+            DapError::Io(detail) | DapError::Protocol(detail) => {
+                vec![("detail", detail.as_str().into())]
+            }
+            DapError::Failed { command, message } => vec![
+                ("command", command.as_str().into()),
+                ("detail", message.as_str().into()),
+            ],
+            DapError::Timeout(what) => vec![("what", what.as_str().into())],
+            DapError::Closed => Vec::new(),
         }
     }
 }

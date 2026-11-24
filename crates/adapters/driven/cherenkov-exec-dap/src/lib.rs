@@ -7,6 +7,7 @@
 pub mod dap;
 pub mod delve;
 mod diagnostics;
+pub mod error;
 pub mod gdb;
 pub mod gotest;
 pub mod isa;

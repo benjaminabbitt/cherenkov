@@ -1,5 +1,7 @@
 use std::io::Cursor;
 
+use coded_diagnostic::Diagnostic;
+
 use super::*;
 
 fn split(stdout: &str) -> (Vec<String>, Vec<String>) {
@@ -158,7 +160,7 @@ fn test_exit_zero_with_no_verdict_is_an_incomplete_output_error() {
     let e = printed
         .settle_exit(0, Duration::ZERO)
         .expect_err("a clean exit with no verdict");
-    assert!(e.0.contains("incomplete"), "{}", e.0);
+    assert_eq!(e.code(), "cherenkov-exec-dap-session-output-incomplete");
 }
 
 #[test]

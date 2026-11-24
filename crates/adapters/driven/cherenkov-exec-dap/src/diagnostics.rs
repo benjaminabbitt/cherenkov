@@ -11,14 +11,17 @@ pub const EN_US: (&str, &str) = (
 #[cfg(test)]
 pub fn diagnostic_samples() -> Vec<Box<dyn coded_diagnostic::Diagnostic>> {
     use crate::isa::IsaError;
-    vec![
+    let isa: Vec<Box<dyn coded_diagnostic::Diagnostic>> = vec![
         Box::new(IsaError::Toml { detail: "d".into() }),
         Box::new(IsaError::UnknownToken { name: "n".into() }),
         Box::new(IsaError::UnknownCondition { name: "n".into() }),
         Box::new(IsaError::BadDisplacement { rel: 2 }),
         Box::new(IsaError::NoStub { abi: "vax".into() }),
         Box::new(IsaError::BadStubLine { line: "l".into() }),
-    ]
+    ];
+    isa.into_iter()
+        .chain(crate::error::diagnostic_samples())
+        .collect()
 }
 
 #[cfg(test)]

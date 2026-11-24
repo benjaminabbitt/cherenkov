@@ -7,23 +7,26 @@ use cherenkov_exec_dap::rpc::RpcError;
 #[test]
 fn test_dap_errors_name_the_failure() {
     let cases = [
-        (DapError::Io("broken pipe".into()), "dap i/o: broken pipe"),
+        (
+            DapError::Io("broken pipe".into()),
+            "cherenkov-exec-dap-dap-io detail=\"broken pipe\"",
+        ),
         (
             DapError::Protocol("bad JSON".into()),
-            "dap protocol: bad JSON",
+            "cherenkov-exec-dap-dap-protocol detail=\"bad JSON\"",
         ),
         (
             DapError::Failed {
                 command: "readMemory".into(),
                 message: "nope".into(),
             },
-            "dap readMemory failed: nope",
+            "cherenkov-exec-dap-dap-failed command=readMemory detail=nope",
         ),
         (
             DapError::Timeout("event exited".into()),
-            "dap timed out waiting for event exited",
+            "cherenkov-exec-dap-dap-timeout what=\"event exited\"",
         ),
-        (DapError::Closed, "dap connection closed"),
+        (DapError::Closed, "cherenkov-exec-dap-dap-closed"),
     ];
     for (err, want) in cases {
         assert_eq!(err.to_string(), want);
@@ -33,14 +36,20 @@ fn test_dap_errors_name_the_failure() {
 #[test]
 fn test_rpc_errors_name_the_failure() {
     let cases = [
-        (RpcError::Io("reset".into()), "delve rpc i/o: reset"),
-        (RpcError::Protocol("id".into()), "delve rpc protocol: id"),
+        (
+            RpcError::Io("reset".into()),
+            "cherenkov-exec-dap-rpc-io detail=reset",
+        ),
+        (
+            RpcError::Protocol("id".into()),
+            "cherenkov-exec-dap-rpc-protocol detail=id",
+        ),
         (
             RpcError::Call {
                 method: "Set".into(),
                 message: "denied".into(),
             },
-            "delve rpc Set: denied",
+            "cherenkov-exec-dap-rpc-call method=Set detail=denied",
         ),
     ];
     for (err, want) in cases {

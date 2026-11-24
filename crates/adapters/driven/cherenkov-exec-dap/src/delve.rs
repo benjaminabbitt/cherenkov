@@ -10,6 +10,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::error::{Cause, Session};
 use cherenkov_dap_types::{
     Capabilities, ExitedEventBody, InitializeRequestArguments, StoppedEventBody,
 };
@@ -39,8 +40,13 @@ const REQUEST: Duration = Duration::from_secs(30);
 /// The most a run's output is waited for after the run has ended.
 const OUTPUT_BOUND: Duration = Duration::from_secs(2);
 
-fn err<E: std::fmt::Display>(context: &str) -> impl Fn(E) -> ExecError + '_ {
-    move |e| ExecError(format!("{context}: {e}"))
+fn err<E: Cause>(step: &str) -> impl Fn(E) -> ExecError + '_ {
+    move |e| {
+        ExecError::of(&Session::Step {
+            step: step.to_string(),
+            cause: e.report(),
+        })
+    }
 }
 
 /// A running headless Delve, stopped at entry until [`DelveSession::run_to_exit`].
@@ -73,7 +79,12 @@ impl DelveSession {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .map_err(|e| ExecError(format!("starting {}: {e}", config.dlv.display())))?;
+            .map_err(|e| {
+                ExecError::of(&Session::Spawn {
+                    tool: config.dlv.display().to_string(),
+                    detail: e.to_string(),
+                })
+            })?;
         let (addr, printed) = match listening_address(&mut child) {
             Ok(found) => found,
             Err(e) => {
@@ -83,9 +94,14 @@ impl DelveSession {
             }
         };
         // From here, dropping the session tears the process down.
-        let connect = |what| {
-            TcpStream::connect(&addr)
-                .map_err(|e| ExecError(format!("connecting {what} to {addr}: {e}")))
+        let connect = |what: &str| {
+            TcpStream::connect(&addr).map_err(|e| {
+                ExecError::of(&Session::Connect {
+                    what: what.to_string(),
+                    addr: addr.clone(),
+                    detail: e.to_string(),
+                })
+            })
         };
         let dap_stream = connect("dap");
         let rpc_stream = connect("json-rpc");
@@ -168,11 +184,11 @@ impl NativeSession for DelveSession {
         let locs = self.rpc.find_location(&loc).map_err(err("find location"))?;
         let first = locs
             .first()
-            .ok_or_else(|| ExecError(format!("no code at {loc}")))?;
+            .ok_or_else(|| ExecError::of(&Session::NoCode { at: loc.clone() }))?;
         let entry = first
             .function
             .as_ref()
-            .ok_or_else(|| ExecError(format!("no function at {loc}")))?
+            .ok_or_else(|| ExecError::of(&Session::NoFunction { at: loc.clone() }))?
             .value;
         let reported_file = first.file.clone();
         let insns = self
@@ -253,7 +269,11 @@ impl DelveSession {
             let event = match self.dap.wait_any_event(&["exited", "stopped"], left) {
                 Ok(e) => e,
                 Err(DapError::Timeout(_)) => return Ok((RunEnd::TimedOut, reached)),
-                Err(e) => return Err(ExecError(format!("waiting for exit: {e}"))),
+                Err(e) => {
+                    return Err(ExecError::of(&Session::Wait {
+                        detail: e.to_string(),
+                    }));
+                }
             };
             if event["event"] == "exited" {
                 let body: ExitedEventBody =
@@ -475,10 +495,10 @@ impl Printed {
     fn settle_exit(&self, code: i32, bound: Duration) -> Result<(), ExecError> {
         let buffer = self.wait_for_verdict(self.lock(), bound);
         if code == 0 && !has_verdict(buffer.last()) {
-            return Err(ExecError(format!(
-                "the program exited 0 but its output has no PASS verdict after {bound:?}: \
-                 the run's output is incomplete"
-            )));
+            return Err(ExecError::of(&Session::OutputIncomplete {
+                what: "PASS verdict".to_string(),
+                waited: format!("{bound:?}"),
+            }));
         }
         Ok(())
     }
@@ -551,14 +571,16 @@ const BANNER: &str = "API server listening at: ";
 /// pipes afterwards so the test process never blocks on a full pipe. The
 /// program's output after the banner is kept for [`Printed::settled`].
 fn listening_address(child: &mut Child) -> Result<(String, Arc<Printed>), ExecError> {
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| ExecError("no stdout pipe".into()))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| ExecError("no stderr pipe".into()))?;
+    let stdout = child.stdout.take().ok_or_else(|| {
+        ExecError::of(&Session::NoPipe {
+            pipe: "stdout".to_string(),
+        })
+    })?;
+    let stderr = child.stderr.take().ok_or_else(|| {
+        ExecError::of(&Session::NoPipe {
+            pipe: "stderr".to_string(),
+        })
+    })?;
     let (tx, rx) = mpsc::channel();
     let printed = Arc::new(Printed::default());
     let program = Arc::clone(&printed);
@@ -594,9 +616,7 @@ fn listening_address(child: &mut Child) -> Result<(String, Arc<Printed>), ExecEr
                 .lock()
                 .map(|s| s.trim().to_string())
                 .unwrap_or_default();
-            Err(ExecError(format!(
-                "delve did not start listening: {stderr}"
-            )))
+            Err(ExecError::of(&Session::NotListening { detail: stderr }))
         }
     }
 }

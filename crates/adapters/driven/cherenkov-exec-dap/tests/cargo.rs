@@ -1,3 +1,4 @@
+use coded_diagnostic::Diagnostic;
 use std::path::PathBuf;
 
 use cherenkov_exec_dap::toolchain::test_binaries_from_cargo_json;
@@ -267,7 +268,8 @@ fn test_a_cargo_metadata_that_fails_is_an_error() {
     use cherenkov_exec_dap::toolchain::workspace_packages;
     let cargo = FakeCargo::new("metafail", false);
     let error = workspace_packages(&cargo.path(), std::path::Path::new("/")).unwrap_err();
-    assert!(error.0.contains("cargo metadata failed"), "{error}");
+    assert_eq!(error.code(), "cherenkov-exec-dap-toolchain-failed");
+    assert!(error.to_string().contains("cargo metadata"), "{error}");
 }
 
 #[test]
@@ -304,5 +306,6 @@ fn test_a_cargo_test_build_that_fails_is_an_error() {
     let cargo = FakeCargo::new("buildfail", false);
     let error = build_rust_test_programs_of(&cargo.path(), std::path::Path::new("/"), &[], &[])
         .unwrap_err();
-    assert!(error.0.contains("cargo test --no-run failed"), "{error}");
+    assert_eq!(error.code(), "cherenkov-exec-dap-toolchain-failed");
+    assert!(error.to_string().contains("cargo test --no-run"), "{error}");
 }

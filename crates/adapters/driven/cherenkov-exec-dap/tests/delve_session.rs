@@ -1,5 +1,6 @@
 //! Delve session behaviour that needs no real Delve.
 
+use coded_diagnostic::Diagnostic;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -15,7 +16,7 @@ fn test_start_fails_fast_when_the_debugger_exits_without_listening() {
     };
     let start = Instant::now();
     let err = DelveSession::start(&config).err().expect("start must fail");
-    assert!(err.0.contains("did not start listening"), "{err}");
+    assert_eq!(err.code(), "cherenkov-exec-dap-session-not-listening");
     assert!(
         start.elapsed() < Duration::from_secs(5),
         "took {:?}",

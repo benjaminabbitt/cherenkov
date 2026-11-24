@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+use crate::error::{Cause, Session};
 use base64::Engine;
 use cherenkov_dap_types::{
     Capabilities, ExitedEventBody, InitializeRequestArguments, StoppedEventBody,
@@ -49,8 +50,13 @@ const REQUEST: Duration = Duration::from_secs(60);
 /// by seconds.
 const LAST_OUTPUT: Duration = Duration::from_secs(30);
 
-fn err<E: std::fmt::Display>(context: &str) -> impl Fn(E) -> ExecError + '_ {
-    move |e| ExecError(format!("{context}: {e}"))
+fn err<E: Cause>(step: &str) -> impl Fn(E) -> ExecError + '_ {
+    move |e| {
+        ExecError::of(&Session::Step {
+            step: step.to_string(),
+            cause: e.report(),
+        })
+    }
 }
 
 /// A program under GDB, stopped at the start of `main`.
@@ -99,11 +105,18 @@ impl GdbSession {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|e| ExecError(format!("starting {}: {e}", config.gdb.display())))?;
+            .map_err(|e| {
+                ExecError::of(&Session::Spawn {
+                    tool: config.gdb.display().to_string(),
+                    detail: e.to_string(),
+                })
+            })?;
         let (Some(stdout), Some(stdin)) = (child.stdout.take(), child.stdin.take()) else {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(ExecError("gdb has no stdio pipes".into()));
+            return Err(ExecError::of(&Session::NoPipe {
+                pipe: "stdio".to_string(),
+            }));
         };
         let mut session = GdbSession {
             child,
@@ -188,9 +201,12 @@ impl GdbSession {
     /// A caught exit's status, from the `exit_group` argument.
     fn exit_status(&mut self) -> Result<i32, ExecError> {
         let out = self.repl("python print(int(gdb.parse_and_eval('$rdi')) & 0xff)")?;
-        out.trim()
-            .parse()
-            .map_err(|e| ExecError(format!("exit status {out:?}: {e}")))
+        out.trim().parse::<i32>().map_err(|e| {
+            ExecError::of(&Session::Step {
+                step: format!("exit status {out:?}"),
+                cause: e.report(),
+            })
+        })
     }
 
     /// How a process GDB reports as exited ended: DAP gives a death by
@@ -291,7 +307,11 @@ impl GdbSession {
                     self.running = true;
                     return Ok(RunEnd::TimedOut);
                 }
-                Err(e) => return Err(ExecError(format!("waiting for exit: {e}"))),
+                Err(e) => {
+                    return Err(ExecError::of(&Session::Wait {
+                        detail: e.to_string(),
+                    }));
+                }
             }
         }
     }
@@ -364,11 +384,10 @@ impl GdbSession {
         if libtest && !summary(self.dap.queued()) {
             self.dap.settle_until(self.last_output_wait, summary);
             if !summary(self.dap.queued()) {
-                return Err(ExecError(format!(
-                    "the program exited but its output has no libtest summary after {:?}: \
-                     the run's output is incomplete",
-                    self.last_output_wait
-                )));
+                return Err(ExecError::of(&Session::OutputIncomplete {
+                    what: "libtest summary".to_string(),
+                    waited: format!("{:?}", self.last_output_wait),
+                }));
             }
         }
         Ok(())
@@ -445,9 +464,12 @@ impl GdbSession {
     /// workspace.
     pub fn line_lookups(&mut self) -> Result<u64, ExecError> {
         let out = self.repl("python print(globals().get('_cherenkov_lookups', 0))")?;
-        out.trim()
-            .parse()
-            .map_err(|e| ExecError(format!("line lookups {out:?}: {e}")))
+        out.trim().parse::<u64>().map_err(|e| {
+            ExecError::of(&Session::Step {
+                step: format!("line lookups {out:?}"),
+                cause: e.report(),
+            })
+        })
     }
 
     /// How many functions this session has asked GDB to disassemble.
@@ -1008,11 +1030,10 @@ impl GdbSession {
             .wait_event("terminated", self.last_output_wait)
             .map(|_| ())
             .map_err(|e| {
-                ExecError(format!(
-                    "the program exited but its output did not end within {:?} ({e}): \
-                     the run's output is incomplete",
-                    self.last_output_wait
-                ))
+                ExecError::of(&Session::OutputUnended {
+                    waited: format!("{:?}", self.last_output_wait),
+                    cause: e.report(),
+                })
             })
     }
 
@@ -1045,10 +1066,10 @@ fn effect_call(effect: &Effect) -> Result<String, ExecError> {
             format!("cherenkov_return_built({}, {regs})", py_str(&spec)?)
         }
         Effect::ReturnConstructed { request, .. } => {
-            return Err(ExecError(format!(
-                "{} for {}: a constructor not resolved to a library",
-                request.value, request.ty
-            )));
+            return Err(ExecError::of(&Session::Unresolved {
+                value: request.value.to_string(),
+                ty: request.ty.to_string(),
+            }));
         }
         Effect::FlipResult => "cherenkov_flip()".to_string(),
         Effect::Steer { steers } => {
@@ -1318,7 +1339,9 @@ impl GdbSession {
                 self.running = true;
                 Ok(Step::Ended(RunEnd::TimedOut))
             }
-            Err(e) => Err(ExecError(format!("waiting for exit: {e}"))),
+            Err(e) => Err(ExecError::of(&Session::Wait {
+                detail: e.to_string(),
+            })),
         }
     }
 
@@ -1378,14 +1401,22 @@ impl GdbSession {
         let seq = self
             .dap
             .send("evaluate", json!({"expression": call, "context": "repl"}));
-        let seq = seq.map_err(|e| ExecError(format!("evaluate: {e}")))?;
+        let seq = seq.map_err(|e| {
+            ExecError::of(&Session::Step {
+                step: "evaluate".to_string(),
+                cause: e.report(),
+            })
+        })?;
         let answered = within(allowance, EVALUATION, |window| {
             match self.dap.response(seq, window) {
                 Ok(body) => Ok(Some(
                     body["result"].as_str().unwrap_or_default().to_string(),
                 )),
                 Err(DapError::Timeout(_)) => Ok(None),
-                Err(e) => Err(ExecError(format!("evaluate: {e}"))),
+                Err(e) => Err(ExecError::of(&Session::Step {
+                    step: "evaluate".to_string(),
+                    cause: e.report(),
+                })),
             }
         })?;
         let out = match answered {

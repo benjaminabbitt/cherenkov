@@ -5,6 +5,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::TcpStream;
 
 use base64::Engine;
+use coded_diagnostic::{Arg, Diagnostic, code};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -22,10 +23,28 @@ pub enum RpcError {
 
 impl std::fmt::Display for RpcError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        coded_diagnostic::display(self, f)
+    }
+}
+
+impl Diagnostic for RpcError {
+    fn code(&self) -> &str {
         match self {
-            RpcError::Io(m) => write!(f, "delve rpc i/o: {m}"),
-            RpcError::Protocol(m) => write!(f, "delve rpc protocol: {m}"),
-            RpcError::Call { method, message } => write!(f, "delve rpc {method}: {message}"),
+            RpcError::Io(_) => code!("rpc-io"),
+            RpcError::Protocol(_) => code!("rpc-protocol"),
+            RpcError::Call { .. } => code!("rpc-call"),
+        }
+    }
+
+    fn args(&self) -> Vec<(&str, Arg)> {
+        match self {
+            RpcError::Io(detail) | RpcError::Protocol(detail) => {
+                vec![("detail", detail.as_str().into())]
+            }
+            RpcError::Call { method, message } => vec![
+                ("method", method.as_str().into()),
+                ("detail", message.as_str().into()),
+            ],
         }
     }
 }

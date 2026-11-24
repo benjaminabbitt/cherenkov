@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cherenkov_run_ports::executor::ExecError;
+
+use crate::error::Toolchain;
 use serde_json::Value;
 
 /// Build a Go package's test binary without optimization or inlining, so
@@ -15,13 +17,18 @@ pub fn build_go_test_binary(go: &Path, package_dir: &Path, out: &Path) -> Result
         .arg(out)
         .current_dir(package_dir)
         .output()
-        .map_err(|e| ExecError(format!("running {}: {e}", go.display())))?;
+        .map_err(|e| {
+            ExecError::of(&Toolchain::Spawn {
+                tool: go.display().to_string(),
+                detail: e.to_string(),
+            })
+        })?;
     if !output.status.success() {
-        return Err(ExecError(format!(
-            "go test -c failed in {}: {}",
-            package_dir.display(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
+        return Err(ExecError::of(&Toolchain::Failed {
+            tool: "go test -c".to_string(),
+            dir: package_dir.display().to_string(),
+            detail: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        }));
     }
     Ok(())
 }
@@ -36,13 +43,18 @@ pub fn build_rust_test_binaries(
         .args(["test", "--no-run", "--message-format=json"])
         .current_dir(manifest_dir)
         .output()
-        .map_err(|e| ExecError(format!("running {}: {e}", cargo.display())))?;
+        .map_err(|e| {
+            ExecError::of(&Toolchain::Spawn {
+                tool: cargo.display().to_string(),
+                detail: e.to_string(),
+            })
+        })?;
     if !output.status.success() {
-        return Err(ExecError(format!(
-            "cargo test --no-run failed in {}: {}",
-            manifest_dir.display(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
+        return Err(ExecError::of(&Toolchain::Failed {
+            tool: "cargo test --no-run".to_string(),
+            dir: manifest_dir.display().to_string(),
+            detail: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        }));
     }
     Ok(test_binaries_from_cargo_json(&String::from_utf8_lossy(
         &output.stdout,
@@ -117,13 +129,18 @@ pub fn build_rust_test_programs_of(
         .envs(debug_profile_env(|name| std::env::var_os(name).is_some()))
         .current_dir(manifest_dir)
         .output()
-        .map_err(|e| ExecError(format!("running {}: {e}", cargo.display())))?;
+        .map_err(|e| {
+            ExecError::of(&Toolchain::Spawn {
+                tool: cargo.display().to_string(),
+                detail: e.to_string(),
+            })
+        })?;
     if !output.status.success() {
-        return Err(ExecError(format!(
-            "cargo test --no-run failed in {}: {}",
-            manifest_dir.display(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
+        return Err(ExecError::of(&Toolchain::Failed {
+            tool: "cargo test --no-run".to_string(),
+            dir: manifest_dir.display().to_string(),
+            detail: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        }));
     }
     Ok(test_programs_from_cargo_json(&String::from_utf8_lossy(
         &output.stdout,
@@ -216,20 +233,32 @@ pub fn cargo_workspace_prefix(cargo: &Path, dir: &Path) -> Result<PathBuf, ExecE
         .args(["metadata", "--format-version", "1", "--no-deps"])
         .current_dir(dir)
         .output()
-        .map_err(|e| ExecError(format!("running {}: {e}", cargo.display())))?;
+        .map_err(|e| {
+            ExecError::of(&Toolchain::Spawn {
+                tool: cargo.display().to_string(),
+                detail: e.to_string(),
+            })
+        })?;
     if !output.status.success() {
-        return Err(ExecError(format!(
-            "cargo metadata failed in {}: {}",
-            dir.display(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
+        return Err(ExecError::of(&Toolchain::Failed {
+            tool: "cargo metadata".to_string(),
+            dir: dir.display().to_string(),
+            detail: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        }));
     }
-    let meta: Value = serde_json::from_slice(&output.stdout)
-        .map_err(|e| ExecError(format!("cargo metadata output: {e}")))?;
+    let meta: Value = serde_json::from_slice(&output.stdout).map_err(|e| {
+        ExecError::of(&Toolchain::Output {
+            what: "cargo metadata".to_string(),
+            detail: e.to_string(),
+        })
+    })?;
     let root = PathBuf::from(meta["workspace_root"].as_str().unwrap_or_default());
-    let dir = dir
-        .canonicalize()
-        .map_err(|e| ExecError(format!("{}: {e}", dir.display())))?;
+    let dir = dir.canonicalize().map_err(|e| {
+        ExecError::of(&Toolchain::Path {
+            path: dir.display().to_string(),
+            detail: e.to_string(),
+        })
+    })?;
     Ok(dir
         .strip_prefix(&root)
         .map(Path::to_path_buf)
@@ -255,17 +284,25 @@ pub fn rust_code_files_with(
         .args(cargo_args)
         .current_dir(dir)
         .output()
-        .map_err(|e| ExecError(format!("running {}: {e}", cargo.display())))?;
+        .map_err(|e| {
+            ExecError::of(&Toolchain::Spawn {
+                tool: cargo.display().to_string(),
+                detail: e.to_string(),
+            })
+        })?;
     if !output.status.success() {
-        return Err(ExecError(format!(
-            "cargo check failed in {}: {}",
-            dir.display(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
+        return Err(ExecError::of(&Toolchain::Failed {
+            tool: "cargo check".to_string(),
+            dir: dir.display().to_string(),
+            detail: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        }));
     }
-    let dir = dir
-        .canonicalize()
-        .map_err(|e| ExecError(format!("{}: {e}", dir.display())))?;
+    let dir = dir.canonicalize().map_err(|e| {
+        ExecError::of(&Toolchain::Path {
+            path: dir.display().to_string(),
+            detail: e.to_string(),
+        })
+    })?;
     let root = dir
         .ancestors()
         .nth(cargo_workspace_prefix(cargo, &dir)?.components().count());
@@ -285,8 +322,12 @@ pub fn rust_code_files_with(
         let Some(dep_info) = dep_info_of(&filenames) else {
             continue;
         };
-        let text = std::fs::read_to_string(&dep_info)
-            .map_err(|e| ExecError(format!("{}: {e}", dep_info.display())))?;
+        let text = std::fs::read_to_string(&dep_info).map_err(|e| {
+            ExecError::of(&Toolchain::Path {
+                path: dep_info.display().to_string(),
+                detail: e.to_string(),
+            })
+        })?;
         files.extend(
             dep_info_sources(&text, &root)
                 .into_iter()
@@ -381,16 +422,25 @@ pub fn cargo_workspace(cargo: &Path, dir: &Path) -> Result<(PathBuf, Vec<String>
         .args(["metadata", "--format-version", "1", "--no-deps"])
         .current_dir(dir)
         .output()
-        .map_err(|e| ExecError(format!("running {}: {e}", cargo.display())))?;
+        .map_err(|e| {
+            ExecError::of(&Toolchain::Spawn {
+                tool: cargo.display().to_string(),
+                detail: e.to_string(),
+            })
+        })?;
     if !output.status.success() {
-        return Err(ExecError(format!(
-            "cargo metadata failed in {}: {}",
-            dir.display(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
+        return Err(ExecError::of(&Toolchain::Failed {
+            tool: "cargo metadata".to_string(),
+            dir: dir.display().to_string(),
+            detail: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        }));
     }
-    let meta: Value = serde_json::from_slice(&output.stdout)
-        .map_err(|e| ExecError(format!("cargo metadata output: {e}")))?;
+    let meta: Value = serde_json::from_slice(&output.stdout).map_err(|e| {
+        ExecError::of(&Toolchain::Output {
+            what: "cargo metadata".to_string(),
+            detail: e.to_string(),
+        })
+    })?;
     Ok(workspace_from_metadata(&meta))
 }
 
@@ -430,16 +480,25 @@ pub fn workspace_packages(cargo: &Path, dir: &Path) -> Result<Vec<Package>, Exec
         .args(["metadata", "--format-version", "1", "--no-deps"])
         .current_dir(dir)
         .output()
-        .map_err(|e| ExecError(format!("running {}: {e}", cargo.display())))?;
+        .map_err(|e| {
+            ExecError::of(&Toolchain::Spawn {
+                tool: cargo.display().to_string(),
+                detail: e.to_string(),
+            })
+        })?;
     if !output.status.success() {
-        return Err(ExecError(format!(
-            "cargo metadata failed in {}: {}",
-            dir.display(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
+        return Err(ExecError::of(&Toolchain::Failed {
+            tool: "cargo metadata".to_string(),
+            dir: dir.display().to_string(),
+            detail: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        }));
     }
-    let meta: Value = serde_json::from_slice(&output.stdout)
-        .map_err(|e| ExecError(format!("cargo metadata output: {e}")))?;
+    let meta: Value = serde_json::from_slice(&output.stdout).map_err(|e| {
+        ExecError::of(&Toolchain::Output {
+            what: "cargo metadata".to_string(),
+            detail: e.to_string(),
+        })
+    })?;
     Ok(packages_from_metadata(&meta))
 }
 

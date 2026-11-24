@@ -117,7 +117,7 @@ fn start(config: &GdbConfig) -> GdbSession {
     loop {
         match GdbSession::start(config) {
             Ok(session) => return session,
-            Err(e) if e.0.contains("busy") && tries < 50 => {
+            Err(e) if e.to_string().contains("busy") && tries < 50 => {
                 tries += 1;
                 std::thread::sleep(Duration::from_millis(20));
             }
@@ -169,7 +169,7 @@ fn test_a_run_whose_output_never_ends_is_an_error_naming_the_output() {
     let _ = std::fs::remove_dir_all(dir);
     let why = ended
         .expect_err("an exit with incomplete output must not be a verdict")
-        .0;
+        .to_string();
     assert!(
         waited < Duration::from_secs(10),
         "the set bound was ignored: {waited:?}"
@@ -219,7 +219,7 @@ fn test_a_caught_exit_whose_summary_never_comes_is_an_error_naming_the_output() 
     );
     let why = ended
         .expect_err("a summary-less libtest exit has no verdict")
-        .0;
+        .to_string();
     assert!(why.contains("output"), "{why}");
 }
 

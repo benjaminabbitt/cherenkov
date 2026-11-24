@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::error::Toolchain;
 use cherenkov_mutation::types::{DefaultFacts, SourceDefault};
 use cherenkov_run_ports::executor::ExecError;
 use gimli::{AttributeValue, EndianArcSlice, Reader, RunTimeEndian, UnitOffset};
@@ -203,7 +204,11 @@ pub struct Member {
 }
 
 fn err(binary: &Path, what: &str, e: impl std::fmt::Display) -> ExecError {
-    ExecError(format!("{}: {what}: {e}", binary.display()))
+    ExecError::of(&Toolchain::Binary {
+        binary: binary.display().to_string(),
+        step: what.to_string(),
+        detail: e.to_string(),
+    })
 }
 
 /// What one pass over the DWARF's DIEs finds.

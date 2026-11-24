@@ -5,6 +5,7 @@
 use std::borrow::Cow;
 use std::path::Path;
 
+use crate::error::Toolchain;
 use cherenkov_run_ports::executor::ExecError;
 use gimli::{EndianSlice, RunTimeEndian};
 use object::{Object, ObjectSection};
@@ -27,7 +28,11 @@ pub struct Row {
 /// rows, at addresses near zero where no code is: those are left out.
 pub fn rows(binary: &Path) -> Result<Vec<Row>, ExecError> {
     let err = |what: &str, e: &dyn std::fmt::Display| {
-        ExecError(format!("{}: {what}: {e}", binary.display()))
+        ExecError::of(&Toolchain::Binary {
+            binary: binary.display().to_string(),
+            step: what.to_string(),
+            detail: e.to_string(),
+        })
     };
     let data = std::fs::read(binary).map_err(|e| err("read", &e))?;
     let file = object::File::parse(&*data).map_err(|e| err("parse", &e))?;

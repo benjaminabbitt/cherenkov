@@ -5,12 +5,14 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use crate::error::{NotRecorded, Session, Toolchain};
 use cherenkov_mutation::edit::Edit;
 use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, TestReport, Tier};
 use cherenkov_mutation::plan::{Action, MutantPlan};
 use cherenkov_mutation::syntax::Pos;
 use cherenkov_mutation::token::Token;
 use cherenkov_run_ports::executor::{Driven, ExecError, MutantExecutor, Recording, Selection};
+use coded_diagnostic::Report;
 
 use crate::isa::Isa;
 use crate::tierp::{Insn, Patch, Unpatchable, derive, derive_returning};
@@ -203,10 +205,11 @@ pub trait NativeSession {
         for r in &patch.regions {
             let current = self.read(r.addr, r.original.len())?;
             if current != r.original {
-                return Err(ExecError(format!(
-                    "expected {:02x?} at {:#x}, found {current:02x?}",
-                    r.original, r.addr
-                )));
+                return Err(ExecError::of(&Session::PatchMismatch {
+                    expected: format!("{:02x?}", r.original),
+                    addr: format!("{:#x}", r.addr),
+                    found: format!("{current:02x?}"),
+                }));
             }
         }
         for r in &patch.regions {
@@ -232,9 +235,11 @@ fn write_verified<S: NativeSession + ?Sized>(
     session.write(addr, bytes)?;
     let back = session.read(addr, bytes.len())?;
     if back != bytes {
-        return Err(ExecError(format!(
-            "wrote {bytes:02x?} at {addr:#x}, read back {back:02x?}"
-        )));
+        return Err(ExecError::of(&Session::WriteMismatch {
+            wrote: format!("{bytes:02x?}"),
+            addr: format!("{addr:#x}"),
+            back: format!("{back:02x?}"),
+        }));
     }
     Ok(())
 }
@@ -1109,20 +1114,15 @@ impl<L: Launcher> TierPExecutor<L> {
         if let Some(binary) = self.launcher.binary()
             && !crate::lines::has_line_table(binary)
         {
-            return Err(ExecError(format!(
-                "{} has no debug line information: build its tests with debug info and \
-                     without strip (for a project whose profile turns them off: \
-                     CARGO_PROFILE_TEST_DEBUG=2 CARGO_PROFILE_TEST_STRIP=false)",
-                binary.display()
-            )));
+            return Err(ExecError::of(&Toolchain::NoLineTable {
+                binary: binary.display().to_string(),
+            }));
         }
         let mut s = self.launcher.start()?;
         // A fresh launch runs the configured tests: narrow it, then start
         // over with the narrowed ones.
         if self.selected.is_some() && s.select_tests(self.selected.as_deref())? && !s.restart()? {
-            return Err(ExecError(
-                "the debugger cannot restart with selected tests".into(),
-            ));
+            return Err(ExecError::of(&Session::NoRestart));
         }
         Ok(s)
     }
@@ -1302,17 +1302,16 @@ impl<L: Launcher> MutantExecutor for TierPExecutor<L> {
     }
 
     fn recording(&mut self, plans: &[MutantPlan], budget: Budget) -> Result<Recording, ExecError> {
-        let every_test = |tests: Option<usize>, reason: String| Recording {
+        let every_test = |tests: Option<usize>, why: NotRecorded| Recording {
             tests,
-            selection: Selection::EveryTest { reason },
+            selection: Selection::EveryTest {
+                why: Report::of(&why),
+            },
             driven: None,
         };
         // The binary's tests by the runner's names, to tell them on the stack.
         let Some(tests) = self.launcher.binary().and_then(crate::libtest::list_tests) else {
-            return Ok(every_test(
-                None,
-                "the test program does not list its tests".to_string(),
-            ));
+            return Ok(every_test(None, NotRecorded::NoTestList));
         };
         let count = Some(tests.len());
         self.selected = None;
@@ -1354,10 +1353,7 @@ impl<L: Launcher> MutantExecutor for TierPExecutor<L> {
         )?;
         self.session = Some(session);
         let Some((end, calls, hit)) = recorded else {
-            return Ok(every_test(
-                count,
-                "the recording run recorded nothing".to_string(),
-            ));
+            return Ok(every_test(count, NotRecorded::NothingRecorded));
         };
         let hit: std::collections::HashSet<u64> = hit.into_iter().collect();
         let reached: Vec<Option<bool>> = reach
@@ -1390,15 +1386,15 @@ impl<L: Launcher> MutantExecutor for TierPExecutor<L> {
                     },
                 });
             }
-            let failed = if failing.is_empty() {
-                String::new()
-            } else {
-                format!(": {}", failing.join(", "))
+            let end = format!("{end:?}");
+            let why = match failing.is_empty() {
+                true => NotRecorded::TestsFailed { end },
+                false => NotRecorded::NamedTestsFailed {
+                    end,
+                    failing: failing.join(", "),
+                },
             };
-            return Ok(every_test(
-                count,
-                format!("the tests did not pass while recording what they call ({end:?}{failed})"),
-            ));
+            return Ok(every_test(count, why));
         }
         let calls: std::collections::HashMap<u64, Driven> = calls.into_iter().collect();
         Ok(Recording {
