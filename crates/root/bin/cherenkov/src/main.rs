@@ -239,6 +239,7 @@ fn catalog() -> Result<Catalog, CatalogError> {
     let mut sources = vec![cherenkov_cli::error::EN_US];
     sources.extend(cherenkov_run_application::error::CATALOG_SOURCES);
     sources.extend(cherenkov_run_store::CATALOG_SOURCES);
+    sources.push(cherenkov_syntax::EN_US);
     Catalog::en_us(&sources)
 }
 
@@ -372,19 +373,19 @@ fn run_command(args: RunArgs) -> (Format, Result<(), CliError>) {
 /// The sets `spec` asks for (`a,b,file.toml`), or the error that says why not.
 pub(crate) fn operator_sets(spec: &str) -> Result<Vec<OperatorSet>, CliError> {
     resolve_sets(spec, load_set).map_err(|e| match e {
-        SetError::Unknown(name) => {
+        SetError::Unknown { name } => {
             let known: Vec<&str> = registry().iter().map(|s| s.name).collect();
             CliError::UnknownOperatorSet {
                 name,
                 known: known.join(", "),
             }
         }
-        SetError::Unreadable { path, reason } => CliError::Unreadable { path, reason },
-        SetError::Invalid { path, reason } => CliError::BadOperatorSet { path, reason },
-        other => CliError::BadOperatorSet {
-            path: spec.to_string(),
-            reason: other.reason(),
+        SetError::Unreadable { path, detail } => CliError::Unreadable {
+            path,
+            reason: detail,
         },
+        SetError::Invalid { path, cause } => CliError::BadOperatorSet { path, cause },
+        other => CliError::bad_operator_set(spec, &other),
     })
 }
 
@@ -501,9 +502,7 @@ fn sets() {
 /// The inventory as the options ask, printed.
 fn operators(args: &OperatorsArgs) -> Result<(), CliError> {
     use cherenkov_mutation::inventory::{Inventory, Spellings};
-    let syntax = TreeSitterSyntax::builtin().map_err(|e| CliError::Syntax {
-        reason: e.to_string(),
-    })?;
+    let syntax = TreeSitterSyntax::builtin().map_err(|e| CliError::syntax(&e))?;
     let profiles = syntax.profiles();
     let tables: Vec<(&str, &cherenkov_mutation::token::TokenTable)> = if args.no_spellings {
         Vec::new()
@@ -638,9 +637,7 @@ fn plan(
     names: bool,
 ) -> Result<(), CliError> {
     let syntax = TreeSitterSyntax::builtin()
-        .map_err(|e| CliError::Syntax {
-            reason: e.to_string(),
-        })?
+        .map_err(|e| CliError::syntax(&e))?
         .with_skip_calls(selection.skip_calls.clone());
     let profiles = with_excludes(syntax.profiles(), &selection.exclude_globs);
     let (project, sets, label, languages) =
@@ -695,8 +692,8 @@ fn summarize(project: &ProjectPlan) {
     }
     for (path, problem) in &project.problems {
         let what = match problem {
-            FileProblem::Unreadable(m) => format!("unreadable: {m}"),
-            FileProblem::Analysis(m) => format!("analysis failed: {m}"),
+            FileProblem::Unreadable { detail } => format!("unreadable: {detail}"),
+            FileProblem::Analysis { cause } => format!("analysis failed: {cause}"),
             FileProblem::SyntaxErrors => "syntax errors; not planned".to_string(),
         };
         eprintln!("problem: {}: {what}", path.display());

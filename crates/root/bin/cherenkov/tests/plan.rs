@@ -636,7 +636,16 @@ fn test_plan_with_a_bad_custom_set_is_declined_naming_the_problem() {
     );
     let error = error_document(&out);
     assert_eq!(error["code"], "cherenkov-cli-bad-operator-set");
-    assert_eq!(error["args"]["reason"], "no mutation named ror/zzz");
+    let cause = &error["args"]["cause"];
+    assert_eq!(cause["code"], "cherenkov-mutation-unknown-mutation");
+    assert_eq!(cause["args"]["name"], "ror/zzz");
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .ends_with(": not an operator set: no mutation named ror/zzz"),
+        "{error}"
+    );
 }
 
 #[test]

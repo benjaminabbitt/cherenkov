@@ -524,9 +524,7 @@ fn plan_language(
     selection: &Selection,
 ) -> Result<Vec<MutantPlan>, CliError> {
     let syntax = TreeSitterSyntax::builtin()
-        .map_err(|e| CliError::Syntax {
-            reason: e.to_string(),
-        })?
+        .map_err(|e| CliError::syntax(&e))?
         .with_skip_calls(selection.skip_calls.clone());
     let profiles: Vec<_> = crate::with_excludes(syntax.profiles(), &selection.exclude_globs)
         .into_iter()

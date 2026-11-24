@@ -14,3 +14,32 @@ fn test_the_program_s_catalog_renders_the_cli_s_and_the_run_layer_s_messages() {
         "the run could not run: the mutants could not run: no gdb"
     );
 }
+
+#[test]
+fn test_a_parsers_failure_renders_through_the_profile_and_the_token_table_it_names() {
+    let duplicate = cherenkov_mutation::token::TokenTableError::DuplicateSpelling {
+        spelling: "&".into(),
+    };
+    let profile = cherenkov_syntax::ProfileError::Tokens {
+        lang: "go".into(),
+        cause: Report::of(&duplicate),
+    };
+    let error = CliError::syntax(&profile);
+    assert_eq!(
+        catalog().unwrap().render(&error).unwrap(),
+        "the parsers did not load: go: tokens.toml: the spelling \"&\" is mapped to more than one token"
+    );
+}
+
+#[test]
+fn test_a_file_the_planner_could_not_analyze_renders_its_parsers_failure() {
+    let problem = cherenkov_run_application::session::FileProblem::Analysis {
+        cause: Report::of(&cherenkov_run_ports::syntax::SyntaxError::Parser {
+            detail: "boom".into(),
+        }),
+    };
+    assert_eq!(
+        catalog().unwrap().render(&problem).unwrap(),
+        "analysis failed: parser failure: boom"
+    );
+}

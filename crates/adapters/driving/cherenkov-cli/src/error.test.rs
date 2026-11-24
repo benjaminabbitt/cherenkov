@@ -141,3 +141,21 @@ fn test_a_run_layer_cause_is_held_with_its_code_its_args_and_its_nested_cause() 
         r#"outer-code signed=-3 count=7 text="a b" cause=inner-code cause.why=because"#
     );
 }
+
+#[test]
+fn test_a_bad_operator_set_and_a_parser_that_did_not_load_render_their_causes() {
+    let mut sources = vec![EN_US];
+    sources.extend(cherenkov_run_application::error::CATALOG_SOURCES);
+    let catalog = angzarr_presentation::Catalog::en_us(&sources).unwrap();
+    let cause = cherenkov_mutation::set_spec::SetError::UnknownSkip { name: "moon".into() };
+    let bad = CliError::bad_operator_set("mine.toml", &cause);
+    assert_eq!(
+        catalog.render(&bad).unwrap(),
+        "mine.toml: not an operator set: no skip kind named moon"
+    );
+    let parsers = CliError::syntax(&Report::new("cherenkov-run-ports-incomplete"));
+    assert_eq!(
+        catalog.render(&parsers).unwrap(),
+        "the parsers did not load: parser failure: the parse did not complete"
+    );
+}

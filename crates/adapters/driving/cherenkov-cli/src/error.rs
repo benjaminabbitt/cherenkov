@@ -13,7 +13,7 @@ pub enum CliError {
     UnknownOperatorSet { name: String, known: String },
     /// A custom operator set's file is not a set (not TOML of the right
     /// shape, or it names a mutation or skip kind that does not exist).
-    BadOperatorSet { path: String, reason: String },
+    BadOperatorSet { path: String, cause: Report },
     /// The directory holds no project a run can execute.
     NoProject { dir: String },
     /// A tool the run needs is not where it was looked for.
@@ -21,8 +21,8 @@ pub enum CliError {
     /// A file or directory could not be read (or a pattern for one is not
     /// valid).
     Unreadable { path: String, reason: String },
-    /// The parsers did not load.
-    Syntax { reason: String },
+    /// The parsers did not load: `cause` says why.
+    Syntax { cause: Report },
     /// The project's sources could not be planned.
     Planning { reason: String },
     /// The toolchain could not build or describe the project's tests.
@@ -39,6 +39,21 @@ pub enum CliError {
 }
 
 impl CliError {
+    /// The parsers' `cause` for not loading, captured.
+    pub fn syntax(cause: &dyn Diagnostic) -> CliError {
+        CliError::Syntax {
+            cause: Report::of(cause),
+        }
+    }
+
+    /// What is wrong with the operator set in `path`, captured from `cause`.
+    pub fn bad_operator_set(path: impl Into<String>, cause: &dyn Diagnostic) -> CliError {
+        CliError::BadOperatorSet {
+            path: path.into(),
+            cause: Report::of(cause),
+        }
+    }
+
     /// The run layer's `cause`, captured.
     pub fn run(cause: &dyn Diagnostic) -> CliError {
         CliError::Run {
@@ -83,16 +98,20 @@ impl Diagnostic for CliError {
             }
             CliError::NoProject { dir } => vec![("dir", dir.as_str().into())],
             CliError::ToolMissing { tool } => vec![("tool", tool.as_str().into())],
-            CliError::BadOperatorSet { path, reason } | CliError::Unreadable { path, reason } => {
+            CliError::BadOperatorSet { path, cause } => {
+                vec![("path", path.as_str().into()), ("cause", Arg::nested(cause))]
+            }
+            CliError::Unreadable { path, reason } => {
                 vec![
                     ("path", path.as_str().into()),
                     ("reason", reason.as_str().into()),
                 ]
             }
-            CliError::Syntax { reason }
-            | CliError::Planning { reason }
+            CliError::Planning { reason }
             | CliError::Toolchain { reason } => vec![("reason", reason.as_str().into())],
-            CliError::Run { cause } => vec![("cause", Arg::nested(cause))],
+            CliError::Syntax { cause } | CliError::Run { cause } => {
+                vec![("cause", Arg::nested(cause))]
+            }
             CliError::StoreLocked { path, holder } | CliError::StoreHeld { path, holder } => {
                 vec![
                     ("path", path.as_str().into()),
@@ -138,7 +157,7 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         }),
         Box::new(CliError::BadOperatorSet {
             path: "p".into(),
-            reason: reason(),
+            cause: Report::new("cherenkov-mutation-unknown-skip").arg("name", "n"),
         }),
         Box::new(CliError::NoProject { dir: "d".into() }),
         Box::new(CliError::ToolMissing { tool: "gdb".into() }),
@@ -146,7 +165,11 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             path: "p".into(),
             reason: reason(),
         }),
-        Box::new(CliError::Syntax { reason: reason() }),
+        Box::new(CliError::Syntax {
+            cause: Report::new("cherenkov-syntax-unknown-token")
+                .arg("lang", "go")
+                .arg("name", "n"),
+        }),
         Box::new(CliError::Planning { reason: reason() }),
         Box::new(CliError::Toolchain { reason: reason() }),
         Box::new(CliError::Run {
