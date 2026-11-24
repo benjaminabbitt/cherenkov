@@ -27,9 +27,15 @@ pub fn parse(stdout: &str) -> BTreeMap<String, TestOutcome> {
                 r if r == "ignored" || r.starts_with("ignored,") => TestOutcome::Ignored,
                 _ => return None,
             };
-            Some((name.to_string(), outcome))
+            Some((real_name(name).to_string(), outcome))
         })
         .collect()
+}
+
+/// A `#[should_panic]` test's result line says `name - should panic`; its
+/// failure section and `--list` entry say `name`.
+fn real_name(name: &str) -> &str {
+    name.strip_suffix(" - should panic").unwrap_or(name)
 }
 
 /// What a failing test reported: where it panicked, the panic message, and
@@ -141,7 +147,11 @@ fn seen(failure: Option<Failure>) -> CoreFailure {
     match failure {
         Some(f) => CoreFailure {
             location: f.location,
-            message: f.message,
+            message: if f.message.is_empty() {
+                "the test failed".to_string()
+            } else {
+                f.message
+            },
             got: f.left,
             expected: f.right,
         },

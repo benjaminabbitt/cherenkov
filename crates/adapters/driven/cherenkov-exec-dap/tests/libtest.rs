@@ -166,3 +166,42 @@ fn test_reports_name_a_failing_section_whose_result_line_was_lost() {
 fn test_reports_of_no_output_are_none() {
     assert!(reports("").is_empty());
 }
+
+// --- should_panic tests: libtest suffixes the result line, not the section.
+
+#[test]
+fn test_parse_names_a_should_panic_test_by_its_real_name() {
+    let out = "test m::t - should panic ... ok\ntest m::u - should panic ... FAILED\n";
+    assert_eq!(
+        parse(out),
+        map(&[("m::t", TestOutcome::Ok), ("m::u", TestOutcome::Failed)])
+    );
+}
+
+#[test]
+fn test_a_should_panic_test_that_did_not_panic_is_one_failed_report_under_its_real_name() {
+    let out = "running 1 test\ntest m::t - should panic ... FAILED\n\nfailures:\n\n---- m::t stdout ----\nnote: test did not panic as expected at src/lib.rs:3:4\n\nfailures:\n    m::t\n";
+    let got = reports(out);
+    let names: Vec<&str> = got.iter().map(|r| r.test.as_str()).collect();
+    assert_eq!(names, ["m::t"], "{got:?}");
+    assert!(matches!(got[0].result, TestResult::Failed(_)));
+}
+
+#[test]
+fn test_a_should_panic_test_with_the_wrong_message_is_one_failed_report() {
+    let out = "test m::t - should panic ... FAILED\n\nfailures:\n\n---- m::t stdout ----\n\nthread 'm::t' panicked at src/lib.rs:5:9:\nactual message\nnote: panic did not contain expected string\n      panic message: \"actual message\"\n expected substring: \"wanted\"\n\nfailures:\n    m::t\n";
+    let got = reports(out);
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert_eq!(got[0].test, "m::t");
+    let TestResult::Failed(f) = &got[0].result else {
+        panic!("{got:?}");
+    };
+    assert_eq!(f.location.as_deref(), Some("src/lib.rs:5:9"));
+}
+
+#[test]
+fn test_a_should_panic_test_that_passed_is_one_passed_report() {
+    let got = reports("test m::t - should panic ... ok\n");
+    assert_eq!(got.len(), 1);
+    assert_eq!((got[0].test.as_str(), &got[0].result), ("m::t", &TestResult::Passed));
+}
