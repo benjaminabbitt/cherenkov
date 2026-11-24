@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use cherenkov_mutation::syntax::{FileSyntax, LanguageId};
-use coded_diagnostic::{Arg, Diagnostic, Report, code};
+use coded_diagnostic::{Arg, Diagnostic, code};
 
 /// Why a file could not be analyzed: coded, with named data (the messages
 /// are `locales/en-US/messages.ftl`'s).
