@@ -1284,3 +1284,29 @@ async fn test_a_ready_run_s_snapshot_does_not_grow_with_the_mutants_planned() {
         "200 mutants: {small} bytes, 400 mutants: {large} bytes"
     );
 }
+
+#[tokio::test]
+async fn test_a_decision_told_to_an_abandoned_run_with_a_mutant_owed_records_nothing() {
+    let core = core();
+    let run = new_run();
+    core.command(run_cover(&run), &plan(&["a", "b"]))
+        .await
+        .unwrap();
+    let abandoned = Abandoned {
+        reason: "the plan changed".to_string(),
+    };
+    core.report(run_cover(&run), &abandoned, "abandoned")
+        .await
+        .unwrap();
+    let before = run_events(&core, &run).await.len();
+    core.report(run_cover(&run), &decision("a", Verdict::Killed), "a")
+        .await
+        .unwrap();
+    assert_eq!(run_events(&core, &run).await.len(), before);
+}
+
+#[test]
+fn test_restoring_an_unstarted_snapshot_that_holds_nothing_is_accepted() {
+    let mut run = Run::default();
+    assert_eq!(run.restore(RunSnapshot::default()), Ok(()));
+}
