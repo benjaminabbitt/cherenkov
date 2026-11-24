@@ -2,7 +2,7 @@ default: check
 
 # Format, lint and test the workspace. Needs protoc on PATH and access to
 # github.com.
-check: fmt-check lint test
+check: fmt-check lint lint-arch test
 
 fmt:
     cargo fmt --all
@@ -12,6 +12,25 @@ fmt-check:
 
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
+
+# arch-lint at rust-support's pinned commit (the one Cargo.toml pins for
+# cli-support), installed once into the cache.
+arch_lint_rev := "5bc1d60f1a10d4902b2daad36c348e9bc39c15fa"
+arch_lint_root := env_var_or_default("XDG_CACHE_HOME", env_var("HOME") / ".cache") / "cherenkov-arch-lint" / arch_lint_rev
+arch_lint := arch_lint_root / "bin/arch-lint"
+
+# The workspace's dependency edges against arch-rules.toml: a crate's
+# directory, crates/<ring>/<role>/<crate>, is its role.
+lint-arch:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! grep -q 'rust-support", rev = "{{arch_lint_rev}}"' Cargo.toml; then
+        echo "arch_lint_rev in the justfile is not the rust-support rev Cargo.toml pins" >&2
+        exit 1
+    fi
+    [ -x '{{arch_lint}}' ] || cargo install --quiet --git https://github.com/benjaminabbitt/rust-support \
+        --rev {{arch_lint_rev}} arch-lint --locked --root '{{arch_lint_root}}'
+    '{{arch_lint}}' --manifest-path Cargo.toml --rules arch-rules.toml
 
 test:
     cargo test --workspace

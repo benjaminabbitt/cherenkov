@@ -1,0 +1,106 @@
+# The architecture lint's rules (templates/arch-gates.just runs it): which
+# role may depend on which. A crate's role is its directory,
+# crates/<ring>/<role>/<crate> giving <ring>/<role>. Copy to the repository's
+# top level as arch-rules.toml and edit; the table is data, so another
+# repository supplies its own.
+#
+# Each role lists what its crates may depend on, over every normal and build
+# edge between workspace members: a role (`core/wire`), a glob over roles
+# (`core/*`; `*` is any run of characters, `/` included) or `@class` (a crate
+# whose name matches a pattern under [classes]). A role not listed is
+# refused: a new tier gets its rule before it gets code. Edges to crates
+# outside the workspace are not examined.
+layout = "crates"
+
+# The roles whose dev-dependency edges are examined, more leniently: the same
+# table, but a finding is a warning (it fails only under --deny-warnings).
+dev_checked = ["adapters/driven", "adapters/driving"]
+
+[classes]
+# The driving adapters' shared presentation crates: domain-free, and what the
+# CLI and the server both write through.
+presentation = ["presentation", "*-presentation"]
+# Shared infrastructure crates every driven adapter may use, listed by name.
+support = ["cherenkov-dap-types"]
+
+[roles."core/wire"]
+allow = ["core/wire"]
+rule = "the core depends on the core only"
+
+[roles."core/domain"]
+allow = ["core/domain", "core/wire"]
+rule = "the core depends on the core only, and a domain never depends on a read model"
+
+[roles."core/read-model"]
+allow = ["core/read-model", "core/domain", "core/wire"]
+rule = "the core depends on the core only, and a read model never depends on the application layer"
+
+[roles."core/ports"]
+allow = ["core/ports", "core/domain", "core/wire"]
+rule = "the core depends on the core only"
+
+[roles."core/application"]
+allow = ["core/*"]
+rule = "the core depends on the core only"
+
+[roles."adapters/driven"]
+allow = ["core/ports", "core/wire", "@support"]
+rule = "a driven adapter sees only ports and wire types, never another adapter"
+
+[roles."adapters/driving"]
+allow = ["core/application", "@presentation"]
+rule = "a driving adapter sees only the application layer and the presentation crates, never another adapter"
+
+# The composition root (the binaries and their wiring library) may depend on
+# anything; nothing else lists either, so nothing but the root depends on the
+# root.
+[roles."root/bin"]
+allow = ["*"]
+
+[roles."root/lib"]
+allow = ["*"]
+
+# A known departure, kept as debt: from, to, optionally kind ("normal",
+# "build" or "dev"), and why. One that matches no finding is stale and fails.
+# Each below waits on a ruling by the owner (docs/runlayer-plan.md, 5.8).
+
+[[exception]]
+from = "cherenkov-exec-dap"
+to = "cherenkov-mutation"
+kind = "normal"
+reason = "TODO(owner ruling): the adapter is written in the core's vocabulary (MutantPlan, Token, Edit, Span, MutantId, Budget, RawOutcome, Tier, DefaultFacts) and the rule lets a driven adapter see ports and wire types only. To drop this exception either the vocabulary moves to the wire ring or the ports re-export it, or the rule lets a driven adapter see the mutation domain"
+
+[[exception]]
+from = "cherenkov-fs"
+to = "cherenkov-mutation"
+kind = "normal"
+reason = "TODO(owner ruling): the adapter is written in the core's vocabulary (LanguageId, Profile) and the rule lets a driven adapter see ports and wire types only. To drop this exception either the vocabulary moves to the wire ring or the ports re-export it, or the rule lets a driven adapter see the mutation domain"
+
+[[exception]]
+from = "cherenkov-syntax"
+to = "cherenkov-mutation"
+kind = "normal"
+reason = "TODO(owner ruling): the adapter is written in the core's vocabulary (Profile, Concept, Capture, Token, FileSyntax parts) and the rule lets a driven adapter see ports and wire types only. To drop this exception either the vocabulary moves to the wire ring or the ports re-export it, or the rule lets a driven adapter see the mutation domain"
+
+[[exception]]
+from = "cherenkov-cli"
+to = "cherenkov-mutation"
+kind = "normal"
+reason = "TODO(owner ruling): the output projector prints the run's events and documents (deficiency); the rule lets a driving adapter see the application layer and presentation crates only. To drop this exception either the application re-exports them or a read-model crate (`cherenkov-run-reads`, not built yet) carries the projection, or the rule lets a driving adapter see the domain and wire rings"
+
+[[exception]]
+from = "cherenkov-cli"
+to = "cherenkov-run-domain"
+kind = "normal"
+reason = "TODO(owner ruling): the output projector prints the run's events and documents (RunEvent, recorded_at, run_event, MutantPlan); the rule lets a driving adapter see the application layer and presentation crates only. To drop this exception either the application re-exports them or a read-model crate (`cherenkov-run-reads`, not built yet) carries the projection, or the rule lets a driving adapter see the domain and wire rings"
+
+[[exception]]
+from = "cherenkov-cli"
+to = "cherenkov-run-wire"
+kind = "normal"
+reason = "TODO(owner ruling): the output projector prints the run's events and documents (the output package: VerdictLine, Planned, Executors, ...); the rule lets a driving adapter see the application layer and presentation crates only. To drop this exception either the application re-exports them or a read-model crate (`cherenkov-run-reads`, not built yet) carries the projection, or the rule lets a driving adapter see the domain and wire rings"
+
+# The test-only fidelity crate (it runs the planner against compiled
+# fixtures) sits in no ring: it may see anything and nothing depends on it.
+[roles."test/fidelity"]
+allow = ["*"]
