@@ -774,7 +774,7 @@ order:
   crate and `test/fidelity` allowed anything) and `just lint-arch`, in `just
   check`; `arch-lint` at the rust-support commit Cargo.toml pins.
 - Exit: `arch-lint` passes with two ruled exceptions in `arch-rules.toml`
-  (below); three dev-dependency edges are
+  (below); two dev-dependency edges are
   warnings. The old name remains nowhere in the tree, the docs or the error
   catalogs (grep); the fixtures' verdict files and both `encodings.txt` are
   byte-identical to before.
@@ -792,8 +792,8 @@ diverge from ctxloom's table; an adapter can reach past the ports into the
 domain (e.g. the planner); `arch-lint` still refuses adapter-to-adapter
 edges. Revisit when `cherenkov-run-reads` is built, or if an adapter starts
 calling domain behaviour rather than using its types. The warnings are
-dev-dependency edges of tests (`embedded-edge` to `run-domain`, `exec-dap`
-and `fs` to `syntax`). Upstream: none. Unblocks: phase 8.
+dev-dependency edges of tests (`exec-dap` and `fs` to `syntax`, two: the
+`embedded-edge` to `run-domain` one went with the widened rule). Upstream: none. Unblocks: phase 8.
 
 **5.9 Diagnostic everywhere.** Changes: `ExecError`, `SyntaxError`,
 `TokenTableError`, `ProfileError`, `DapError`, `RpcError`, `IsaError`, the
