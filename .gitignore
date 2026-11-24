@@ -17,3 +17,6 @@ __pycache__/
 /.cargo/config.toml
 /.cargo/local-pins.toml
 /.dev
+# cargo-mutants output (just mutants, cargo mutants --in-diff)
+/mutants.out/
+/mutants.out.old/
