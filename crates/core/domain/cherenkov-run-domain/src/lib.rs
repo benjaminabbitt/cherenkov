@@ -35,8 +35,8 @@ use angzarr_embedded::v1::Uuid;
 use angzarr_embedded_macros::{aggregate, applies, handles_cmd, handles_fact};
 use cherenkov_mutation::execution::{Budget, RawOutcome};
 
-mod failure;
 pub mod events;
+mod failure;
 mod judge;
 pub mod observation;
 pub mod plan;
@@ -47,15 +47,15 @@ pub mod why;
 use judge::{Decision, judge};
 use refusal::refuse;
 
-pub use refusal::NotOurs;
 pub use failure::Failure;
+pub use refusal::NotOurs;
 pub use rejection::{
     EN_US, MutantRejection, RunRejection, SnapshotRejection, UnderivableRoot, Unreadable,
 };
 
 /// One value of every refusal and failure, for the catalog test.
 #[cfg(test)]
-pub fn diagnostic_samples() -> Vec<Box<dyn angzarr_diagnostic::Diagnostic>> {
+pub fn diagnostic_samples() -> Vec<Box<dyn coded_diagnostic::Diagnostic>> {
     rejection::diagnostic_samples()
         .into_iter()
         .chain(failure::diagnostic_samples())
@@ -382,7 +382,7 @@ impl Run {
         let wall = match baseline {
             Ok(wall) => wall,
             Err(failure) => {
-                let why = why::encode(&angzarr_diagnostic::Report::of(&failure));
+                let why = why::encode(&coded_diagnostic::Report::of(&failure));
                 let coded = (String::new(), Some(why));
                 return Ok(self.failed(Some(fact.program), coded, ctx));
             }

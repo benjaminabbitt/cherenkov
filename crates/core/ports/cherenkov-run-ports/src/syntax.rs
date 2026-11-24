@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use cherenkov_mutation::syntax::{FileSyntax, LanguageId};
-use coded_diagnostic::{Arg, Diagnostic, code};
+use coded_diagnostic::{Arg, Diagnostic, Report, code};
 
 /// Why a file could not be analyzed: coded, with named data (the messages
 /// are `locales/en-US/messages.ftl`'s).
@@ -59,6 +59,8 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         }),
         Box::new(SyntaxError::Parser { detail: "d".into() }),
         Box::new(SyntaxError::Incomplete),
+        // The executor port's default selection reason (`executor`).
+        Box::new(Report::new(code!("no-recording"))),
     ]
 }
 

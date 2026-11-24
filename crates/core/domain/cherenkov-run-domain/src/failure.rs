@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use angzarr_diagnostic::{Arg, Diagnostic, code};
+use coded_diagnostic::{Arg, Diagnostic, code};
 
 /// Why the run domain failed a program or a run itself.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -22,7 +22,7 @@ pub enum Failure {
 
 impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        angzarr_diagnostic::display(self, f)
+        coded_diagnostic::display(self, f)
     }
 }
 

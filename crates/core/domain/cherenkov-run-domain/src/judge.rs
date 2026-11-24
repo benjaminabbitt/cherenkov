@@ -17,7 +17,9 @@
 use cherenkov_mutation::execution::{RawOutcome, classify, combine};
 use cherenkov_mutation::verdict::Verdict as Judged;
 
-use crate::mutant::{DebuggerFailed, KilledBy, Outcome, ProgramRun, ProgramRunResult, Ran, Tier, Verdict};
+use crate::mutant::{
+    DebuggerFailed, KilledBy, Outcome, ProgramRun, ProgramRunResult, Ran, Tier, Verdict,
+};
 use crate::observation;
 use crate::rejection::Unreadable;
 

@@ -8,7 +8,7 @@
 
 use std::collections::BTreeMap;
 
-use angzarr_diagnostic::{Arg, Diagnostic, Report};
+use coded_diagnostic::{Arg, Diagnostic, Report};
 
 use crate::angzarr;
 use crate::failure::Failure;
@@ -65,7 +65,10 @@ fn unflatten(code: &str, args: &BTreeMap<String, String>) -> Report {
             .collect();
         report = match inner.is_empty() {
             true => report.arg(name.clone(), value.as_str()),
-            false => report.arg(name.clone(), Arg::Nested(Box::new(unflatten(value, &inner)))),
+            false => report.arg(
+                name.clone(),
+                Arg::Nested(Box::new(unflatten(value, &inner))),
+            ),
         };
     }
     report

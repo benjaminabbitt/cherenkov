@@ -5,6 +5,7 @@ use std::time::Duration;
 use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, Tier};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::executor::{Driven, ExecError, MutantExecutor, Selection};
+use coded_diagnostic::{Arg, Diagnostic, Report};
 
 fn exited(code: i32) -> RawOutcome {
     RawOutcome::Exited {
@@ -15,11 +16,19 @@ fn exited(code: i32) -> RawOutcome {
 }
 
 #[test]
-fn test_exec_error_displays_its_message() {
-    assert_eq!(
-        ExecError("dlv not found".into()).to_string(),
-        "dlv not found"
-    );
+fn test_an_exec_error_is_its_cause_code_and_args() {
+    let cause = Report::new("x-failed").arg("detail", "dlv not found");
+    let error = ExecError::of(&cause);
+    assert_eq!(error.code(), "x-failed");
+    assert_eq!(Report::of(&error), cause);
+    assert_eq!(error.to_string(), "x-failed detail=\"dlv not found\"");
+}
+
+#[test]
+fn test_an_exec_error_holds_its_cause_nested() {
+    let inner = Report::new("x-rpc").arg("detail", "closed");
+    let outer = Report::new("x-session").arg("cause", Arg::nested(&inner));
+    assert_eq!(ExecError::of(&outer).cause, outer);
 }
 
 /// Says which tests call what through `driven` alone, as an executor

@@ -1,4 +1,4 @@
-use angzarr_diagnostic::{Arg, Diagnostic, Report};
+use coded_diagnostic::{Arg, Diagnostic, Report};
 
 use super::*;
 
@@ -52,9 +52,12 @@ fn test_decoding_two_levels_of_cause_keeps_both() {
 #[test]
 fn test_decoding_without_a_why_holds_the_old_text_as_a_recorded_reason() {
     let decoded = decode(None, "no debug info");
-    assert_eq!(decoded, Report::of(&Failure::Recorded {
-        reason: "no debug info".to_string(),
-    }));
+    assert_eq!(
+        decoded,
+        Report::of(&Failure::Recorded {
+            reason: "no debug info".to_string(),
+        })
+    );
 }
 
 #[test]

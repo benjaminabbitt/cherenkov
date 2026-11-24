@@ -4,6 +4,7 @@
 
 use cherenkov_mutation::execution::{Budget, Observed};
 use cherenkov_mutation::plan::MutantPlan;
+use coded_diagnostic::{Arg, Diagnostic, Report, code};
 
 /// An executor applies one plan, runs the tests, and reports facts.
 /// Errors are infrastructure failures (the debugger or harness broke), not
@@ -33,7 +34,7 @@ pub trait MutantExecutor {
             selection: match driven {
                 Some(_) => Selection::Recorded,
                 None => Selection::EveryTest {
-                    reason: "this executor does not record which tests call what".to_string(),
+                    why: Report::new(code!("no-recording")),
                 },
             },
             driven,
@@ -83,17 +84,42 @@ pub enum Selection {
     /// As recorded, except that these tests failed during the recording
     /// and run every mutant.
     RecordedWithFailures { failed_tests: Vec<String> },
-    /// Every mutant runs every test, for `reason`.
-    EveryTest { reason: String },
+    /// Every mutant runs every test, for `why`.
+    EveryTest { why: Report },
 }
 
+/// Why an executor failed: what failed, captured. It names no recovery;
+/// the layers closer to the user add one if they have one.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExecError(pub String);
+pub struct ExecError {
+    pub cause: Report,
+}
+
+impl ExecError {
+    /// The failure `cause` reports.
+    pub fn of(cause: &dyn Diagnostic) -> ExecError {
+        ExecError {
+            cause: Report::of(cause),
+        }
+    }
+}
 
 impl std::fmt::Display for ExecError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        coded_diagnostic::display(self, f)
     }
 }
 
 impl std::error::Error for ExecError {}
+
+/// An executor's failure is its cause: the same code and args, so what
+/// holds one holds the cause's own message.
+impl Diagnostic for ExecError {
+    fn code(&self) -> &str {
+        self.cause.code()
+    }
+
+    fn args(&self) -> Vec<(&str, Arg)> {
+        self.cause.args()
+    }
+}
