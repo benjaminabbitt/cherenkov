@@ -1,4 +1,4 @@
-use cherenkov_exec_dap::isa::{Isa, Jcc, Signedness};
+use cherenkov_exec_dap::isa::{Isa, IsaError, Jcc, Signedness};
 use cherenkov_mutation::token::Token;
 
 #[test]
@@ -117,10 +117,23 @@ fn test_relational_condition_codes_by_signedness_and_swap() {
 fn test_parse_rejects_unknown_condition_code_and_token_names() {
     let good = include_str!("../../../../../isa/amd64.toml");
     let bad_cc = good.replace("lt = \"l\"", "lt = \"less\"");
-    assert!(Isa::parse(&bad_cc).unwrap_err().0.contains("less"));
+    assert_eq!(
+        Isa::parse(&bad_cc).unwrap_err(),
+        IsaError::UnknownCondition {
+            name: "less".into()
+        }
+    );
     let bad_token = good.replace("lt = \"gt\"", "lt = \"greater\"");
-    assert!(Isa::parse(&bad_token).unwrap_err().0.contains("greater"));
-    assert!(Isa::parse("inverse_mask = 1").is_err());
+    assert_eq!(
+        Isa::parse(&bad_token).unwrap_err(),
+        IsaError::UnknownToken {
+            name: "greater".into()
+        }
+    );
+    assert!(matches!(
+        Isa::parse("inverse_mask = 1").unwrap_err(),
+        IsaError::Toml { .. }
+    ));
 }
 
 #[test]
@@ -161,7 +174,10 @@ fn test_abi_selects_a_return_stub_and_unknown_abis_are_rejected() {
             .unwrap()
             .ends_with(&[0xc3])
     );
-    assert!(isa.with_abi("vax").unwrap_err().0.contains("vax"));
+    assert_eq!(
+        isa.with_abi("vax").unwrap_err(),
+        IsaError::NoStub { abi: "vax".into() }
+    );
 }
 
 // --- Floating-point and bitwise swaps.

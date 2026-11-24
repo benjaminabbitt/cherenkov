@@ -154,7 +154,9 @@ fn stub_line(shape: &str, bytes: &[u8]) -> String {
 }
 
 fn parse_stub(line: &str) -> Result<(String, Vec<u8>), IsaError> {
-    let bad = || IsaError(format!("stub line {line:?} is not `shape = hex bytes`"));
+    let bad = || IsaError::BadStubLine {
+        line: line.to_string(),
+    };
     let (shape, hex) = line.split_once(" = ").ok_or_else(bad)?;
     let bytes = hex
         .split(' ')
@@ -166,7 +168,9 @@ fn parse_stub(line: &str) -> Result<(String, Vec<u8>), IsaError> {
 
 impl Table {
     pub fn parse(src: &str) -> Result<Table, IsaError> {
-        let t: TableToml = toml::from_str(src).map_err(|e| IsaError(e.to_string()))?;
+        let t: TableToml = toml::from_str(src).map_err(|e| IsaError::Toml {
+            detail: e.to_string(),
+        })?;
         Ok(Table {
             rustc: t.rustc,
             panic_call: t.panic_call,

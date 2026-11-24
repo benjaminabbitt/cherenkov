@@ -240,6 +240,7 @@ fn catalog() -> Result<Catalog, CatalogError> {
     sources.extend(cherenkov_run_application::error::CATALOG_SOURCES);
     sources.extend(cherenkov_run_store::CATALOG_SOURCES);
     sources.push(cherenkov_syntax::EN_US);
+    sources.push(cherenkov_exec_dap::EN_US);
     Catalog::en_us(&sources)
 }
 

@@ -43,3 +43,12 @@ fn test_a_file_the_planner_could_not_analyze_renders_its_parsers_failure() {
         "analysis failed: parser failure: boom"
     );
 }
+
+#[test]
+fn test_an_instruction_table_error_renders_through_the_program_s_catalog() {
+    let error = cherenkov_exec_dap::isa::IsaError::NoStub { abi: "vax".into() };
+    assert_eq!(
+        catalog().unwrap().render(&error).unwrap(),
+        "isa table: no return stub for ABI \"vax\""
+    );
+}

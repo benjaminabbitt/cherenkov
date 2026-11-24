@@ -49,9 +49,9 @@ fn test_rpc_errors_name_the_failure() {
 }
 
 #[test]
-fn test_isa_error_names_the_table() {
+fn test_isa_error_names_the_table_it_was_found_in_and_what_is_wrong() {
     assert_eq!(
-        IsaError("unknown token \"x\"".into()).to_string(),
-        "isa table: unknown token \"x\""
+        IsaError::UnknownToken { name: "x".into() }.to_string(),
+        "cherenkov-exec-dap-isa-unknown-token name=x"
     );
 }

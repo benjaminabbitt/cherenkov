@@ -2,21 +2,63 @@
 
 use std::collections::BTreeMap;
 
+use angzarr_diagnostic::{Arg, Diagnostic, code};
 use cherenkov_mutation::token::Token;
 use serde::Deserialize;
 
 use crate::shapes::{Check, Kind, Shape, Table};
 
+/// Why an instruction table does not load or answer: coded, with named
+/// data (the messages are `locales/en-US/messages.ftl`'s).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IsaError(pub String);
+pub enum IsaError {
+    /// The table is not TOML of the right shape; `detail` is what the
+    /// parser said.
+    Toml { detail: String },
+    /// The table names a token that does not exist.
+    UnknownToken { name: String },
+    /// The table names a condition code it does not define.
+    UnknownCondition { name: String },
+    /// A conditional jump's displacement is not 1 or 4 bytes.
+    BadDisplacement { rel: usize },
+    /// The table has no return stub for the calling convention.
+    NoStub { abi: String },
+    /// A stub's line is not `shape = hex bytes`.
+    BadStubLine { line: String },
+}
 
 impl std::fmt::Display for IsaError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "isa table: {}", self.0)
+        angzarr_diagnostic::display(self, f)
     }
 }
 
 impl std::error::Error for IsaError {}
+
+impl Diagnostic for IsaError {
+    fn code(&self) -> &str {
+        match self {
+            IsaError::Toml { .. } => code!("isa-toml"),
+            IsaError::UnknownToken { .. } => code!("isa-unknown-token"),
+            IsaError::UnknownCondition { .. } => code!("isa-unknown-condition"),
+            IsaError::BadDisplacement { .. } => code!("isa-bad-displacement"),
+            IsaError::NoStub { .. } => code!("isa-no-stub"),
+            IsaError::BadStubLine { .. } => code!("isa-bad-stub-line"),
+        }
+    }
+
+    fn args(&self) -> Vec<(&str, Arg)> {
+        match self {
+            IsaError::Toml { detail } => vec![("detail", detail.as_str().into())],
+            IsaError::UnknownToken { name } | IsaError::UnknownCondition { name } => {
+                vec![("name", name.as_str().into())]
+            }
+            IsaError::BadDisplacement { rel } => vec![("rel", (*rel).into())],
+            IsaError::NoStub { abi } => vec![("abi", abi.as_str().into())],
+            IsaError::BadStubLine { line } => vec![("line", line.as_str().into())],
+        }
+    }
+}
 
 /// A decoded conditional jump.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -233,12 +275,16 @@ fn form_shapes(kind: Kind, form: &Form, from: Token, with: Token) -> Vec<Shape> 
 }
 
 fn token(name: &str) -> Result<Token, IsaError> {
-    Token::from_name(name).ok_or_else(|| IsaError(format!("unknown token {name:?}")))
+    Token::from_name(name).ok_or_else(|| IsaError::UnknownToken {
+        name: name.to_string(),
+    })
 }
 
 impl Isa {
     pub fn parse(toml_src: &str) -> Result<Isa, IsaError> {
-        let t: IsaToml = toml::from_str(toml_src).map_err(|e| IsaError(e.to_string()))?;
+        let t: IsaToml = toml::from_str(toml_src).map_err(|e| IsaError::Toml {
+            detail: e.to_string(),
+        })?;
         let by_name: BTreeMap<&str, u8> = t
             .condition_codes
             .iter()
@@ -248,7 +294,9 @@ impl Isa {
             by_name
                 .get(name)
                 .copied()
-                .ok_or_else(|| IsaError(format!("unknown condition code {name:?}")))
+                .ok_or_else(|| IsaError::UnknownCondition {
+                    name: name.to_string(),
+                })
         };
         let mut relational = BTreeMap::new();
         for (signedness, table) in [
@@ -265,10 +313,7 @@ impl Isa {
         }
         for j in &t.jcc {
             if j.rel != 1 && j.rel != 4 {
-                return Err(IsaError(format!(
-                    "jcc displacement must be 1 or 4 bytes, not {}",
-                    j.rel
-                )));
+                return Err(IsaError::BadDisplacement { rel: j.rel });
             }
         }
         Ok(Isa {
@@ -384,7 +429,9 @@ impl Isa {
     /// The same table, answering [`Isa::return_stub`] for calling convention `abi`.
     pub fn with_abi(&self, abi: &str) -> Result<Isa, IsaError> {
         if !self.return_stubs.contains_key(abi) {
-            return Err(IsaError(format!("no return stub for ABI {abi:?}")));
+            return Err(IsaError::NoStub {
+                abi: abi.to_string(),
+            });
         }
         Ok(Isa {
             abi: Some(abi.to_string()),

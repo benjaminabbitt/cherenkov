@@ -5,6 +5,7 @@
 //! Nothing outside this crate knows JSON-RPC exists.
 
 pub mod dap;
+mod diagnostics;
 pub mod delve;
 pub mod gdb;
 pub mod gotest;
@@ -23,3 +24,5 @@ pub mod tierp;
 pub mod toolchain;
 pub mod viability;
 pub mod x86;
+
+pub use diagnostics::EN_US;
