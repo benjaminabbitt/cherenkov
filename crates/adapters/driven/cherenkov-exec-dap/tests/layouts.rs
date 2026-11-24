@@ -24,13 +24,17 @@ fn ops_binary() -> PathBuf {
 }
 
 /// The file address of a function's entry, from the symbol table: `name`
-/// in `ops`, or a whole demangled symbol (`<ops::Pair>::set`).
+/// in `ops`, or a whole demangled symbol (`<ops::Pair>::set`), named as v0
+/// mangling demangles it. Which mangling a binary has is the toolchain's
+/// default (legacy on stable, v0 on nightly), so the legacy spelling of the
+/// same symbol is looked for too.
 fn entry(binary: &Path, name: &str) -> u64 {
     let symbol = if name.starts_with('<') {
         name.to_string()
     } else {
         format!("ops::{name}")
     };
+    let spellings = [symbol.clone(), legacy(&symbol)];
     let out = std::process::Command::new("nm")
         .arg("-C")
         .arg(binary)
@@ -39,9 +43,55 @@ fn entry(binary: &Path, name: &str) -> u64 {
     let text = String::from_utf8_lossy(&out.stdout);
     let line = text
         .lines()
-        .find(|l| l.ends_with(&format!(" {symbol}")) && l.contains(" T "))
+        .find(|l| l.contains(" T ") && spellings.iter().any(|s| l.ends_with(&format!(" {s}"))))
         .unwrap_or_else(|| panic!("no symbol {symbol}"));
     u64::from_str_radix(line.split_whitespace().next().unwrap(), 16).unwrap()
+}
+
+/// A v0-demangled symbol as legacy mangling demangles it: a closure is
+/// `{{closure}}`, not `{closure#0}`, and an inherent method's `<T>::m` is
+/// `T::m`.
+fn legacy(symbol: &str) -> String {
+    let symbol = symbol.replace("{closure#0}", "{{closure}}");
+    match symbol.strip_prefix('<').and_then(|s| s.split_once(">::")) {
+        Some((ty, rest)) => format!("{ty}::{rest}"),
+        None => symbol,
+    }
+}
+
+/// The niche tag and payload words of `Ok(5)` as the toolchain's own
+/// compiler writes a `Result<i64, String>`, the fixture's `parse`'s result:
+/// built and run beside the test, so the expectation is the compiler's and
+/// not a constant copied from one version of it. The third word is padding
+/// in `Ok`, left uninitialised, so it is not returned.
+fn compiled_ok_five() -> [u64; 2] {
+    let dir = std::env::temp_dir().join(format!("cherenkov-niche-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("niche.rs");
+    std::fs::write(
+        &source,
+        "fn main() {\n\
+         let r: Result<i64, String> = std::hint::black_box(Ok(5));\n\
+         let w: [u64; 3] = unsafe { std::mem::transmute(r) };\n\
+         println!(\"{} {} {}\", w[0], w[1], w[2]);\n\
+         }\n",
+    )
+    .unwrap();
+    let program = dir.join("niche");
+    let built = std::process::Command::new("rustc")
+        .arg("-o")
+        .arg(&program)
+        .arg(&source)
+        .status()
+        .unwrap();
+    assert!(built.success(), "rustc failed on {}", source.display());
+    let out = std::process::Command::new(&program).output().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let words: Vec<u64> = String::from_utf8_lossy(&out.stdout)
+        .split_whitespace()
+        .map(|w| w.parse().unwrap())
+        .collect();
+    [words[0], words[1]]
 }
 
 fn bytes_of(fun: &str, value: &str) -> Vec<u8> {
@@ -68,12 +118,13 @@ fn test_option_tag_and_payload() {
 #[test]
 #[ignore = "slow: needs cargo"]
 fn test_result_ok_uses_the_niche_value_the_compiler_writes() {
-    // As a real `parse("12")` returns it (read under GDB): the String's
-    // capacity word holds the niche tag, the payload follows.
+    // As the compiler writes it: the String's capacity word holds the niche
+    // tag, the payload follows.
     let ok = bytes_of("parse", "Ok(5)");
     assert_eq!(ok.len(), 24);
-    let words: Vec<u64> = (0..3).map(|k| word(&ok, k)).collect();
-    assert_eq!(words, [u64::MAX, 5, 0]);
+    assert_eq!([word(&ok, 0), word(&ok, 1)], compiled_ok_five());
+    assert_eq!(word(&ok, 1), 5, "the payload follows the niche tag");
+    assert_eq!(word(&ok, 2), 0, "the padding is written as zero");
 }
 
 #[test]
