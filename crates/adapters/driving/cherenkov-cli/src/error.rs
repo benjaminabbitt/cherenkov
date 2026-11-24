@@ -150,7 +150,7 @@ pub const EN_US: (&str, &str) = (
 #[cfg(test)]
 pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
     let reason = || "r".to_string();
-    vec![
+    let mut samples: Vec<Box<dyn Diagnostic>> = vec![
         Box::new(CliError::UnknownOperatorSet {
             name: "nope".into(),
             known: "breadth".into(),
@@ -184,7 +184,9 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             holder: "pid 7".into(),
         }),
         Box::new(CliError::NoStore { path: "p".into() }),
-    ]
+    ];
+    samples.extend(crate::notice::diagnostic_samples());
+    samples
 }
 
 #[cfg(test)]

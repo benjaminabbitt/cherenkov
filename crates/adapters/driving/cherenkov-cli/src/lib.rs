@@ -4,5 +4,6 @@
 //! toolchains and the run layer is `cherenkov` (root/bin).
 
 pub mod error;
+pub mod notice;
 pub mod output;
 pub mod render;
