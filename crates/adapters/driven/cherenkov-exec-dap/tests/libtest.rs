@@ -203,5 +203,8 @@ fn test_a_should_panic_test_with_the_wrong_message_is_one_failed_report() {
 fn test_a_should_panic_test_that_passed_is_one_passed_report() {
     let got = reports("test m::t - should panic ... ok\n");
     assert_eq!(got.len(), 1);
-    assert_eq!((got[0].test.as_str(), &got[0].result), ("m::t", &TestResult::Passed));
+    assert_eq!(
+        (got[0].test.as_str(), &got[0].result),
+        ("m::t", &TestResult::Passed)
+    );
 }

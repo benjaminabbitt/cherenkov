@@ -51,6 +51,9 @@ pub struct DelveSession {
     debuggee: Option<u32>,
     /// What the program has printed, read off Delve's stdout.
     printed: Arc<Printed>,
+    /// Whether the last run ended with the process exiting (not a crash
+    /// stop or a timeout): then its output ends with Go's verdict line.
+    exited: bool,
 }
 
 impl DelveSession {
@@ -104,6 +107,7 @@ impl DelveSession {
             rpc,
             debuggee: None,
             printed,
+            exited: false,
         };
         session.initialize()?;
         // Recorded while the target is stopped and Delve responsive, for teardown.
@@ -192,7 +196,10 @@ impl NativeSession for DelveSession {
     }
 
     fn take_output(&mut self) -> String {
-        self.printed.settled(OUTPUT_BOUND)
+        match self.exited {
+            true => self.printed.await_verdict(OUTPUT_BOUND),
+            false => self.printed.await_quiet(QUIET, OUTPUT_BOUND),
+        }
     }
 
     fn read(&mut self, addr: u64, len: usize) -> Result<Vec<u8>, ExecError> {
@@ -209,6 +216,19 @@ impl NativeSession for DelveSession {
     /// crashes under the debugger, or `timeout` passes; with `reach`, also
     /// tell whether execution got to any of those instructions.
     fn run_reaching(
+        &mut self,
+        reach: &[u64],
+        timeout: Duration,
+    ) -> Result<(RunEnd, bool), ExecError> {
+        let ran = self.run_until_end(reach, timeout)?;
+        self.exited = matches!(ran.0, RunEnd::Exited(_));
+        Ok(ran)
+    }
+}
+
+impl DelveSession {
+    /// [`NativeSession::run_reaching`], before it notes how the run ended.
+    fn run_until_end(
         &mut self,
         reach: &[u64],
         timeout: Duration,
@@ -263,9 +283,7 @@ impl NativeSession for DelveSession {
             }
         }
     }
-}
 
-impl DelveSession {
     /// Replace the instruction breakpoints with one at each address.
     fn instruction_breakpoints(&mut self, addrs: &[u64]) -> Result<(), ExecError> {
         let bps: Vec<Value> = addrs
@@ -307,49 +325,162 @@ impl DelveSession {
 }
 
 /// What the program under test prints, as Delve's stdout carries it.
-#[derive(Default)]
+///
+/// A looping mutant can print at pipe speed for as long as its session
+/// idles, so the buffer is bounded: it keeps the head, where the first
+/// tests report, and the tail, which ends with Go's verdict line, and says
+/// that lines between are omitted. It stops recording once its output has
+/// been taken.
 struct Printed {
-    text: Mutex<String>,
+    state: Mutex<Buffer>,
     grew: Condvar,
+    head_cap: usize,
+    tail_cap: usize,
 }
 
-/// Output going quiet for this long, with no verdict printed, is all the
-/// run printed (a crash stops the program before its verdict).
+#[derive(Default)]
+struct Buffer {
+    head: String,
+    /// What came after the head filled: only its last lines are kept.
+    tail: String,
+    omitted: bool,
+    taken: bool,
+    /// How many lines have been pushed, to tell output from a wakeup.
+    pushes: u64,
+}
+
+impl Buffer {
+    /// The end of what was printed: where the verdict line is.
+    fn last(&self) -> &str {
+        if self.omitted { &self.tail } else { &self.head }
+    }
+
+    fn text(&mut self) -> String {
+        let mut text = std::mem::take(&mut self.head);
+        if self.omitted {
+            text.push_str(OMITTED);
+            text.push_str(&self.tail);
+        }
+        self.tail.clear();
+        self.taken = true;
+        text
+    }
+}
+
+/// The line that stands where the lines between a capped head and tail were.
+const OMITTED: &str = "[cherenkov: output omitted]\n";
+/// The head and the tail of a run's output that are kept.
+const HEAD_CAP: usize = 256 * 1024;
+const TAIL_CAP: usize = 16 * 1024;
+
+impl Default for Printed {
+    fn default() -> Printed {
+        Printed::capped(HEAD_CAP, TAIL_CAP)
+    }
+}
+
+/// Output going quiet for this long, in a run whose program is stopped
+/// (a crash stops it before its verdict), is all the run printed.
 const QUIET: Duration = Duration::from_millis(100);
 
+/// How much of `quiet` is left when the last output was at `last_change`.
+fn quiet_left(last_change: Instant, now: Instant, quiet: Duration) -> Duration {
+    quiet.saturating_sub(now.saturating_duration_since(last_change))
+}
+
 impl Printed {
-    fn lock(&self) -> MutexGuard<'_, String> {
-        self.text.lock().unwrap_or_else(PoisonError::into_inner)
+    fn capped(head_cap: usize, tail_cap: usize) -> Printed {
+        Printed {
+            state: Mutex::new(Buffer::default()),
+            grew: Condvar::new(),
+            head_cap,
+            tail_cap,
+        }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Buffer> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn push(&self, line: &str) {
-        self.lock().push_str(line);
+        let mut buffer = self.lock();
+        if buffer.taken {
+            return;
+        }
+        buffer.pushes += 1;
+        if !buffer.omitted && buffer.head.len() + line.len() <= self.head_cap {
+            buffer.head.push_str(line);
+        } else {
+            buffer.omitted = true;
+            buffer.tail.push_str(line);
+            self.trim_tail(&mut buffer.tail);
+        }
+        drop(buffer);
         self.grew.notify_all();
     }
 
-    /// What the program printed. The run has ended, but its last lines may
-    /// not have crossed the pipe yet: wait, for at most `bound`, until the
-    /// verdict line (`PASS` or `FAIL`, which Go prints last) is in, or the
-    /// output has been quiet for [`QUIET`]. What is returned is taken.
-    fn settled(&self, bound: Duration) -> String {
+    /// Cut the oldest lines of `tail` once it is twice its cap.
+    fn trim_tail(&self, tail: &mut String) {
+        if tail.len() <= 2 * self.tail_cap {
+            return;
+        }
+        let mut cut = tail.len() - self.tail_cap;
+        while !tail.is_char_boundary(cut) {
+            cut += 1;
+        }
+        let from = tail[cut..].find('\n').map_or(cut, |n| cut + n + 1);
+        tail.drain(..from);
+    }
+
+    /// What a run whose process exited printed: waits, for at most `bound`,
+    /// until the verdict line (`PASS` or `FAIL`, which Go prints last) is in.
+    /// No timer decides: an exited process has printed everything it will,
+    /// and what remains is the pipe delivering it. Without the verdict by
+    /// the bound, what is there is returned whole. What is returned is taken.
+    fn await_verdict(&self, bound: Duration) -> String {
         let deadline = Instant::now() + bound;
-        let mut text = self.lock();
-        while !has_verdict(&text) {
+        let mut buffer = self.lock();
+        while !has_verdict(buffer.last()) {
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
                 break;
             }
-            let before = text.len();
-            let (guard, _) = self
+            buffer = self
                 .grew
-                .wait_timeout(text, QUIET.min(left))
-                .unwrap_or_else(PoisonError::into_inner);
-            text = guard;
-            if text.len() == before {
+                .wait_timeout(buffer, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+        }
+        buffer.text()
+    }
+
+    /// What a run whose process was stopped (a crash, a timeout) printed:
+    /// no verdict will come, so the output is what it was once it has been
+    /// quiet for `quiet` by the clock, or the verdict is in, or `bound` has
+    /// passed. What is returned is taken.
+    fn await_quiet(&self, quiet: Duration, bound: Duration) -> String {
+        let deadline = Instant::now() + bound;
+        let mut last_change = Instant::now();
+        let mut buffer = self.lock();
+        let mut seen = buffer.pushes;
+        while !has_verdict(buffer.last()) {
+            let now = Instant::now();
+            let left =
+                quiet_left(last_change, now, quiet).min(deadline.saturating_duration_since(now));
+            if left.is_zero() {
                 break;
             }
+            buffer = self
+                .grew
+                .wait_timeout(buffer, left)
+                .unwrap_or_else(PoisonError::into_inner)
+                .0;
+            if buffer.pushes != seen {
+                seen = buffer.pushes;
+                last_change = Instant::now();
+            }
         }
-        std::mem::take(&mut *text)
+        buffer.text()
     }
 }
 

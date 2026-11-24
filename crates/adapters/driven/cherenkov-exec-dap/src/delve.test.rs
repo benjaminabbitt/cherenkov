@@ -54,51 +54,98 @@ fn test_split_stdout_takes_a_second_banner_for_the_programs_output() {
 }
 
 #[test]
-fn test_printed_settles_at_once_when_the_run_has_printed_its_verdict() {
+fn test_printed_returns_what_the_run_printed_once_its_verdict_is_in() {
     for last in ["PASS\n", "FAIL\n"] {
         let printed = Printed::default();
         printed.push("--- FAIL: TestX (0.00s)\n");
         printed.push(last);
-        let start = Instant::now();
-        let text = printed.settled(Duration::from_secs(5));
-        assert!(text.ends_with(last), "{text}");
-        assert!(start.elapsed() < Duration::from_secs(1));
+        let text = printed.await_verdict(Duration::from_secs(60));
+        assert_eq!(text, format!("--- FAIL: TestX (0.00s)\n{last}"));
     }
 }
 
 #[test]
-fn test_printed_without_a_verdict_settles_when_the_output_goes_quiet() {
-    let printed = Printed::default();
-    printed.push("panic: boom\n");
-    let start = Instant::now();
-    assert_eq!(printed.settled(Duration::from_secs(5)), "panic: boom\n");
-    assert!(
-        start.elapsed() < Duration::from_secs(2),
-        "{:?}",
-        start.elapsed()
+fn test_printed_waits_for_the_verdict_and_keeps_every_line_before_it() {
+    // However the threads interleave, a wait that ends on the verdict has
+    // every line the writer pushed before it.
+    let printed = Arc::new(Printed::default());
+    let writer = Arc::clone(&printed);
+    let late = thread::spawn(move || {
+        writer.push("--- FAIL: TestX (0.00s)\n");
+        writer.push("    x_test.go:6: boom\n");
+        writer.push("FAIL\n");
+    });
+    let text = printed.await_verdict(Duration::from_secs(60));
+    late.join().unwrap();
+    assert_eq!(
+        text,
+        "--- FAIL: TestX (0.00s)\n    x_test.go:6: boom\nFAIL\n"
     );
 }
 
 #[test]
-fn test_printed_waits_for_the_verdict_a_slow_pipe_delivers() {
-    let printed = Arc::new(Printed::default());
-    printed.push("--- FAIL: TestX (0.00s)\n");
-    let writer = Arc::clone(&printed);
-    let late = thread::spawn(move || {
-        thread::sleep(Duration::from_millis(40));
-        writer.push("    x_test.go:6: boom\n");
-        thread::sleep(Duration::from_millis(40));
-        writer.push("FAIL\n");
-    });
-    let text = printed.settled(Duration::from_secs(5));
-    late.join().unwrap();
-    assert!(text.ends_with("boom\nFAIL\n"), "{text}");
+fn test_printed_with_no_verdict_gives_what_it_has_when_the_bound_is_spent() {
+    // A bound of nothing is spent at once: what was printed is returned
+    // whole, never cut.
+    let printed = Printed::default();
+    printed.push("os.Exit says goodbye\n");
+    assert_eq!(
+        printed.await_verdict(Duration::ZERO),
+        "os.Exit says goodbye\n"
+    );
 }
 
 #[test]
-fn test_printed_hands_over_its_text_once() {
+fn test_printed_of_a_stopped_run_gives_what_it_has_once_quiet() {
+    let printed = Printed::default();
+    printed.push("panic: boom\n");
+    assert_eq!(
+        printed.await_quiet(Duration::from_millis(5), Duration::from_secs(60)),
+        "panic: boom\n"
+    );
+}
+
+#[test]
+fn test_quiet_left_counts_from_the_last_output_by_the_clock_not_by_wakeups() {
+    let at = Instant::now();
+    let quiet = Duration::from_millis(100);
+    assert_eq!(quiet_left(at, at, quiet), quiet);
+    assert_eq!(
+        quiet_left(at, at + Duration::from_millis(30), quiet),
+        Duration::from_millis(70)
+    );
+    assert_eq!(quiet_left(at, at + quiet, quiet), Duration::ZERO);
+    assert_eq!(quiet_left(at, at + 2 * quiet, quiet), Duration::ZERO);
+}
+
+#[test]
+fn test_printed_over_its_cap_keeps_the_head_and_the_tail_with_the_verdict() {
+    let printed = Printed::capped(20, 20);
+    printed.push("first test report\n");
+    for i in 0..1000 {
+        printed.push(&format!("noise {i}\n"));
+    }
+    printed.push("FAIL\n");
+    let text = printed.await_verdict(Duration::from_secs(60));
+    assert!(text.starts_with("first test report\n"), "{text}");
+    assert!(text.ends_with("noise 999\nFAIL\n"), "{text}");
+    assert!(text.contains(OMITTED), "says it left lines out: {text}");
+    assert!(text.len() < 200, "bounded: {} bytes", text.len());
+}
+
+#[test]
+fn test_printed_under_its_cap_keeps_everything_and_says_nothing_omitted() {
+    let printed = Printed::capped(100, 100);
+    printed.push("a\n");
+    printed.push("PASS\n");
+    assert_eq!(printed.await_verdict(Duration::from_secs(60)), "a\nPASS\n");
+}
+
+#[test]
+fn test_printed_stops_recording_once_its_output_is_taken() {
     let printed = Printed::default();
     printed.push("PASS\n");
-    assert_eq!(printed.settled(Duration::from_secs(1)), "PASS\n");
-    assert_eq!(printed.settled(Duration::from_millis(10)), "");
+    assert_eq!(printed.await_verdict(Duration::from_secs(60)), "PASS\n");
+    printed.push("a looping mutant's noise\n");
+    assert_eq!(printed.await_verdict(Duration::ZERO), "");
 }
