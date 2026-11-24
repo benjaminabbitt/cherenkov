@@ -272,7 +272,7 @@ fn test_run_reports_what_killed_each_mutant() {
 #[ignore = "slow: needs dlv and go"]
 fn test_run_reports_what_killed_a_go_mutant() {
     // Total's aor mutant (`a + b` -> `a - b`) fails TestTotal, whose
-    // `t.Fatal("Total")` is at calc_test.go:6: Go has no got/expected.
+    // `t.Fatal("Total")` is at calc_test.go:7: Go has no got/expected.
     let out = run(&fixtures().join("go"), &["--dlv", dlv().to_str().unwrap()]);
     let aor = decided(&out.stdout)
         .into_iter()
@@ -280,7 +280,7 @@ fn test_run_reports_what_killed_a_go_mutant() {
         .unwrap();
     assert_eq!(aor["verdict"], "killed");
     assert_eq!(aor["killed_by"][0]["test"], "TestTotal");
-    assert_eq!(aor["killed_by"][0]["location"], "calc_test.go:6");
+    assert_eq!(aor["killed_by"][0]["location"], "calc_test.go:7");
     assert_eq!(aor["killed_by"][0]["message"], "Total");
 }
 

@@ -21,7 +21,11 @@ fn test_split_stdout_gives_the_address_and_what_follows_the_banner_as_the_progra
     assert_eq!(found, ["127.0.0.1:41000"]);
     assert_eq!(
         printed,
-        ["--- FAIL: TestX (0.00s)\n", "    x_test.go:6: boom\n", "FAIL\n"],
+        [
+            "--- FAIL: TestX (0.00s)\n",
+            "    x_test.go:6: boom\n",
+            "FAIL\n"
+        ],
         "each line with its newline, none of delve's own before the banner"
     );
 }
@@ -68,7 +72,11 @@ fn test_printed_without_a_verdict_settles_when_the_output_goes_quiet() {
     printed.push("panic: boom\n");
     let start = Instant::now();
     assert_eq!(printed.settled(Duration::from_secs(5)), "panic: boom\n");
-    assert!(start.elapsed() < Duration::from_secs(2), "{:?}", start.elapsed());
+    assert!(
+        start.elapsed() < Duration::from_secs(2),
+        "{:?}",
+        start.elapsed()
+    );
 }
 
 #[test]

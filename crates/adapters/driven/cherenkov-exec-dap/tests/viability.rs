@@ -176,7 +176,15 @@ fn test_a_failed_check_ends_the_settling() {
 
 // --- The executor that reports what rustc rejects.
 
-use cherenkov_mutation::execution::Budget;
+use cherenkov_mutation::execution::{Budget, Observed, TestReport, TestResult};
+
+/// The reports a run of `Fixed` makes.
+fn reported() -> Vec<TestReport> {
+    vec![TestReport {
+        test: "t".into(),
+        result: TestResult::Passed,
+    }]
+}
 
 struct Fixed(RawOutcome, std::sync::Arc<std::sync::atomic::AtomicUsize>);
 
@@ -185,12 +193,18 @@ impl MutantExecutor for Fixed {
         &mut self,
         _: &cherenkov_mutation::plan::MutantPlan,
         _: Budget,
-    ) -> Result<RawOutcome, ExecError> {
+    ) -> Result<Observed, ExecError> {
         self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Ok(self.0.clone())
+        Ok(Observed {
+            outcome: self.0.clone(),
+            tests: reported(),
+        })
     }
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(self.0.clone())
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(Observed {
+            outcome: self.0.clone(),
+            tests: reported(),
+        })
     }
 }
 
@@ -240,14 +254,25 @@ fn test_what_rustc_rejects_is_unviable_and_never_run_and_the_rest_is_left_alone(
     let budget = Budget::for_mutant(std::time::Duration::ZERO);
     let got = executor.run(&plan_of("bad"), budget).unwrap();
     assert!(
-        matches!(&got, RawOutcome::Unviable { reason } if reason.contains("rustc rejects") && reason.contains("E0599")),
+        matches!(&got.outcome, RawOutcome::Unviable { reason } if reason.contains("rustc rejects") && reason.contains("E0599")),
         "{got:?}"
     );
-    let (got, output) = executor.run_with_output(&plan_of("bad"), budget).unwrap();
-    assert!(matches!(got, RawOutcome::Unviable { .. }) && output.is_empty());
+    assert!(got.tests.is_empty(), "nothing ran to report");
     assert_eq!(runs.load(Ordering::SeqCst), 0, "no debugger for it");
     // A mutant rustc accepts is the inner executor's.
-    assert_eq!(executor.run(&plan_of("fine"), budget).unwrap(), killed);
+    assert_eq!(
+        executor.run(&plan_of("fine"), budget).unwrap(),
+        Observed {
+            outcome: killed.clone(),
+            tests: reported()
+        },
+        "what the inner executor reported is forwarded whole"
+    );
+    assert_eq!(
+        executor.baseline(budget).unwrap().tests,
+        reported(),
+        "and so is its baseline"
+    );
     assert_eq!(runs.load(Ordering::SeqCst), 1);
 }
 
@@ -429,11 +454,11 @@ impl MutantExecutor for Spy {
         &mut self,
         _: &cherenkov_mutation::plan::MutantPlan,
         _: Budget,
-    ) -> Result<RawOutcome, ExecError> {
-        Ok(RawOutcome::NotReached { reason: "r".into() })
+    ) -> Result<Observed, ExecError> {
+        Ok(RawOutcome::NotReached { reason: "r".into() }.into())
     }
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(RawOutcome::NotReached { reason: "b".into() })
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(RawOutcome::NotReached { reason: "b".into() }.into())
     }
     fn driven(
         &mut self,
@@ -466,9 +491,8 @@ fn test_everything_else_is_the_inner_executors() {
     assert_eq!(executor.describe().as_deref(), Some("spy"));
     assert_eq!(
         executor.baseline(budget).unwrap(),
-        RawOutcome::NotReached { reason: "b".into() }
+        RawOutcome::NotReached { reason: "b".into() }.into()
     );
-    assert_eq!(executor.baseline_with_output(budget).unwrap().1, "");
     assert_eq!(
         executor
             .driven(std::slice::from_ref(&plan), budget)

@@ -160,14 +160,18 @@ fn test_live_executor_baseline_passes_and_mutants_kill_or_survive() {
         }
         other => panic!("{other:?}"),
     };
-    assert_eq!(code(exec.baseline(budget()).unwrap()), 0);
+    assert_eq!(code(exec.baseline(budget()).unwrap().outcome), 0);
     assert_ne!(
-        code(exec.run(&plan("negate-condition", 12), budget()).unwrap()),
+        code(
+            exec.run(&plan("negate-condition", 12), budget())
+                .unwrap()
+                .outcome
+        ),
         0,
         "negation is killed"
     );
     assert_eq!(
-        code(exec.run(&plan("ror", 12), budget()).unwrap()),
+        code(exec.run(&plan("ror", 12), budget()).unwrap().outcome),
         0,
         "boundary swap survives: no test at 10"
     );
@@ -184,12 +188,42 @@ fn test_live_executor_reports_unpatchable_plan_as_unsupported() {
         from: cherenkov_mutation::token::Token::Mul,
         with: cherenkov_mutation::token::Token::Div,
     };
-    let raw = exec.run(&p, budget()).unwrap();
+    let raw = exec.run(&p, budget()).unwrap().outcome;
     assert_eq!(
         raw,
         RawOutcome::Unsupported {
             reason: "no tier B evaluator here (tier P: no tier P rule for aor mul -> div)".into()
         }
+    );
+}
+
+#[test]
+#[ignore = "slow: needs dlv and go"]
+fn test_live_executor_reports_the_go_tests_a_mutant_failed_and_none_for_a_pass() {
+    use cherenkov_mutation::execution::{Failure, TestReport, TestResult};
+    let mut exec = DelveExecutor::new(config(), Isa::amd64());
+    // `a + b` -> `a - b` fails TestTotal's `t.Fatal("Total")`.
+    let killed = exec.run(&plan("aor", 6), budget()).unwrap();
+    assert!(
+        matches!(killed.outcome, RawOutcome::Exited { code: 1, .. }),
+        "{killed:?}"
+    );
+    assert_eq!(
+        killed.tests,
+        vec![TestReport {
+            test: "TestTotal".to_string(),
+            result: TestResult::Failed(Failure {
+                location: Some("calc_test.go:7".to_string()),
+                message: "Total".to_string(),
+                got: None,
+                expected: None,
+            }),
+        }]
+    );
+    let baseline = exec.baseline(budget()).unwrap();
+    assert!(
+        baseline.tests.is_empty(),
+        "a quiet pass names no test: {baseline:?}"
     );
 }
 
@@ -204,7 +238,7 @@ fn test_live_run_past_budget_times_out() {
         })
         .unwrap();
     assert!(
-        matches!(raw, RawOutcome::TimedOut { tier: Tier::P, .. }),
+        matches!(raw.outcome, RawOutcome::TimedOut { tier: Tier::P, .. }),
         "{raw:?}"
     );
 }
@@ -216,7 +250,7 @@ fn test_live_panicking_mutant_is_caught_by_delve_as_a_crash_with_its_message() {
     // panic, so the run ends at once, under the debugger, with the stack
     // that locates the crash and the test that hit it.
     let mut exec = DelveExecutor::new(config(), Isa::amd64());
-    match exec.run(&plan("ror", 28), budget()).unwrap() {
+    match exec.run(&plan("ror", 28), budget()).unwrap().outcome {
         RawOutcome::Crashed {
             kind,
             message,
@@ -233,6 +267,21 @@ fn test_live_panicking_mutant_is_caught_by_delve_as_a_crash_with_its_message() {
         }
         other => panic!("{other:?}"),
     }
+}
+
+#[test]
+#[ignore = "slow: needs dlv and go"]
+fn test_live_a_go_test_that_panics_is_still_named_among_the_failed() {
+    // Go prints `--- FAIL` before it re-panics, and Delve stops at the
+    // panic after that: the crash names its test.
+    let mut exec = DelveExecutor::new(config(), Isa::amd64());
+    let observed = exec.run(&plan("ror", 28), budget()).unwrap();
+    assert!(
+        matches!(observed.outcome, RawOutcome::Crashed { .. }),
+        "{observed:?}"
+    );
+    let names: Vec<&str> = observed.tests.iter().map(|t| t.test.as_str()).collect();
+    assert_eq!(names, ["TestSum"], "{observed:?}");
 }
 
 #[test]
@@ -262,7 +311,10 @@ fn test_live_looping_mutant_times_out_and_is_torn_down_promptly() {
             },
         )
         .unwrap();
-    assert!(matches!(raw, RawOutcome::TimedOut { .. }), "{raw:?}");
+    assert!(
+        matches!(raw.outcome, RawOutcome::TimedOut { .. }),
+        "{raw:?}"
+    );
     assert!(
         start.elapsed() < Duration::from_secs(8),
         "teardown took {:?}",
@@ -304,7 +356,10 @@ fn selecting(test: &str) -> DelveConfig {
 fn test_live_delve_mutant_the_selected_test_never_executes_is_not_reached() {
     // TestTotal never calls IsSmall: its mutant must not "survive".
     let mut exec = DelveExecutor::new(selecting("TestTotal"), Isa::amd64());
-    let raw = exec.run(&plan("negate-condition", 12), budget()).unwrap();
+    let raw = exec
+        .run(&plan("negate-condition", 12), budget())
+        .unwrap()
+        .outcome;
     assert!(matches!(raw, RawOutcome::NotReached { .. }), "{raw:?}");
 }
 
@@ -312,7 +367,10 @@ fn test_live_delve_mutant_the_selected_test_never_executes_is_not_reached() {
 #[ignore = "slow: needs dlv and go"]
 fn test_live_delve_reached_mutant_is_judged_by_the_selected_test() {
     let mut exec = DelveExecutor::new(selecting("TestIsSmall"), Isa::amd64());
-    let raw = exec.run(&plan("negate-condition", 12), budget()).unwrap();
+    let raw = exec
+        .run(&plan("negate-condition", 12), budget())
+        .unwrap()
+        .outcome;
     assert!(
         matches!(raw, RawOutcome::Exited { code, .. } if code != 0),
         "negation is killed: {raw:?}"

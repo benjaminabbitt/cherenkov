@@ -91,12 +91,7 @@ fn test_verbose_passes_and_skips_are_reported_too() {
 #[test]
 fn test_a_name_with_parentheses_is_read_up_to_the_duration_s_paren() {
     let out = "--- FAIL: TestA/a_(b) (0.00s)\n    a_test.go:3: x\n";
-    assert_eq!(
-        reports(out)[0].test,
-        "TestA/a_(b)",
-        "{:?}",
-        reports(out)
-    );
+    assert_eq!(reports(out)[0].test, "TestA/a_(b)", "{:?}", reports(out));
 }
 
 #[test]

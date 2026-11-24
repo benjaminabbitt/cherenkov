@@ -309,22 +309,33 @@ fn test_live_gdb_unmutated_run_exits_zero_and_failing_run_exits_101() {
 #[ignore = "slow: needs gdb and cargo"]
 fn test_live_gdb_executor_kills_and_survives_as_labelled() {
     let mut exec = GdbExecutor::new(config(integration()), Isa::amd64());
-    assert_eq!(code(exec.baseline(budget()).unwrap()), 0);
+    assert_eq!(code(exec.baseline(budget()).unwrap().outcome), 0);
     assert_eq!(
-        code(exec.run(&plan("negate-condition", 10), budget()).unwrap()),
+        code(
+            exec.run(&plan("negate-condition", 10), budget())
+                .unwrap()
+                .outcome
+        ),
         101
     );
     assert_eq!(
-        code(exec.run(&plan("ror", 10), budget()).unwrap()),
+        code(exec.run(&plan("ror", 10), budget()).unwrap().outcome),
         0,
         "no test at 10"
     );
     assert_eq!(
-        code(exec.run(&plan("delete-statement", 5), budget()).unwrap()),
+        code(
+            exec.run(&plan("delete-statement", 5), budget())
+                .unwrap()
+                .outcome
+        ),
         0,
         "log is a no-op"
     );
-    assert_eq!(code(exec.run(&plan("ror", 18), budget()).unwrap()), 101);
+    assert_eq!(
+        code(exec.run(&plan("ror", 18), budget()).unwrap().outcome),
+        101
+    );
 }
 
 #[test]
@@ -334,7 +345,7 @@ fn test_live_gdb_executor_reports_a_binary_without_the_code_as_not_reached() {
     let mut p = plan("negate-condition", 10);
     p.file = PathBuf::from("src/no_such.rs");
     assert!(matches!(
-        exec.run(&p, budget()).unwrap(),
+        exec.run(&p, budget()).unwrap().outcome,
         RawOutcome::NotReached { .. }
     ));
 }
@@ -366,7 +377,10 @@ fn test_live_gdb_finds_code_in_a_binary_built_at_another_path() {
         },
         Isa::amd64(),
     );
-    let raw = exec.run(&plan("negate-condition", 10), budget()).unwrap();
+    let raw = exec
+        .run(&plan("negate-condition", 10), budget())
+        .unwrap()
+        .outcome;
     assert!(
         matches!(raw, RawOutcome::Exited { code: 101, .. }),
         "{raw:?}"
@@ -477,6 +491,26 @@ fn test_live_gdb_run_capturing_returns_the_test_binarys_stdout() {
     assert!(out.contains("test test_is_small ... ok"), "{out}");
 }
 
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_live_gdb_run_reports_each_test_typed_with_what_the_failed_one_saw() {
+    use cherenkov_mutation::execution::TestResult;
+    let mut exec = GdbExecutor::new(config(integration()), Isa::amd64());
+    let observed = exec.run(&plan("negate-condition", 10), budget()).unwrap();
+    let result = |name: &str| {
+        observed
+            .tests
+            .iter()
+            .find(|t| t.test == name)
+            .map(|t| t.result.clone())
+    };
+    assert_eq!(result("test_total"), Some(TestResult::Passed));
+    let Some(TestResult::Failed(failed)) = result("test_is_small") else {
+        panic!("{observed:?}");
+    };
+    assert!(failed.location.is_some(), "{failed:?}");
+}
+
 fn selecting(test: &str) -> GdbConfig {
     GdbConfig {
         test_args: vec![test.to_string(), "--exact".to_string()],
@@ -489,7 +523,10 @@ fn selecting(test: &str) -> GdbConfig {
 fn test_live_gdb_mutant_the_selected_test_never_executes_is_not_reached() {
     // test_total never calls is_small: its mutant must not "survive".
     let mut exec = GdbExecutor::new(selecting("test_total"), Isa::amd64());
-    let raw = exec.run(&plan("negate-condition", 10), budget()).unwrap();
+    let raw = exec
+        .run(&plan("negate-condition", 10), budget())
+        .unwrap()
+        .outcome;
     assert!(matches!(raw, RawOutcome::NotReached { .. }), "{raw:?}");
 }
 
@@ -498,11 +535,15 @@ fn test_live_gdb_mutant_the_selected_test_never_executes_is_not_reached() {
 fn test_live_gdb_reached_mutants_are_judged_by_the_test_as_before() {
     let mut exec = GdbExecutor::new(selecting("test_is_small"), Isa::amd64());
     assert_eq!(
-        code(exec.run(&plan("negate-condition", 10), budget()).unwrap()),
+        code(
+            exec.run(&plan("negate-condition", 10), budget())
+                .unwrap()
+                .outcome
+        ),
         101
     );
     // Reached, and test_is_small cannot tell `<` from `<=` at 10: survived.
-    let raw = exec.run(&plan("ror", 10), budget()).unwrap();
+    let raw = exec.run(&plan("ror", 10), budget()).unwrap().outcome;
     assert!(matches!(raw, RawOutcome::Exited { code: 0, .. }), "{raw:?}");
 }
 
@@ -533,11 +574,11 @@ fn test_live_gdb_records_which_tests_call_each_function_and_runs_only_those() {
     // reached; narrowed to the one that does, it is killed.
     exec.select_tests(Some(&["test_is_small".to_string()]));
     assert!(matches!(
-        exec.run(&total, budget()).unwrap(),
+        exec.run(&total, budget()).unwrap().outcome,
         RawOutcome::NotReached { .. }
     ));
     exec.select_tests(Some(&["test_total".to_string()]));
-    assert_eq!(code(exec.run(&total, budget()).unwrap()), 101);
+    assert_eq!(code(exec.run(&total, budget()).unwrap().outcome), 101);
 }
 
 #[test]

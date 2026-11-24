@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cherenkov_exec_dap::routing::OnlyJudged;
-use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
+use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, TestReport, TestResult, Tier};
 use cherenkov_mutation::id::MutantId;
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::executor::{Driven, ExecError, MutantExecutor, Recording, Selection};
@@ -18,14 +18,20 @@ struct Seen(Arc<Mutex<Vec<String>>>);
 struct Program(Seen, Vec<Driven>);
 
 impl MutantExecutor for Program {
-    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
-        Ok(RawOutcome::Exited {
-            code: 0,
-            tier: Tier::P,
-            wall: Duration::ZERO,
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        Ok(Observed {
+            outcome: RawOutcome::Exited {
+                code: 1,
+                tier: Tier::P,
+                wall: Duration::ZERO,
+            },
+            tests: vec![TestReport {
+                test: "t".to_string(),
+                result: TestResult::Passed,
+            }],
         })
     }
-    fn baseline(&mut self, budget: Budget) -> Result<RawOutcome, ExecError> {
+    fn baseline(&mut self, budget: Budget) -> Result<Observed, ExecError> {
         self.run_unused(budget)
     }
     fn driven(
@@ -51,12 +57,13 @@ impl MutantExecutor for Program {
 }
 
 impl Program {
-    fn run_unused(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn run_unused(&mut self, _: Budget) -> Result<Observed, ExecError> {
         Ok(RawOutcome::Exited {
             code: 0,
             tier: Tier::P,
             wall: Duration::ZERO,
-        })
+        }
+        .into())
     }
 }
 
@@ -126,10 +133,10 @@ fn test_a_program_records_only_the_mutants_routed_to_it_and_the_rest_are_not_cal
 fn test_a_program_that_cannot_record_is_left_as_it_is_with_every_test_for_every_mutant() {
     struct Blind;
     impl MutantExecutor for Blind {
-        fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+        fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
             unreachable!()
         }
-        fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+        fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
             unreachable!()
         }
     }
@@ -194,10 +201,10 @@ struct Calls(Arc<Mutex<Vec<String>>>);
 struct Noting(Calls);
 
 impl MutantExecutor for Noting {
-    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
         unreachable!()
     }
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, ExecError> {
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
         unreachable!()
     }
     fn driven(
@@ -250,4 +257,18 @@ fn test_a_program_s_test_selection_description_and_session_are_its_own() {
         *calls.0.lock().unwrap(),
         ["select Some([\"t\"])", "select None", "close"]
     );
+}
+
+#[test]
+fn test_a_judged_program_s_runs_and_baseline_are_forwarded_with_their_tests() {
+    let judged = Arc::new(BTreeSet::from([MutantId("mine".into())]));
+    let mut program = OnlyJudged::new(Program(Seen::default(), Vec::new()), judged);
+    let ran = program.run(&plan_of("mine"), BUDGET).unwrap();
+    assert!(matches!(ran.outcome, RawOutcome::Exited { code: 1, .. }));
+    assert_eq!(ran.tests.len(), 1, "{ran:?}");
+    let baseline = program.baseline(BUDGET).unwrap();
+    assert!(matches!(
+        baseline.outcome,
+        RawOutcome::Exited { code: 0, .. }
+    ));
 }
