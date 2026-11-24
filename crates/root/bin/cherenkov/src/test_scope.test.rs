@@ -178,11 +178,15 @@ fn test_no_planned_mutant_builds_no_program() {
     assert_eq!(scope.build(), Some(Vec::new()));
 }
 
+/// `config` loaded from a directory of its own: tests run in parallel in one
+/// process, and two given the same configuration must not share (and
+/// remove) one directory.
 fn loaded(config: &str, args: SelectArgs) -> Selection {
+    static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
         "cherenkov-scope-{}-{}",
         std::process::id(),
-        config.len()
+        NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("mutants.toml");
