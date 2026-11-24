@@ -11,6 +11,7 @@ use base64::Engine;
 use cherenkov_dap_types::{
     Capabilities, ExitedEventBody, InitializeRequestArguments, StoppedEventBody,
 };
+use cherenkov_mutation::execution::TestReport;
 use cherenkov_run_ports::executor::{Driven, ExecError};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -1192,6 +1193,10 @@ impl Launcher for GdbConfig {
 
     fn binary(&self) -> Option<&Path> {
         Some(&self.test_binary)
+    }
+
+    fn tests_of(&self, output: &str) -> Vec<TestReport> {
+        crate::libtest::reports(output)
     }
 }
 

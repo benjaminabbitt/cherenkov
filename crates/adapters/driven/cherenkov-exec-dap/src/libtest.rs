@@ -4,6 +4,8 @@
 
 use std::collections::BTreeMap;
 
+use cherenkov_mutation::execution::{Failure as CoreFailure, TestReport, TestResult};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum TestOutcome {
     Ok,
@@ -105,6 +107,48 @@ fn failure(section: &[&str]) -> Failure {
         message: message.join("\n"),
         left: left.map(|l| l.join("\n")),
         right: right.map(|r| r.join("\n")),
+    }
+}
+
+/// Each test `stdout` reports, by name: its result line, and for a failing
+/// one the panic its section gives (a failing test whose result line was
+/// lost to a crash is still named by its section; one with no section has
+/// no place and no values).
+pub fn reports(stdout: &str) -> Vec<TestReport> {
+    let mut failed = failures(stdout);
+    let mut reports: Vec<TestReport> = parse(stdout)
+        .into_iter()
+        .map(|(test, outcome)| {
+            let result = match outcome {
+                TestOutcome::Ok => TestResult::Passed,
+                TestOutcome::Ignored => TestResult::Ignored,
+                TestOutcome::Failed => TestResult::Failed(seen(failed.remove(&test))),
+            };
+            TestReport { test, result }
+        })
+        .collect();
+    reports.extend(failed.into_iter().map(|(test, f)| TestReport {
+        test,
+        result: TestResult::Failed(seen(Some(f))),
+    }));
+    reports.sort_by(|a, b| a.test.cmp(&b.test));
+    reports
+}
+
+/// A failure as the run layer reads it: libtest's left and right are the
+/// value the mutant produced and the value the test expects.
+fn seen(failure: Option<Failure>) -> CoreFailure {
+    match failure {
+        Some(f) => CoreFailure {
+            location: f.location,
+            message: f.message,
+            got: f.left,
+            expected: f.right,
+        },
+        None => CoreFailure {
+            message: "the test failed".to_string(),
+            ..CoreFailure::default()
+        },
     }
 }
 

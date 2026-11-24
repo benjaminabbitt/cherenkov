@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use cherenkov_mutation::execution::{Budget, RawOutcome};
+use cherenkov_mutation::execution::{Budget, Observed, RawOutcome};
 use cherenkov_mutation::id::MutantId;
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::executor::{Driven, ExecError, MutantExecutor, Recording};
@@ -91,21 +91,11 @@ impl<E> OnlyJudged<E> {
 }
 
 impl<E: MutantExecutor> MutantExecutor for OnlyJudged<E> {
-    fn run(&mut self, plan: &MutantPlan, budget: Budget) -> Result<RawOutcome, ExecError> {
+    fn run(&mut self, plan: &MutantPlan, budget: Budget) -> Result<Observed, ExecError> {
         self.inner.run(plan, budget)
     }
-    fn baseline(&mut self, budget: Budget) -> Result<RawOutcome, ExecError> {
+    fn baseline(&mut self, budget: Budget) -> Result<Observed, ExecError> {
         self.inner.baseline(budget)
-    }
-    fn run_with_output(
-        &mut self,
-        plan: &MutantPlan,
-        budget: Budget,
-    ) -> Result<(RawOutcome, String), ExecError> {
-        self.inner.run_with_output(plan, budget)
-    }
-    fn baseline_with_output(&mut self, budget: Budget) -> Result<(RawOutcome, String), ExecError> {
-        self.inner.baseline_with_output(budget)
     }
     fn driven(
         &mut self,

@@ -7,6 +7,7 @@
 pub mod dap;
 pub mod delve;
 pub mod gdb;
+pub mod gotest;
 pub mod isa;
 pub mod layouts;
 pub mod libtest;

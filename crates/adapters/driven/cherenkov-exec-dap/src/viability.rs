@@ -16,7 +16,7 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use cherenkov_mutation::execution::{Budget, RawOutcome};
+use cherenkov_mutation::execution::{Budget, Observed, RawOutcome};
 use cherenkov_mutation::id::MutantId;
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::executor::{Driven, ExecError, MutantExecutor, Recording};
@@ -480,27 +480,14 @@ impl<E> RustcRejects<E> {
 }
 
 impl<E: MutantExecutor> MutantExecutor for RustcRejects<E> {
-    fn run(&mut self, plan: &MutantPlan, budget: Budget) -> Result<RawOutcome, ExecError> {
+    fn run(&mut self, plan: &MutantPlan, budget: Budget) -> Result<Observed, ExecError> {
         match self.unviable(plan) {
-            Some(raw) => Ok(raw),
+            Some(raw) => Ok(Observed::bare(raw)),
             None => self.inner.run(plan, budget),
         }
     }
-    fn baseline(&mut self, budget: Budget) -> Result<RawOutcome, ExecError> {
+    fn baseline(&mut self, budget: Budget) -> Result<Observed, ExecError> {
         self.inner.baseline(budget)
-    }
-    fn run_with_output(
-        &mut self,
-        plan: &MutantPlan,
-        budget: Budget,
-    ) -> Result<(RawOutcome, String), ExecError> {
-        match self.unviable(plan) {
-            Some(raw) => Ok((raw, String::new())),
-            None => self.inner.run_with_output(plan, budget),
-        }
-    }
-    fn baseline_with_output(&mut self, budget: Budget) -> Result<(RawOutcome, String), ExecError> {
-        self.inner.baseline_with_output(budget)
     }
     fn driven(
         &mut self,

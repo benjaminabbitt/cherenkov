@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use cherenkov_mutation::edit::Edit;
-use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
+use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, TestReport, Tier};
 use cherenkov_mutation::plan::{Action, MutantPlan};
 use cherenkov_mutation::syntax::Pos;
 use cherenkov_mutation::token::Token;
@@ -262,6 +262,11 @@ pub trait Launcher {
     /// columns.
     fn binary(&self) -> Option<&Path> {
         None
+    }
+    /// The tests the program's output reports, with how each failed.
+    /// None when the launcher cannot read its program's output.
+    fn tests_of(&self, _output: &str) -> Vec<TestReport> {
+        Vec::new()
     }
 }
 
@@ -1256,7 +1261,15 @@ impl<L: Launcher> TierPExecutor<L> {
         ))
     }
 
-    /// As [`MutantExecutor::baseline`], also returning the program's output.
+    /// `outcome`, with the tests the launcher reads from `output`.
+    fn observed(&self, outcome: RawOutcome, output: &str) -> Observed {
+        Observed {
+            outcome,
+            tests: self.launcher.tests_of(output),
+        }
+    }
+
+    /// The unmutated run, also returning the program's output.
     pub fn baseline_capturing(
         &mut self,
         budget: Budget,
@@ -1270,24 +1283,14 @@ impl<L: Launcher> TierPExecutor<L> {
 }
 
 impl<L: Launcher> MutantExecutor for TierPExecutor<L> {
-    fn run(&mut self, plan: &MutantPlan, budget: Budget) -> Result<RawOutcome, ExecError> {
-        self.run_capturing(plan, budget).map(|(raw, _)| raw)
+    fn run(&mut self, plan: &MutantPlan, budget: Budget) -> Result<Observed, ExecError> {
+        let (outcome, output) = self.run_capturing(plan, budget)?;
+        Ok(self.observed(outcome, &output))
     }
 
-    fn baseline(&mut self, budget: Budget) -> Result<RawOutcome, ExecError> {
-        self.baseline_capturing(budget).map(|(raw, _)| raw)
-    }
-
-    fn run_with_output(
-        &mut self,
-        plan: &MutantPlan,
-        budget: Budget,
-    ) -> Result<(RawOutcome, String), ExecError> {
-        self.run_capturing(plan, budget)
-    }
-
-    fn baseline_with_output(&mut self, budget: Budget) -> Result<(RawOutcome, String), ExecError> {
-        self.baseline_capturing(budget)
+    fn baseline(&mut self, budget: Budget) -> Result<Observed, ExecError> {
+        let (outcome, output) = self.baseline_capturing(budget)?;
+        Ok(self.observed(outcome, &output))
     }
 
     fn driven(

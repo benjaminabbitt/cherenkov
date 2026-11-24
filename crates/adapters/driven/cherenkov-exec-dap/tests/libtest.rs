@@ -114,3 +114,55 @@ fn test_a_test_list_names_the_tests_and_not_the_benches_or_summary() {
         ["address::tests::test_a", "lock::tests::test_b"]
     );
 }
+
+// --- Reports: each test's result, with what a failing one saw.
+
+use cherenkov_exec_dap::libtest::reports;
+use cherenkov_mutation::execution::{Failure as Seen, TestResult};
+
+#[test]
+fn test_reports_give_each_test_its_result_and_a_failing_one_what_it_saw() {
+    let got = reports(FAILED_RUN);
+    let names: Vec<&str> = got.iter().map(|r| r.test.as_str()).collect();
+    assert_eq!(names, ["test_first", "test_is_small", "test_total"]);
+    assert_eq!(got[0].result, TestResult::Passed);
+    assert_eq!(
+        got[2].result,
+        TestResult::Failed(Seen {
+            location: Some("tests/calc.rs:5:5".to_string()),
+            message: "assertion `left == right` failed".to_string(),
+            got: Some("6".to_string()),
+            expected: Some("5".to_string()),
+        })
+    );
+}
+
+#[test]
+fn test_reports_name_an_ignored_test_ignored() {
+    let got = reports("test slow ... ignored, takes long\n");
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].result, TestResult::Ignored);
+}
+
+#[test]
+fn test_reports_name_a_failed_test_whose_section_is_missing_with_no_place() {
+    let got = reports("test t ... FAILED\n");
+    assert_eq!(got.len(), 1);
+    let TestResult::Failed(f) = &got[0].result else {
+        panic!("{got:?}");
+    };
+    assert_eq!((f.location.as_deref(), f.got.as_deref()), (None, None));
+}
+
+#[test]
+fn test_reports_name_a_failing_section_whose_result_line_was_lost() {
+    let out = "---- t stdout ----\nthread 't' panicked at a.rs:1:1:\nboom\n";
+    let got = reports(out);
+    assert_eq!(got.len(), 1);
+    assert!(matches!(got[0].result, TestResult::Failed(_)), "{got:?}");
+}
+
+#[test]
+fn test_reports_of_no_output_are_none() {
+    assert!(reports("").is_empty());
+}
