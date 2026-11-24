@@ -233,13 +233,20 @@ fn test_run_with_a_selected_test_runs_only_that_test() {
 fn test_run_reports_what_killed_each_mutant() {
     // total's aor mutant (`a + b` -> `a - b`) gives -1 where test_total
     // expects 5: the report shows the change, the test, the assertion's
-    // place, and both values.
+    // place, and both values. total has another aor mutant (`a * b`), and
+    // decisions are printed in completion order (docs/output-events.md), so
+    // the one meant is picked by what it changes, never by its place.
     let dir = fixtures().join("rust");
     let out = run(&dir, &["--test", "test_total"]);
-    let aor = decided(&out.stdout)
+    let aors: Vec<Value> = decided(&out.stdout)
         .into_iter()
-        .find(|d| d["function"] == "total" && d["operator"] == "aor")
-        .unwrap();
+        .filter(|d| d["function"] == "total" && d["operator"] == "aor")
+        .collect();
+    assert!(
+        aors.iter().any(|d| d["mutated"] == "*"),
+        "the sibling the order could put first: {aors:?}"
+    );
+    let aor = aors.into_iter().find(|d| d["mutated"] == "-").unwrap();
     assert_eq!(
         (aor["original"].clone(), aor["mutated"].clone()),
         ("+".into(), "-".into())
