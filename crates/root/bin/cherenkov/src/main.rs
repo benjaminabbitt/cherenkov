@@ -9,6 +9,9 @@
 //! JSON, `cherenkov: message` under text, with the exit-code convention's
 //! code (10 failed, 20 declined).
 
+#[cfg(test)]
+#[path = "catalog.test.rs"]
+mod catalog_test;
 mod changed_tests;
 mod config;
 mod names;

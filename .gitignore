@@ -1,7 +1,7 @@
 # Build output, in the workspace and in every fixture or spike crate.
 target/
 fixtures/*/Cargo.lock
-crates/*/fixtures/*/Cargo.lock
+crates/**/fixtures/*/Cargo.lock
 # Scratch copies holding mutated sources (normally under the system temp
 # directory, never in the tree; ignored at the root in case TMPDIR points
 # here).
