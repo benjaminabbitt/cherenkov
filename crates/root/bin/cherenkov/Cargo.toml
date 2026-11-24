@@ -1,0 +1,38 @@
+[package]
+name = "cherenkov"
+description = "The cherenkov program: the commands composed with the toolchains, the run layer and the command line's driving side."
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+angzarr-diagnostic.workspace = true
+angzarr-embedded.workspace = true
+angzarr-presentation.workspace = true
+cli-support.workspace = true
+sysinfo.workspace = true
+cherenkov-cli.workspace = true
+cherenkov-mutation.workspace = true
+cherenkov-exec-dap.workspace = true
+cherenkov-fs.workspace = true
+cherenkov-run-application.workspace = true
+cherenkov-run-domain.workspace = true
+cherenkov-run-wire.workspace = true
+cherenkov-run-store.workspace = true
+cherenkov-wiring.workspace = true
+cherenkov-syntax.workspace = true
+clap.workspace = true
+globset.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+angzarr-ports.workspace = true
+tokio.workspace = true
+
+[lints]
+workspace = true

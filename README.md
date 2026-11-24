@@ -171,7 +171,7 @@ Requirements: Linux on x86-64, `gdb` 14 or later, `cargo`, and `protoc` on
 generated from `proto/` at build time. macOS, ARM64 and LLDB are planned.
 
 ```sh
-cargo build --release -p cherenkov-cli
+cargo build --release -p cherenkov
 
 # List the mutants that would run.
 target/release/cherenkov plan path/to/project --operators cargo-mutants
@@ -239,13 +239,13 @@ Development recipes (`justfile`):
 ## Fidelity
 
 A debugger mutant is only useful if it behaves like the source mutant.
-`crates/cherenkov-fidelity` checks each mutant against compiling the mutated
+`crates/test/fidelity/cherenkov-fidelity` checks each mutant against compiling the mutated
 source and running the same tests.
 
 Current state on the `rust-ops` fixture with the `cargo-mutants` set: every
 runnable mutant is faithful. Mutants that do not compile are unviable, as
 cargo-mutants also finds. The rest are refusals on a written list
-(`ACCEPTED_REFUSALS` in `crates/cherenkov-fidelity/tests/faithful.rs`):
+(`ACCEPTED_REFUSALS` in `crates/test/fidelity/cherenkov-fidelity/tests/faithful.rs`):
 
 - `struct-field/delete`: deleting a field of a struct literal has no patch
   or effect.

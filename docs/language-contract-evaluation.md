@@ -6,7 +6,7 @@ code changed. Revised the same day to add JavaScript and TypeScript
 docs/language-profiles.md section 6 (see "Corrections" below).
 
 The question: can the language-neutral contract (docs/design.md; the core in
-`crates/cherenkov-mutation`) carry eight languages (Java, Python, Rust, Go, C++,
+`crates/core/domain/cherenkov-mutation`) carry eight languages (Java, Python, Rust, Go, C++,
 C#, JavaScript, TypeScript), measured by the canonical
 mutations Cherenkov already defines? That means the 21 rows of
 docs/rust-operator-evaluation.md and what was added since, the 65 named
@@ -46,7 +46,7 @@ lldb-dap, netcoredbg, debugpy, maven [V].
 3. **The test side is not language-neutral.** `MutantExecutor` and the CLI
    are bound to libtest: `libtest::list_tests`, `rust_test_args`, and
    `explain()` calling `libtest::failures` for every language [V,
-   `cherenkov-cli/src/run.rs:349`]. A `TestRunner` port is needed (4.2).
+   `crates/root/bin/cherenkov/src/run.rs:349`]. A `TestRunner` port is needed (4.2).
 4. **Overloaded operators defeat tier P's assumption** that `a < b` is a
    compare instruction. Observed with g++ -O0: `V::operator<` is a `call`,
    `std::string <` is a `call`, `int <` as a value is `cmp; setl` [V, 3.2].

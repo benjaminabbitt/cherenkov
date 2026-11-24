@@ -13,7 +13,7 @@ How the outputs below were produced: `cherenkov plan|sets|mutations` from a
 release binary built shortly before the last run-layer commits. The planner,
 the profiles and the executors have not changed since; only
 `deficiency.rs`, `execution.rs` and `verdict.rs` lost some helper methods.
-The Rust fixture is `crates/cherenkov-fidelity/fixtures/rust-ops`. The Python
+The Rust fixture is `crates/test/fidelity/cherenkov-fidelity/fixtures/rust-ops`. The Python
 and Go programs are small files written for this document. The catalogue of
 cargo-mutants' exact mutations that the comparison with cargo-mutants will
 eventually cite is still pending; section 8.2 uses the existing comparison
@@ -80,13 +80,13 @@ What is language-neutral, what is data, and what is an adapter:
 
 | Part | Where | Kind |
 |---|---|---|
-| Concepts, captures, tokens, edits, operators, sets, planner, ids, verdict classification | `crates/cherenkov-mutation/src/` | Neutral code. Nothing branches on language: `LanguageId` is an opaque string (`syntax.rs:14`) and no source file in core, syntax or exec-dap compares it to `"rust"`, `"go"` or `"python"`; the only literals are the registrations in `profiles.rs:207-233`, the Delve adapter id and the Delve calling-convention name. |
+| Concepts, captures, tokens, edits, operators, sets, planner, ids, verdict classification | `crates/core/domain/cherenkov-mutation/src/` | Neutral code. Nothing branches on language: `LanguageId` is an opaque string (`syntax.rs:14`) and no source file in core, syntax or exec-dap compares it to `"rust"`, `"go"` or `"python"`; the only literals are the registrations in `profiles.rs:207-233`, the Delve adapter id and the Delve calling-convention name. |
 | Which grammar nodes are which concept | `profiles/<lang>/concepts.scm` | Data (tree-sitter queries). |
 | How a token is spelled, how to negate | `profiles/<lang>/tokens.toml` | Data. |
 | File extensions, exclude globs, default values, body syntax, comment syntax, disabled operators | `profiles/<lang>/profile.toml` | Data. |
 | Function-body replacement values for a result type | `ReturnValues` function pointer (`profile.rs:22`), set only for Rust (`profiles.rs:231`) | Code, one per language that has it. |
-| Instruction shapes and patch rules | `isa/amd64.toml`, `crates/cherenkov-exec-dap/src/{isa,x86,tierp}.rs` | Data plus hand-written amd64 code. |
-| Debugger sessions | `crates/cherenkov-exec-dap/src/{gdb,delve}.rs` | Adapters. |
+| Instruction shapes and patch rules | `isa/amd64.toml`, `crates/adapters/driven/cherenkov-exec-dap/src/{isa,x86,tierp}.rs` | Data plus hand-written amd64 code. |
+| Debugger sessions | `crates/adapters/driven/cherenkov-exec-dap/src/{gdb,delve}.rs` | Adapters. |
 
 ---
 
@@ -98,7 +98,7 @@ the `.scm` file extension. It does not define what a capture name means:
 the conventions in the `highlights.scm` and `tags.scm` files shipped with
 grammars (`@keyword`, `@definition.function`) are tree-sitter's, and none
 of them is used here. A Cherenkov capture name is read by
-`capture_role` (`crates/cherenkov-syntax/src/profiles.rs:115`):
+`capture_role` (`crates/adapters/driven/cherenkov-syntax/src/profiles.rs:115`):
 
 | Capture name | Meaning |
 |---|---|
@@ -116,7 +116,7 @@ predicates.
 One concept match is one grammar node. A query that matches the same node
 several times (a repeated field such as a chained comparison's operators)
 is folded into one `ConceptMatch` with every distinct role capture
-(`crates/cherenkov-syntax/src/lib.rs:74-111`). The core then decides what a
+(`crates/adapters/driven/cherenkov-syntax/src/lib.rs:74-111`). The core then decides what a
 repeated role means: `Binary` must have exactly one `@op`, `Condition` one
 `@cond`, `Assign` one `@target` and one `@value`; otherwise the match is
 counted as *unrepresentable* and skipped (`plan.rs:473`).
@@ -124,7 +124,7 @@ counted as *unrepresentable* and skipped (`plan.rs:473`).
 <a id="concepts"></a>
 ### Concepts
 
-`crates/cherenkov-mutation/src/concept.rs:11`. Sixteen. Query lines are the
+`crates/core/domain/cherenkov-mutation/src/concept.rs:11`. Sixteen. Query lines are the
 `@concept.<name>` lines in each profile's `concepts.scm`.
 
 | Concept | Meaning | Rust | Python | Go |
@@ -253,7 +253,7 @@ mutant with no source form (`mutated: None`) or as a skipped edit.
 
 `plan_file` starts every file's `Diagnostics` with the concepts missing from
 `profile.mapped` (`plan.rs:283-289`) and `cherenkov plan` prints them on
-stderr (`crates/cherenkov-cli/src/main.rs:352`). Real output:
+stderr (`crates/root/bin/cherenkov/src/main.rs:352`). Real output:
 
 ```
 $ cherenkov plan x/py --format text            # Python
@@ -271,7 +271,7 @@ are non-zero. An unmapped concept produces no error and no mutants.
 ### How to add a language
 
 1. Add the grammar crate to the workspace `Cargo.toml` and to
-   `crates/cherenkov-syntax/Cargo.toml`.
+   `crates/adapters/driven/cherenkov-syntax/Cargo.toml`.
 2. Write `profiles/<lang>/concepts.scm`. Map each concept the grammar has,
    with its roles; add `@stmt.<kind>` for the statement kinds; add
    `@skip.<kind>` only if the language has the idea. Read
@@ -286,13 +286,13 @@ are non-zero. An unmapped concept produces no error and no mutants.
    language.
 5. Add a fixture under `fixtures/<lang>/` with an `expected-plan.txt`, add
    the language's sample program to
-   `crates/cherenkov-syntax/tests/cross_language.rs` (it requires every set
+   `crates/adapters/driven/cherenkov-syntax/tests/cross_language.rs` (it requires every set
    to plan the same named mutations in every language), and read the
    `concepts mapped N/16` line.
 6. To run mutants, add an executor: a `Launcher` and a `NativeSession` for
    the language's debugger, an ISA table for the architecture and calling
    convention (a `return_stub` key), a toolchain function that builds the
-   test program, and a branch in `crates/cherenkov-cli/src/run.rs:107` that
+   test program, and a branch in `crates/root/bin/cherenkov/src/run.rs:107` that
    recognises the project (today `go.mod` or `Cargo.toml`).
 
 Step 6 is where a language costs the most; steps 1 to 5 are what makes
@@ -304,7 +304,7 @@ Step 6 is where a language costs the most; steps 1 to 5 are what makes
 
 ### The `Operator` trait
 
-`crates/cherenkov-mutation/src/operator.rs:71`:
+`crates/core/domain/cherenkov-mutation/src/operator.rs:71`:
 
 ```rust
 pub trait Operator: Send + Sync {
@@ -337,7 +337,7 @@ The operators in the code:
 
 ### Edits
 
-`crates/cherenkov-mutation/src/edit.rs:20`:
+`crates/core/domain/cherenkov-mutation/src/edit.rs:20`:
 
 | `Edit` | Rendered as (`plan.rs`, `replacement`) |
 |---|---|
@@ -497,9 +497,9 @@ On the Rust fixture, the three sets plan different numbers of mutants
 and different action mixes:
 
 ```
-$ cherenkov plan crates/cherenkov-fidelity/fixtures/rust-ops --operators breadth        -> 177 mutants
-$ cherenkov plan crates/cherenkov-fidelity/fixtures/rust-ops --operators sufficient     -> 285 mutants
-$ cherenkov plan crates/cherenkov-fidelity/fixtures/rust-ops --operators cargo-mutants  -> 357 mutants
+$ cherenkov plan crates/test/fidelity/cherenkov-fidelity/fixtures/rust-ops --operators breadth        -> 177 mutants
+$ cherenkov plan crates/test/fidelity/cherenkov-fidelity/fixtures/rust-ops --operators sufficient     -> 285 mutants
+$ cherenkov plan crates/test/fidelity/cherenkov-fidelity/fixtures/rust-ops --operators cargo-mutants  -> 357 mutants
     157 return-default   92 eval-return   53 eval-then-jump   51 eval-branch   3 redirect   1 in-place
     by operator: fn-value 157, aor 118, ror 52, bitwise 10, lcr 6, unary 4, shift 4,
                  match-arm 3, match-guard 2, struct-field 1
@@ -649,7 +649,7 @@ check `of` or `carry`, float, bitwise), the operand width, the swap, the
 source instruction's encoding and whether its second operand is in memory
 (`int w32 of add->sub 83/0 reg`).
 
-- **The gate** (`crates/cherenkov-exec-dap/tests/tierp_gate`, in `just test`,
+- **The gate** (`crates/adapters/driven/cherenkov-exec-dap/tests/tierp_gate`, in `just test`,
   alone as `just tierp-gate`; `TIERP_GATE_ONLY=cond` runs the comparison
   cases only and `TIERP_GATE_DUMP=<case or "label type mutation">` prints a
   case's code with its columns): for every arithmetic or bitwise operator
@@ -795,8 +795,8 @@ is `Timeout`, even if its end was already queued (`native.rs`,
 ### `--in-diff`
 
 `plan` and `run` accept a unified diff and keep a mutant when its `site`
-touches an added line (`crates/cherenkov-cli/src/run.rs:48`,
-`crates/cherenkov-mutation/src/diff.rs`). The diff's paths are from the
+touches an added line (`crates/root/bin/cherenkov/src/run.rs:48`,
+`crates/core/domain/cherenkov-mutation/src/diff.rs`). The diff's paths are from the
 repository root; the run's root is placed below it with `git rev-parse
 --show-prefix`. A `fn-value` mutant's site is the whole body, so any added
 line in the body keeps all of that function's value mutants. For Rust the
@@ -920,7 +920,7 @@ go      4c679b2e9f27ed53 w.go:4:5 f lcr eval-branch "a < b || c"
 
 Everything else in the output is identical: the same operators, the same
 action kinds, the same `requires`. That is the claim the model makes, and it
-is tested by `crates/cherenkov-syntax/tests/cross_language.rs`, which plans
+is tested by `crates/adapters/driven/cherenkov-syntax/tests/cross_language.rs`, which plans
 one program in all three languages under every set and requires the same
 named mutations from each (except `fn-value`, which only Rust has).
 
@@ -1053,7 +1053,7 @@ re-measured here.
 
 **What Cherenkov refuses**
 
-`ACCEPTED_REFUSALS` in `crates/cherenkov-fidelity/tests/faithful.rs:117`
+`ACCEPTED_REFUSALS` in `crates/test/fidelity/cherenkov-fidelity/tests/faithful.rs:117`
 lists 26 `(function, mutation, reason)` entries the debugger may refuse on
 the `rust-ops` fixture; any other refusal fails the test, and so does an
 entry that is no longer refused. By reason:

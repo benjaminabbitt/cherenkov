@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Regenerate crates/cherenkov-dap-types/src/generated.rs from the checked-in
+# Regenerate crates/adapters/driven/cherenkov-dap-types/src/generated.rs from the checked-in
 # DAP JSON schema. To move to a newer protocol version, replace
 # schema/debugAdapterProtocol.json (from SCHEMA_URL) and rerun.
 set -euo pipefail
 
 TYPIFY_VERSION=0.10.1
 SCHEMA_URL=https://microsoft.github.io/debug-adapter-protocol/debugAdapterProtocol.json
-crate="$(cd "$(dirname "$0")/.." && pwd)/crates/cherenkov-dap-types"
+crate="$(cd "$(dirname "$0")/.." && pwd)/crates/adapters/driven/cherenkov-dap-types"
 
 if [[ "${1:-}" == "--fetch" ]]; then
     curl -sSfL -o "$crate/schema/debugAdapterProtocol.json" "$SCHEMA_URL"

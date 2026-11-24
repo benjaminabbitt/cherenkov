@@ -76,7 +76,7 @@ documentation only: a tool's name can cover several replacements (PIT's
 `CONDITIONALS_BOUNDARY` is four), so none is accepted as input.
 
 Each replacement's source and relation are the `origins` of
-`crates/cherenkov-mutation/src/operator_set.rs`, repeated in the comment above
+`crates/core/domain/cherenkov-mutation/src/operator_set.rs`, repeated in the comment above
 its entry (a test checks that the comment and the data agree). Relations:
 **derived from** (the definition was taken from there), **same as** (a peer
 has the identical mutation), **similar to** (a close one; the note says how

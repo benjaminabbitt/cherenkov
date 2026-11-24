@@ -173,7 +173,7 @@ implement it.
 Today the Rust pieces are spread over `cherenkov-mutation` (`DefaultFacts`),
 `cherenkov-syntax` (`rust_types.rs`), `cherenkov-exec-dap` (`toolchain.rs`,
 `libtest.rs`, Rust semantics inside `layouts.rs` and `gdb_tierb.py`) and
-`cherenkov-cli` (`run_rust`). Extracting them behind the port is a refactor
+`cherenkov` (`run_rust`). Extracting them behind the port is a refactor
 of its own, with no behaviour change, after the spike.
 
 ## Guards

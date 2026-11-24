@@ -435,7 +435,7 @@ from memory does not count.
 Named mutations are written against concepts and tokens, never against a
 language. A language takes part through its profile alone: concept queries,
 token spellings, and for `fn-value` a return-value generator.
-`crates/cherenkov-syntax/tests/cross_language.rs` plans one program written
+`crates/adapters/driven/cherenkov-syntax/tests/cross_language.rs` plans one program written
 in Go, Python and Rust under every set and requires the same named mutations
 from each. The one exception is `fn-value`: only the Rust profile has a
 generator so far (cargo-mutants' type table), so Go and Python plan none.

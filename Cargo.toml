@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+# The rings' crates, crates/<ring>/<role>/<crate>, and the test-only fidelity
+# crate, which sits in no ring (crates/test/fidelity).
+members = ["crates/core/*/*", "crates/adapters/*/*", "crates/root/*/*", "crates/test/*/*"]
 exclude = ["fixtures"]
 
 [workspace.package]
@@ -10,18 +12,19 @@ license = "Apache-2.0 OR BSD-3-Clause"
 publish = false
 
 [workspace.dependencies]
-cherenkov-mutation = { path = "crates/cherenkov-mutation" }
-cherenkov-dap-types = { path = "crates/cherenkov-dap-types" }
-cherenkov-exec-dap = { path = "crates/cherenkov-exec-dap" }
-cherenkov-syntax = { path = "crates/cherenkov-syntax" }
-cherenkov-fs = { path = "crates/cherenkov-fs" }
-cherenkov-run-wire = { path = "crates/cherenkov-run-wire" }
-cherenkov-run-domain = { path = "crates/cherenkov-run-domain" }
-cherenkov-run-application = { path = "crates/cherenkov-run-application" }
-cherenkov-run-store = { path = "crates/cherenkov-run-store" }
-cherenkov-run-ports = { path = "crates/cherenkov-run-ports" }
-cherenkov-embedded-edge = { path = "crates/cherenkov-embedded-edge" }
-cherenkov-wiring = { path = "crates/cherenkov-wiring" }
+cherenkov-mutation = { path = "crates/core/domain/cherenkov-mutation" }
+cherenkov-dap-types = { path = "crates/adapters/driven/cherenkov-dap-types" }
+cherenkov-exec-dap = { path = "crates/adapters/driven/cherenkov-exec-dap" }
+cherenkov-syntax = { path = "crates/adapters/driven/cherenkov-syntax" }
+cherenkov-fs = { path = "crates/adapters/driven/cherenkov-fs" }
+cherenkov-run-wire = { path = "crates/core/wire/cherenkov-run-wire" }
+cherenkov-run-domain = { path = "crates/core/domain/cherenkov-run-domain" }
+cherenkov-run-application = { path = "crates/core/application/cherenkov-run-application" }
+cherenkov-run-store = { path = "crates/adapters/driven/cherenkov-run-store" }
+cherenkov-run-ports = { path = "crates/core/ports/cherenkov-run-ports" }
+cherenkov-embedded-edge = { path = "crates/adapters/driven/cherenkov-embedded-edge" }
+cherenkov-cli = { path = "crates/adapters/driving/cherenkov-cli" }
+cherenkov-wiring = { path = "crates/root/lib/cherenkov-wiring" }
 # The angzarr family, pinned by full commit to one revision of the one angzarr
 # workspace (github.com/angzarr-io/angzarr), so the lock holds one core:
 # angzarr-embedded (its kernel, bus and markup macros), angzarr-ports (the

@@ -6,4 +6,4 @@
 gitignore = true
 
 # The generated DAP protocol types are not hand-written logic.
-exclude_globs = ["crates/cherenkov-dap-types/src/generated.rs"]
+exclude_globs = ["crates/adapters/driven/cherenkov-dap-types/src/generated.rs"]

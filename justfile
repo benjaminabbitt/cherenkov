@@ -36,11 +36,11 @@ tierp-harvest:
 # The same corpus run twice must decide every mutant the same way: run it
 # on a loaded machine to mean something. Outside `just check`.
 test-determinism:
-    cargo test -p cherenkov-cli --test run -- --ignored test_run_twice_decides
+    cargo test -p cherenkov --test run -- --ignored test_run_twice_decides
 
 # List planned mutants for a directory, e.g. `just plan fixtures/go`.
 plan dir *args:
-    cargo run -q -p cherenkov-cli -- plan {{dir}} {{args}}
+    cargo run -q -p cherenkov -- plan {{dir}} {{args}}
 
 mutants file:
     git worktree add --detach ../.mutants-worktree HEAD
@@ -157,11 +157,11 @@ mod? dev '.dev'
 # Compare `cherenkov plan --operators cargo-mutants` with `cargo mutants --list` on the
 # corpus (scripts/cm-corpus.txt); fails on a difference scripts/cm-differences.txt does not explain.
 cm-differential *args:
-    cargo build -q -p cherenkov-cli
+    cargo build -q -p cherenkov
     python3 -I scripts/cm-differential.py {{args}}
 
 # Regenerate the operator tables of the docs (blocks between `<!-- generated: cherenkov ARGS -->`
 # markers) from `cherenkov operators`; a test fails when a committed block differs from the dump.
 docs:
-    cargo build -q -p cherenkov-cli
+    cargo build -q -p cherenkov
     python3 -I scripts/gen-operator-docs.py docs/mutation-operators.md docs/operator-sets.md docs/rust-operator-evaluation.md

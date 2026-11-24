@@ -2,7 +2,7 @@
 
 ## cargo-mutants
 
-`crates/cherenkov-syntax/src/rust_values.rs` is derived from `src/fnvalue.rs`
+`crates/adapters/driven/cherenkov-syntax/src/rust_values.rs` is derived from `src/fnvalue.rs`
 of [cargo-mutants](https://github.com/sourcefrog/cargo-mutants) 26.2.0: it
 follows that file's table of function-body replacement values, branch for
 branch. cargo-mutants is distributed under the MIT licence:

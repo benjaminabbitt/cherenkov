@@ -409,6 +409,35 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
+name = "cherenkov"
+version = "0.1.0"
+dependencies = [
+ "angzarr-diagnostic",
+ "angzarr-embedded",
+ "angzarr-ports",
+ "angzarr-presentation",
+ "cherenkov-cli",
+ "cherenkov-exec-dap",
+ "cherenkov-fs",
+ "cherenkov-mutation",
+ "cherenkov-run-application",
+ "cherenkov-run-domain",
+ "cherenkov-run-store",
+ "cherenkov-run-wire",
+ "cherenkov-syntax",
+ "cherenkov-wiring",
+ "clap",
+ "cli-support",
+ "globset",
+ "regex",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tokio",
+ "toml 1.2.1+spec-1.1.0",
+]
+
+[[package]]
 name = "cherenkov-cli"
 version = "0.1.0"
 dependencies = [

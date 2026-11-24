@@ -158,7 +158,7 @@ cherenkov/
     cherenkov-shim/          cargo target-runner shim: starts the test binary under GDB's DAP
     cherenkov-report/        adapter: JSON verdicts, JUnit XML, TAP (ReportSink), as projectors
     cherenkov-app/           application layer on angzarr-embedded: the Cherenkov aggregate, the run projector, report projectors (section 4.10)
-    cherenkov-cli/           composition root
+    cherenkov/               composition root
   integrations/
     pytest/                  pytest plugin (Python package; starts debugpy in the test process)
   profiles/
@@ -479,7 +479,7 @@ The run itself (planning, scheduling, execution, verdicts, reports) is event-sou
 - **A projector runs the mutants.** The run projector dequeues `MutantScheduled` events, drives the `MutantExecutor` port, and reports the result back to the aggregate as a **fact**, not a command: an outcome is something that already happened, which the aggregate ingests and cannot refuse. Ingest calls `core::classify` and emits `VerdictReached`.
 - **Delivery is at least once.** A crash between finishing a run and recording it re-runs that mutant on resume. Ingest keeps the first outcome per (mutant, run) and ignores repeats, so duplicates are harmless.
 - **Reports are projectors** over `VerdictReached`: JSON, JUnit and TAP, per-language concept coverage, and a baseline diff (survivors new since a previous run or commit), which stable mutant IDs and the event log make a plain read model.
-- **Boundary.** `cherenkov-mutation` does not depend on angzarr. Aggregates call the core's pure functions; the composition root (`cherenkov-cli`) wires the kernel, the store and the adapters.
+- **Boundary.** `cherenkov-mutation` does not depend on angzarr. Aggregates call the core's pure functions; the composition root (`cherenkov`) wires the kernel, the store and the adapters.
 
 **Transport gap: events must queue.** angzarr-embedded's catch-up hands each projector its sources one stream at a time, from one position per stream. That is pub/sub with a cursor, not a work queue: there is no parallel dequeue, no per-item completion, no redelivery of an abandoned item. Running mutants in parallel needs queue semantics. Options:
 

@@ -28,7 +28,7 @@ Precedence, first that applies, the command line over the file:
 
 `--test-workspace false` on the command line therefore overrides the file's
 `test_workspace = true` but leaves the file's `test_package` in force. The
-rules are `TestPackages::resolve` in `crates/cherenkov-cli/src/test_scope.rs`.
+rules are `TestPackages::resolve` in `crates/root/bin/cherenkov/src/test_scope.rs`.
 
 ## What Cherenkov does with them
 
