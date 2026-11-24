@@ -24,20 +24,20 @@ mod selection;
 mod store;
 mod test_scope;
 
-use std::collections::BTreeMap;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::Arc;
 
+use angzarr_diagnostic::Report;
 use angzarr_presentation::{Catalog, CatalogError, Format};
 
-use cherenkov_mutation::concept::Concept;
 use cherenkov_mutation::operator_set::{CustomSet, OperatorSet, SetError, registry, resolve_sets};
-use cherenkov_mutation::plan::{Diagnostics, MutantPlan, Provenance, SkipReason};
+use cherenkov_mutation::plan::{MutantPlan, Provenance};
 use cherenkov_mutation::profile::Profile;
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::Settings;
-use cherenkov_run_application::session::{FileProblem, ProjectPlan};
+use cherenkov_run_application::session::ProjectPlan;
 use cherenkov_run_domain::OperatorSet as LanguageSet;
 use cherenkov_syntax::TreeSitterSyntax;
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
@@ -48,6 +48,7 @@ use cli_support::{
 
 use crate::selection::{SelectArgs, Selection, plan_selected};
 use cherenkov_cli::error::CliError;
+use cherenkov_cli::notice::{Notice, Say};
 use cherenkov_cli::output::Listed;
 
 /// The program's name, as errors are prefixed with it.
@@ -262,7 +263,7 @@ fn parse() -> Result<(Cli, ExitStatuses), clap::Error> {
 
 fn main() -> ExitCode {
     let catalog = match catalog() {
-        Ok(catalog) => catalog,
+        Ok(catalog) => Arc::new(catalog),
         Err(e) => {
             eprintln!("{PROG}: {e}");
             return raw_statuses().process(Exit::FAILED);
@@ -287,10 +288,11 @@ fn main() -> ExitCode {
                 in_diff,
             } = *args;
             let format = chosen(format);
+            let say = Say::stderr(format, Arc::clone(&catalog));
             let result = Selection::load(&dir, &select, &exclude).and_then(|selection| {
                 plan(
                     &dir,
-                    format,
+                    &say,
                     operators.as_deref(),
                     &selection,
                     in_diff.as_deref(),
@@ -299,7 +301,7 @@ fn main() -> ExitCode {
             });
             (format, result)
         }
-        Command::Run(args) => run_command(*args),
+        Command::Run(args) => run_command(*args, &catalog),
         Command::Store(args) => (Format::Text, store::command(args)),
         Command::Sets => {
             sets();
@@ -322,7 +324,7 @@ fn main() -> ExitCode {
 }
 
 /// `cherenkov run`: its format and what became of it.
-fn run_command(args: RunArgs) -> (Format, Result<(), CliError>) {
+fn run_command(args: RunArgs, catalog: &Arc<Catalog>) -> (Format, Result<(), CliError>) {
     let RunArgs {
         dir,
         format,
@@ -344,6 +346,7 @@ fn run_command(args: RunArgs) -> (Format, Result<(), CliError>) {
         ephemeral,
     } = args;
     let format = chosen(format);
+    let say = Say::stderr(format, Arc::clone(catalog));
     let result = Selection::load(&dir, &select, &exclude).and_then(|selection| {
         let cargo_args = [cargo_args, selection.cargo_args.clone()].concat();
         run::run(
@@ -366,6 +369,7 @@ fn run_command(args: RunArgs) -> (Format, Result<(), CliError>) {
             operators.as_deref(),
             &tests,
             format,
+            &say,
         )
     });
     (format, result)
@@ -428,11 +432,11 @@ pub(crate) fn language_sets<'a>(
 
 /// With several sets, how many mutants each produced and how many more than
 /// one did: the provenance of the plan, summarized. Nothing for one set.
-pub(crate) fn provenance_line(
+pub(crate) fn provenance_notice(
     sets: &[OperatorSet],
     plans: &[MutantPlan],
     provenance: &Provenance,
-) -> Option<String> {
+) -> Option<Notice> {
     if sets.len() < 2 {
         return None;
     }
@@ -447,11 +451,11 @@ pub(crate) fn provenance_line(
             )
         })
         .collect();
-    let shared = of.iter().filter(|v| v.len() > 1).count();
-    Some(format!(
-        "provenance: {}; in more than one set: {shared}",
-        each.join(", ")
-    ))
+    let shared = of.iter().filter(|v| v.len() > 1).count() as u64;
+    Some(Notice::Provenance {
+        each: each.join(", "),
+        shared,
+    })
 }
 
 fn sets() {
@@ -631,12 +635,13 @@ fn default_label(used: &[(String, String)]) -> String {
 
 fn plan(
     dir: &Path,
-    format: Format,
+    say: &Say,
     operators: Option<&str>,
     selection: &Selection,
     in_diff: Option<&Path>,
     names: bool,
 ) -> Result<(), CliError> {
+    let format = say.format();
     let syntax = TreeSitterSyntax::builtin()
         .map_err(|e| CliError::syntax(&e))?
         .with_skip_calls(selection.skip_calls.clone());
@@ -644,8 +649,8 @@ fn plan(
     let (project, sets, label, languages) =
         plan_with(dir, &syntax, &profiles, operators, selection)?;
     // Under JSON, run.started names the set.
-    if format == Format::Text && !names {
-        eprintln!("operators: {label}");
+    if !names {
+        say.say(&Notice::Operators { label });
     }
     let plans = match in_diff {
         Some(file) => run::in_diff(project.plans.clone(), file, dir)?,
@@ -655,7 +660,7 @@ fn plan(
         for name in crate::names::name_all(dir, &plans) {
             println!("{name}");
         }
-        summarize(&project);
+        summarize(&project, say);
         return Ok(());
     }
     let settings = Settings {
@@ -672,9 +677,9 @@ fn plan(
         Readers::printing(cherenkov_cli::output::printing(sink)),
     )
     .map_err(|e| CliError::run(&e))?;
-    summarize(&project);
-    if let Some(line) = provenance_line(&sets, &plans, &project.provenance) {
-        eprintln!("{line}");
+    summarize(&project, say);
+    if let Some(notice) = provenance_notice(&sets, &plans, &project.provenance) {
+        say.say(&notice);
     }
     Ok(())
 }
@@ -687,63 +692,15 @@ pub(crate) fn with_excludes(mut profiles: Vec<Profile>, exclude: &[String]) -> V
     profiles
 }
 
-fn summarize(project: &ProjectPlan) {
+/// What was planned for each language, and the files that were not.
+fn summarize(project: &ProjectPlan, say: &Say) {
     for (lang, d) in &project.diagnostics {
-        eprintln!("{lang}: {}", summary_line(d));
+        say.say(&Notice::Planned(Box::new(cherenkov_cli::notice::Planned::of(lang.as_str(), d))));
     }
     for (path, problem) in &project.problems {
-        let what = match problem {
-            FileProblem::Unreadable { detail } => format!("unreadable: {detail}"),
-            FileProblem::Analysis { cause } => format!("analysis failed: {cause}"),
-            FileProblem::SyntaxErrors => "syntax errors; not planned".to_string(),
-        };
-        eprintln!("problem: {}: {what}", path.display());
+        say.say(&Notice::FileProblem {
+            path: path.display().to_string(),
+            cause: Report::of(problem),
+        });
     }
-}
-
-fn summary_line(d: &Diagnostics) -> String {
-    let mapped = Concept::ALL.len() - d.unmapped.len();
-    let mut parts = vec![
-        format!("{} mutants", d.planned),
-        format!("concepts mapped {mapped}/{}", Concept::ALL.len()),
-    ];
-    if !d.unmapped.is_empty() {
-        let names: Vec<&str> = d.unmapped.iter().map(|c| c.name()).collect();
-        parts.push(format!("unmapped: {}", names.join(", ")));
-    }
-    if !d.unrepresentable.is_empty() {
-        let items: Vec<String> = d
-            .unrepresentable
-            .iter()
-            .map(|(c, n)| format!("{} {n}", c.name()))
-            .collect();
-        parts.push(format!("unrepresentable: {}", items.join(", ")));
-    }
-    let no_action: usize = d
-        .skipped
-        .iter()
-        .filter(|((_, r), _)| *r == SkipReason::NoActionForContext)
-        .map(|(_, n)| n)
-        .sum();
-    if no_action > 0 {
-        parts.push(format!("skipped (no action for context): {no_action}"));
-    }
-    let mut regions: BTreeMap<&str, usize> = BTreeMap::new();
-    for ((_, reason), n) in &d.skipped {
-        if let SkipReason::Region(kind) = reason {
-            *regions.entry(kind.name()).or_default() += n;
-        }
-    }
-    if !regions.is_empty() {
-        let items: Vec<String> = regions.iter().map(|(k, n)| format!("{k} {n}")).collect();
-        parts.push(format!("skipped regions: {}", items.join(", ")));
-    }
-    if !d.disabled.is_empty() {
-        let n: usize = d.disabled.values().sum();
-        parts.push(format!("disabled: {n}"));
-    }
-    if d.deduplicated > 0 {
-        parts.push(format!("deduplicated: {}", d.deduplicated));
-    }
-    parts.join("; ")
 }

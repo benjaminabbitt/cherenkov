@@ -37,6 +37,7 @@ use crate::phases::Phases;
 use crate::selection::{Selection, plan_selected};
 use crate::test_scope::{Scope, records_changed_tests_only};
 use cherenkov_cli::error::CliError;
+use cherenkov_cli::notice::{Notice, Say, tenths};
 use cherenkov_cli::output::{self, Listed};
 
 pub struct Tools {
@@ -105,6 +106,7 @@ struct Asked<'a> {
     sets: &'a [OperatorSet],
     tests: &'a [String],
     format: Format,
+    say: &'a Say,
 }
 
 pub fn run(
@@ -113,6 +115,7 @@ pub fn run(
     operators: Option<&str>,
     tests: &[String],
     format: Format,
+    say: &Say,
 ) -> Result<(), CliError> {
     let root = dir.canonicalize().map_err(|e| unreadable(dir, &e))?;
     let lang = if root.join("go.mod").is_file() {
@@ -126,9 +129,9 @@ pub fn run(
     };
     let sets = crate::operator_sets_for(operators, lang)?;
     // Under JSON, run.started names the set.
-    if format == Format::Text {
-        eprintln!("operators: {}", crate::set_names(&sets));
-    }
+    say.say(&Notice::Operators {
+        label: crate::set_names(&sets),
+    });
     // A run killed with SIGKILL could not remove its scratch space.
     cherenkov_exec_dap::support_lib::sweep_stale_scratch();
     let asked = Asked {
@@ -137,6 +140,7 @@ pub fn run(
         sets: &sets,
         tests,
         format,
+        say,
     };
     // One run at a time keeps a store: a second is refused before any work.
     let _held = store_file(&asked)?
@@ -226,12 +230,12 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     let changed_tests = diff_tests(asked)?;
     let scope = scope.with_changed_tests(&changed_tests, &every, &packages, &canonical);
     let plans = scope.plans_to_run(changed_code, &every);
-    let mut programs = timed("build", || build_programs(&cargo, root, tools, &scope))?;
+    let mut programs = timed(asked.say, "build", || build_programs(&cargo, root, tools, &scope))?;
     programs.sort();
     let prefix = cargo_workspace_prefix(&cargo, root).map_err(toolchain)?;
     let facts = default_facts(&cargo, root, &tools.cargo_args)?;
     let (workspace_root, _) = cargo_workspace(&cargo, root).map_err(toolchain)?;
-    let rejected = timed("viability check", || {
+    let rejected = timed(asked.say, "viability check", || {
         rustc_rejects(asked, &cargo, &workspace_root, &plans, &scope)
     });
     let routed: Vec<Routed> = programs
@@ -275,7 +279,7 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
             })
             .collect()
     };
-    let jobs = tools.jobs.unwrap_or_else(|| machine_jobs(&programs));
+    let jobs = tools.jobs.unwrap_or_else(|| machine_jobs(asked.say, &programs));
     let sets = (0..jobs.max(1)).map(|_| set()).collect();
     let result = on_run_layer(asked, "rust", &plans, workers_of(sets, jobs));
     cherenkov_exec_dap::support_lib::remove_scratch();
@@ -347,13 +351,13 @@ fn build_programs(
 }
 
 /// `work`, and what it took on stderr.
-fn timed<T>(phase: &str, work: impl FnOnce() -> T) -> T {
+fn timed<T>(say: &Say, phase: &str, work: impl FnOnce() -> T) -> T {
     let started = std::time::Instant::now();
     let done = work();
-    eprintln!(
-        "cherenkov: phase {phase}: {:.1} s",
-        started.elapsed().as_secs_f64()
-    );
+    say.say(&Notice::Phase {
+        phase: phase.to_string(),
+        tenths: tenths(started.elapsed()),
+    });
     done
 }
 
@@ -370,9 +374,7 @@ fn rustc_rejects(
 ) -> Arc<HashMap<MutantId, String>> {
     let tools = asked.tools;
     if !tools.viability {
-        eprintln!(
-            "cherenkov: viability check off (--no-viability-check): mutants rustc would reject stay unsupported"
-        );
+        asked.say.say(&Notice::ViabilityOff);
         return Arc::default();
     }
     let candidates = viability::candidates(asked.root, plans);
@@ -383,27 +385,26 @@ fn rustc_rejects(
     let args = [tools.cargo_args.clone(), package_args(&scope.mutated())].concat();
     match viability::check(cargo, workspace, asked.root, &args, &candidates) {
         Ok(found) => {
-            eprintln!("{}", viability_summary(candidates.len(), &found));
+            asked.say.say(&viability_summary(candidates.len(), &found));
             Arc::new(found.rejected)
         }
         Err(e) => {
-            eprintln!(
-                "cherenkov: viability check skipped ({e}): mutants rustc would reject stay unsupported; --no-viability-check turns it off"
-            );
+            asked.say.say(&Notice::ViabilitySkipped {
+                detail: e.to_string(),
+            });
             Arc::default()
         }
     }
 }
 
-/// The diagnostic line of a finished viability check.
-fn viability_summary(checked: usize, found: &viability::Checked) -> String {
-    format!(
-        "cherenkov: viability check: {} of {checked} function-body replacements rejected by rustc \
-         (unviable when the debugger cannot run them), {} cargo check runs, {:.1} s",
-        found.rejected.len(),
-        found.compiles,
-        found.took.as_secs_f64()
-    )
+/// The notice of a finished viability check.
+fn viability_summary(checked: usize, found: &viability::Checked) -> Notice {
+    Notice::Viability {
+        rejected: found.rejected.len() as u64,
+        checked: checked as u64,
+        compiles: found.compiles as u64,
+        tenths: tenths(found.took),
+    }
 }
 
 /// The run layer's workers over `sets`, `jobs` programs prepared at once.
@@ -447,8 +448,10 @@ fn on_run_layer(
     .map_err(|e| CliError::run(&e))?;
     // Under JSON the stream says so: the run it prints begins again with
     // `run.started`, under the id of the run that was carried on.
-    if started.resumed && asked.format == Format::Text {
-        eprintln!("cherenkov: carried on run {}", started.run);
+    if started.resumed {
+        asked.say.say(&Notice::CarriedOn {
+            run: started.run.to_string(),
+        });
     }
     Ok(())
 }
@@ -459,13 +462,9 @@ fn run_readers(asked: &Asked, log: Option<Box<dyn std::io::Write + Send>>) -> Re
     let in_diff = asked.tools.in_diff.is_some();
     let mut sink = output::sink(asked.format, Listed::Decided, log);
     if in_diff {
-        sink = Box::new(output::InDiff::new(
-            sink,
-            Box::new(std::io::stderr()),
-            asked.format == Format::Text,
-        ));
+        sink = Box::new(output::InDiff::new(sink, asked.say.clone()));
     }
-    let sink = Box::new(Phases::new(sink, Box::new(std::io::stderr())));
+    let sink = Box::new(Phases::new(sink, asked.say.clone()));
     Readers::new(
         output::printing(sink),
         asked.tools.verdict_file.clone().map(|path| {
@@ -544,7 +543,7 @@ fn auto_jobs(cpus: usize, available: u64, per_worker: u64) -> usize {
 /// Workers for this machine: its cores, and its available memory over what
 /// a worker's sessions need (four times the largest test binary each). Says
 /// what it chose and why.
-fn machine_jobs(programs: &[cherenkov_exec_dap::toolchain::TestProgram]) -> usize {
+fn machine_jobs(say: &Say, programs: &[cherenkov_exec_dap::toolchain::TestProgram]) -> usize {
     let cpus = std::thread::available_parallelism().map_or(1, usize::from);
     let largest = programs
         .iter()
@@ -558,16 +557,17 @@ fn machine_jobs(programs: &[cherenkov_exec_dap::toolchain::TestProgram]) -> usiz
         system.available_memory()
     });
     let Some(available) = available else {
-        eprintln!("cherenkov: {cpus} workers (cores; available memory unknown)");
+        say.say(&Notice::Workers { cpus: cpus as u64 });
         return cpus;
     };
     let jobs = auto_jobs(cpus, available, per_worker);
     const MIB: u64 = 1 << 20;
-    eprintln!(
-        "cherenkov: {jobs} workers ({cpus} cores; {} MiB available, about {} MiB per worker)",
-        available / MIB,
-        per_worker / MIB
-    );
+    say.say(&Notice::WorkersSized {
+        jobs: jobs as u64,
+        cpus: cpus as u64,
+        available_mib: available / MIB,
+        per_worker_mib: per_worker / MIB,
+    });
     jobs
 }
 
@@ -602,10 +602,15 @@ mod tests {
             compiles: 3,
             took: std::time::Duration::from_millis(12_340),
         };
-        let line = viability_summary(40, &found);
-        assert!(line.contains("1 of 40"), "{line}");
-        assert!(line.contains("3 cargo check runs"), "{line}");
-        assert!(line.contains("12.3 s"), "{line}");
+        assert_eq!(
+            viability_summary(40, &found),
+            Notice::Viability {
+                rejected: 1,
+                checked: 40,
+                compiles: 3,
+                tenths: 123,
+            }
+        );
     }
 
     #[test]

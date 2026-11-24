@@ -1,41 +1,41 @@
 //! How a run's time splits: the time to the last test program prepared
 //! (baseline and recording of each) and the rest, which the mutants take.
-//! Written to stderr when the run finishes; the build and the viability
+//! Said on stderr when the run finishes; the build and the viability
 //! check, which precede the run, are timed where they happen.
 
-use std::io::Write;
 use std::time::{Duration, Instant};
 
 use cherenkov_run_wire::output::{Document, document::Event};
 
+use cherenkov_cli::notice::{Notice, Say, tenths};
 use cherenkov_cli::output::Sink;
 
-/// A sink that passes every document on and, at the run's end, writes how
+/// A sink that passes every document on and, at the run's end, says how
 /// long its phases took.
 pub struct Phases {
     inner: Box<dyn Sink>,
-    to: Box<dyn Write + Send>,
+    say: Say,
     /// Time since the run layer started.
     clock: Box<dyn FnMut() -> Duration + Send>,
     last_prepared: Option<Duration>,
 }
 
 impl Phases {
-    /// Time from now; the phases are written to `to`.
-    pub fn new(inner: Box<dyn Sink>, to: Box<dyn Write + Send>) -> Self {
+    /// Time from now; the phases are said through `say`.
+    pub fn new(inner: Box<dyn Sink>, say: Say) -> Self {
         let started = Instant::now();
-        Self::with_clock(inner, to, Box::new(move || started.elapsed()))
+        Self::with_clock(inner, say, Box::new(move || started.elapsed()))
     }
 
     /// [`Phases::new`], timed by `clock`.
     pub fn with_clock(
         inner: Box<dyn Sink>,
-        to: Box<dyn Write + Send>,
+        say: Say,
         clock: Box<dyn FnMut() -> Duration + Send>,
     ) -> Self {
         Phases {
             inner,
-            to,
+            say,
             clock,
             last_prepared: None,
         }
@@ -48,8 +48,8 @@ impl Sink for Phases {
         match &doc.event {
             Some(Event::Prepared(_)) => self.last_prepared = Some((self.clock)()),
             Some(Event::Finished(_)) => {
-                let line = summary(self.last_prepared, (self.clock)());
-                let _ = writeln!(self.to, "{line}");
+                let notice = summary(self.last_prepared, (self.clock)());
+                self.say.say(&notice);
             }
             _ => {}
         }
@@ -58,13 +58,12 @@ impl Sink for Phases {
 
 /// The phases of a run layer's `total` time, the preparation having ended
 /// `prepared_at` into it (never, for a run that prepared nothing).
-fn summary(prepared_at: Option<Duration>, total: Duration) -> String {
+fn summary(prepared_at: Option<Duration>, total: Duration) -> Notice {
     let prepared = prepared_at.unwrap_or_default();
-    format!(
-        "cherenkov: phase preparation and recording: {:.1} s; phase mutants: {:.1} s",
-        prepared.as_secs_f64(),
-        total.saturating_sub(prepared).as_secs_f64()
-    )
+    Notice::Phases {
+        preparation_tenths: tenths(prepared),
+        mutants_tenths: tenths(total.saturating_sub(prepared)),
+    }
 }
 
 #[cfg(test)]
