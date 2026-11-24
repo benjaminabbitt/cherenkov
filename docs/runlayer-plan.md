@@ -25,8 +25,14 @@ works its own way:
 - **The executor port returns raw outcomes**, and the CLI hands the
   workers a libtest parser (`Explain`). Typed observations from each
   adapter are the next step.
-- **The bus scans all of a subscription's streams on each commit**, which
-  makes a run of n mutants cost O(n squared) in the bus (see 5.4).
+- **The bus no longer scans every stream on each commit**: the edge follows
+  the store's change feed (`Following::Changes`), so a commit costs the feed
+  only the streams it touched (angzarr-bus's
+  `a_commit_costs_the_feed_nothing_for_the_streams_it_did_not_touch`). A
+  whole run is still more than linear, for a cause not yet found
+  (`cherenkov-wiring`'s `measure` test, release, instant mutants, a loaded
+  machine): 1,000, 2,000 and 4,000 mutants took 0.54 s, 1.0 s and 3.2 s in
+  memory and 6.2 s, 8.3 s and 31.6 s on SQLite.
 - **Layering**: flat, no arch-lint, presentation and infrastructure in the
   application, `Diagnostic` only at the top (5.8).
 
