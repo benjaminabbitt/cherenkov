@@ -222,6 +222,9 @@ impl NativeSession for DelveSession {
     ) -> Result<(RunEnd, bool), ExecError> {
         let ran = self.run_until_end(reach, timeout)?;
         self.exited = matches!(ran.0, RunEnd::Exited(_));
+        if let RunEnd::Exited(code) = ran.0 {
+            self.printed.settle_exit(code, OUTPUT_BOUND)?;
+        }
         Ok(ran)
     }
 }
@@ -438,8 +441,17 @@ impl Printed {
     /// and what remains is the pipe delivering it. Without the verdict by
     /// the bound, what is there is returned whole. What is returned is taken.
     fn await_verdict(&self, bound: Duration) -> String {
+        self.wait_for_verdict(self.lock(), bound).text()
+    }
+
+    /// Waits, for at most `bound`, until the verdict line is in; the
+    /// output stays untaken.
+    fn wait_for_verdict<'a>(
+        &'a self,
+        mut buffer: MutexGuard<'a, Buffer>,
+        bound: Duration,
+    ) -> MutexGuard<'a, Buffer> {
         let deadline = Instant::now() + bound;
-        let mut buffer = self.lock();
         while !has_verdict(buffer.last()) {
             let left = deadline.saturating_duration_since(Instant::now());
             if left.is_zero() {
@@ -451,7 +463,24 @@ impl Printed {
                 .unwrap_or_else(PoisonError::into_inner)
                 .0;
         }
-        buffer.text()
+        buffer
+    }
+
+    /// A process that exited with `code` has printed all it will. Exit 0
+    /// means the test binary ran to its end, so Go's verdict line must
+    /// arrive within `bound`; without it the output is incomplete, an error.
+    /// A nonzero exit with no verdict is a test or `TestMain` calling
+    /// `os.Exit` or `log.Fatal`: its output so far names who failed, and
+    /// stays to be read. Nothing is taken.
+    fn settle_exit(&self, code: i32, bound: Duration) -> Result<(), ExecError> {
+        let buffer = self.wait_for_verdict(self.lock(), bound);
+        if code == 0 && !has_verdict(buffer.last()) {
+            return Err(ExecError(format!(
+                "the program exited 0 but its output has no PASS verdict after {bound:?}: \
+                 the run's output is incomplete"
+            )));
+        }
+        Ok(())
     }
 
     /// What a run whose process was stopped (a crash, a timeout) printed:

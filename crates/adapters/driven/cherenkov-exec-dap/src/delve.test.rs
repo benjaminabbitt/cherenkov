@@ -149,3 +149,35 @@ fn test_printed_stops_recording_once_its_output_is_taken() {
     printed.push("a looping mutant's noise\n");
     assert_eq!(printed.await_verdict(Duration::ZERO), "");
 }
+
+#[test]
+fn test_exit_zero_with_no_verdict_is_an_incomplete_output_error() {
+    // A bound of nothing is spent at once: no clock decides.
+    let printed = Printed::default();
+    printed.push("=== RUN   TestX\n");
+    let e = printed
+        .settle_exit(0, Duration::ZERO)
+        .expect_err("a clean exit with no verdict");
+    assert!(e.0.contains("incomplete"), "{}", e.0);
+}
+
+#[test]
+fn test_exit_nonzero_with_no_verdict_leaves_the_output_to_be_read() {
+    // os.Exit / log.Fatal: no verdict is ever printed, and the output names
+    // whoever failed.
+    let printed = Printed::default();
+    printed.push("--- FAIL: TestX (0.00s)\n");
+    printed.settle_exit(1, Duration::ZERO).unwrap();
+    assert_eq!(
+        printed.await_verdict(Duration::ZERO),
+        "--- FAIL: TestX (0.00s)\n"
+    );
+}
+
+#[test]
+fn test_exit_zero_with_the_verdict_in_keeps_the_output_untaken() {
+    let printed = Printed::default();
+    printed.push("PASS\n");
+    printed.settle_exit(0, Duration::ZERO).unwrap();
+    assert_eq!(printed.await_verdict(Duration::ZERO), "PASS\n");
+}
