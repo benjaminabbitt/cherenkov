@@ -10,10 +10,10 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use cherenkov_core::execution::ExecError;
 use cherenkov_dap_types::{
     Capabilities, ExitedEventBody, InitializeRequestArguments, StoppedEventBody,
 };
+use cherenkov_mutation::execution::ExecError;
 use serde_json::{Value, json};
 
 use crate::dap::{DapClient, DapError};

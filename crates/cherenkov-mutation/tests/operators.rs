@@ -3,11 +3,11 @@
 
 mod common;
 
-use cherenkov_core::concept::{Capture, Concept};
-use cherenkov_core::edit::{Edit, Lit};
-use cherenkov_core::operator::{self, MatchCx, Operator};
-use cherenkov_core::syntax::{FileSyntax, StmtKind};
-use cherenkov_core::token::Token;
+use cherenkov_mutation::concept::{Capture, Concept};
+use cherenkov_mutation::edit::{Edit, Lit};
+use cherenkov_mutation::operator::{self, MatchCx, Operator};
+use cherenkov_mutation::syntax::{FileSyntax, StmtKind};
+use cherenkov_mutation::token::Token;
 use common::{Toy, toy_profile};
 
 /// Edits `op` proposes for each `concept` match, given the same inputs and

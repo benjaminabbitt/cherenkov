@@ -6,8 +6,8 @@ mod common;
 
 use std::time::Instant;
 
-use cherenkov_core::execution::{Budget, ExecError, MutantExecutor, RawOutcome};
-use cherenkov_core::plan::MutantPlan;
+use cherenkov_mutation::execution::{Budget, ExecError, MutantExecutor, RawOutcome};
+use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_application::layer::Workers;
 use common::{Kept, exited, explain, plans_of, readers, scratch, settings};
 

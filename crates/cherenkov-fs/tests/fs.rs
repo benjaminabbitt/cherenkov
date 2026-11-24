@@ -2,10 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
-use cherenkov_core::ports::SourceReader;
-use cherenkov_core::profile::Profile;
-use cherenkov_core::syntax::LanguageId;
 use cherenkov_fs::FsSourceReader;
+use cherenkov_mutation::ports::SourceReader;
+use cherenkov_mutation::profile::Profile;
+use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_syntax::TreeSitterSyntax;
 
 fn fixtures() -> PathBuf {

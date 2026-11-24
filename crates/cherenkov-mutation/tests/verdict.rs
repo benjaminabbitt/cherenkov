@@ -1,4 +1,4 @@
-use cherenkov_core::verdict::Verdict;
+use cherenkov_mutation::verdict::Verdict;
 
 #[test]
 fn test_only_killed_survived_and_timeout_count_in_score() {

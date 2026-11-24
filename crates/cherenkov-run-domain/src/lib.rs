@@ -33,7 +33,7 @@ use angzarr_embedded::markup::{
 };
 use angzarr_embedded::v1::Uuid;
 use angzarr_embedded_macros::{aggregate, applies, handles_cmd, handles_fact};
-use cherenkov_core::execution::{Budget, RawOutcome};
+use cherenkov_mutation::execution::{Budget, RawOutcome};
 
 pub mod events;
 mod judge;

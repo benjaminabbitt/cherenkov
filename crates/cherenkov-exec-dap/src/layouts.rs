@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use cherenkov_core::execution::ExecError;
-use cherenkov_core::types::{DefaultFacts, SourceDefault};
+use cherenkov_mutation::execution::ExecError;
+use cherenkov_mutation::types::{DefaultFacts, SourceDefault};
 use gimli::{AttributeValue, EndianArcSlice, Reader, RunTimeEndian, UnitOffset};
 use object::{Object, ObjectSection};
 

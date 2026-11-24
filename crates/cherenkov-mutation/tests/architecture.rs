@@ -23,7 +23,7 @@ fn test_core_depends_only_on_pure_crates() {
     for name in deps.keys() {
         assert!(
             ALLOWED_DEPENDENCIES.contains(&name.as_str()),
-            "cherenkov-core may not depend on {name}"
+            "cherenkov-mutation may not depend on {name}"
         );
     }
 }

@@ -1,5 +1,5 @@
-use cherenkov_core::token::Token;
 use cherenkov_exec_dap::isa::{Isa, Jcc, Signedness};
+use cherenkov_mutation::token::Token;
 
 #[test]
 fn test_amd64_table_names_condition_codes_and_inverts_by_low_bit() {

@@ -6,16 +6,16 @@ mod common;
 
 use std::collections::HashSet;
 
-use cherenkov_core::operator_set::{OperatorSet, named};
-use cherenkov_core::plan::{MutantPlan, plan_file};
-use cherenkov_core::plan_sets::plan_file_sets;
+use cherenkov_mutation::operator_set::{OperatorSet, named};
+use cherenkov_mutation::plan::{MutantPlan, plan_file};
+use cherenkov_mutation::plan_sets::plan_file_sets;
 use common::{TOY_SRC, toy_file, toy_profile};
 
 fn sets(names: &[&str]) -> Vec<OperatorSet> {
     names.iter().map(|n| named(n).unwrap()).collect()
 }
 
-fn planned(names: &[&str]) -> cherenkov_core::plan::PlanOutput {
+fn planned(names: &[&str]) -> cherenkov_mutation::plan::PlanOutput {
     plan_file_sets(
         &toy_file("toy.src", TOY_SRC),
         &toy_profile(),
@@ -24,7 +24,7 @@ fn planned(names: &[&str]) -> cherenkov_core::plan::PlanOutput {
     )
 }
 
-fn replacement(p: &MutantPlan) -> (cherenkov_core::syntax::Span, String) {
+fn replacement(p: &MutantPlan) -> (cherenkov_mutation::syntax::Span, String) {
     (
         p.site,
         p.mutated.clone().unwrap_or_else(|| p.edit.describe()),

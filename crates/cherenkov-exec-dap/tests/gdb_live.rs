@@ -5,16 +5,16 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use cherenkov_core::execution::{Budget, MutantExecutor, RawOutcome, Tier};
-use cherenkov_core::operator::catalog;
-use cherenkov_core::plan::{MutantPlan, plan_file};
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::syntax::LanguageId;
 use cherenkov_exec_dap::gdb::{GdbConfig, GdbExecutor, GdbSession};
 use cherenkov_exec_dap::isa::Isa;
 use cherenkov_exec_dap::native::{NativeSession, RunEnd};
 use cherenkov_exec_dap::tierp::derive;
 use cherenkov_exec_dap::toolchain::build_rust_test_binaries;
+use cherenkov_mutation::execution::{Budget, MutantExecutor, RawOutcome, Tier};
+use cherenkov_mutation::operator::catalog;
+use cherenkov_mutation::plan::{MutantPlan, plan_file};
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_syntax::TreeSitterSyntax;
 
 fn fixture() -> PathBuf {
@@ -508,7 +508,7 @@ fn test_live_gdb_reached_mutants_are_judged_by_the_test_as_before() {
 #[test]
 #[ignore = "slow: needs gdb and cargo"]
 fn test_live_gdb_records_which_tests_call_each_function_and_runs_only_those() {
-    use cherenkov_core::execution::Driven;
+    use cherenkov_mutation::execution::Driven;
     let mut exec = GdbExecutor::new(config(integration()), Isa::amd64());
     let total = plan("aor", 4);
     let small = plan("negate-condition", 10);
@@ -517,7 +517,7 @@ fn test_live_gdb_records_which_tests_call_each_function_and_runs_only_those() {
         .unwrap();
     assert_eq!(
         recording.selection,
-        cherenkov_core::execution::Selection::Recorded
+        cherenkov_mutation::execution::Selection::Recorded
     );
     assert!(recording.tests.is_some_and(|n| n >= 2), "{recording:?}");
     let driven = recording.driven.unwrap();

@@ -5,17 +5,17 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use cherenkov_core::execution::{Budget, MutantExecutor, RawOutcome, Tier};
-use cherenkov_core::operator::catalog;
-use cherenkov_core::plan::{MutantPlan, plan_file};
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::syntax::LanguageId;
 use cherenkov_exec_dap::delve::{
     DelveConfig, DelveExecutor, DelveSession, RunEnd, build_go_test_binary,
 };
 use cherenkov_exec_dap::isa::Isa;
 use cherenkov_exec_dap::native::NativeSession;
 use cherenkov_exec_dap::tierp::{Patch, derive};
+use cherenkov_mutation::execution::{Budget, MutantExecutor, RawOutcome, Tier};
+use cherenkov_mutation::operator::catalog;
+use cherenkov_mutation::plan::{MutantPlan, plan_file};
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_syntax::TreeSitterSyntax;
 
 fn fixture() -> PathBuf {
@@ -178,10 +178,10 @@ fn test_live_executor_reports_unpatchable_plan_as_unsupported() {
     let mut exec = DelveExecutor::new(config(), Isa::amd64());
     // Multiplication has no same-length machine-code swap.
     let mut p = plan("aor", 6);
-    p.edit = cherenkov_core::edit::Edit::ReplaceToken {
-        capture: cherenkov_core::concept::Capture::Op,
-        from: cherenkov_core::token::Token::Mul,
-        with: cherenkov_core::token::Token::Div,
+    p.edit = cherenkov_mutation::edit::Edit::ReplaceToken {
+        capture: cherenkov_mutation::concept::Capture::Op,
+        from: cherenkov_mutation::token::Token::Mul,
+        with: cherenkov_mutation::token::Token::Div,
     };
     let raw = exec.run(&p, budget()).unwrap();
     assert_eq!(

@@ -7,10 +7,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use cherenkov_core::operator_set::{Rule, mutation_named, named, registry};
-use cherenkov_core::plan::plan_file;
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::syntax::LanguageId;
+use cherenkov_mutation::operator_set::{Rule, mutation_named, named, registry};
+use cherenkov_mutation::plan::plan_file;
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_syntax::TreeSitterSyntax;
 
 const RUST: &str = "\

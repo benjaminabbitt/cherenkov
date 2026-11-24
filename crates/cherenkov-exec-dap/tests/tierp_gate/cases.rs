@@ -4,14 +4,14 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use cherenkov_core::edit::Edit;
-use cherenkov_core::operator_set::registry;
-use cherenkov_core::plan::{MutantPlan, render_source};
-use cherenkov_core::plan_sets::plan_file_sets;
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::profile::Profile;
-use cherenkov_core::syntax::LanguageId;
-use cherenkov_core::token::Token;
+use cherenkov_mutation::edit::Edit;
+use cherenkov_mutation::operator_set::registry;
+use cherenkov_mutation::plan::{MutantPlan, render_source};
+use cherenkov_mutation::plan_sets::plan_file_sets;
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::profile::Profile;
+use cherenkov_mutation::syntax::LanguageId;
+use cherenkov_mutation::token::Token;
 use cherenkov_syntax::TreeSitterSyntax;
 
 use crate::snippets::{self, Snippet};

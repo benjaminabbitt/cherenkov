@@ -6,12 +6,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use cherenkov_core::concept::{Capture, Concept};
-use cherenkov_core::profile::{FileRules, Profile};
-use cherenkov_core::syntax::{
+use cherenkov_mutation::concept::{Capture, Concept};
+use cherenkov_mutation::profile::{FileRules, Profile};
+use cherenkov_mutation::syntax::{
     ConceptMatch, FileSyntax, LanguageId, Pos, Span, Statement, StmtKind,
 };
-use cherenkov_core::token::{Token, TokenTable};
+use cherenkov_mutation::token::{Token, TokenTable};
 
 pub fn toy_tokens() -> TokenTable {
     let spell = [

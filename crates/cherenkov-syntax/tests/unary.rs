@@ -6,10 +6,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use cherenkov_core::operator_set::named;
-use cherenkov_core::plan::{MutantPlan, plan_file, render_source};
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::syntax::LanguageId;
+use cherenkov_mutation::operator_set::named;
+use cherenkov_mutation::plan::{MutantPlan, plan_file, render_source};
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_syntax::TreeSitterSyntax;
 
 /// The unary mutants of the cargo-mutants set, as (mutation, mutated source line).

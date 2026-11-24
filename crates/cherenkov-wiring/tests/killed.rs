@@ -14,8 +14,8 @@ use std::time::{Duration, Instant};
 
 mod common;
 
-use cherenkov_core::execution::{Budget, ExecError, MutantExecutor, RawOutcome};
-use cherenkov_core::plan::MutantPlan;
+use cherenkov_mutation::execution::{Budget, ExecError, MutantExecutor, RawOutcome};
+use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_application::layer::Workers;
 use cherenkov_run_domain::RunStatus;
 use common::{Kept, exited, explain, plans_of, readers, scratch, settings};

@@ -7,11 +7,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use cherenkov_core::execution::{Budget, ExecError, MutantExecutor, RawOutcome, Tier};
-use cherenkov_core::operator::catalog;
-use cherenkov_core::plan::{MutantPlan, plan_file};
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::syntax::LanguageId;
+use cherenkov_mutation::execution::{Budget, ExecError, MutantExecutor, RawOutcome, Tier};
+use cherenkov_mutation::operator::catalog;
+use cherenkov_mutation::plan::{MutantPlan, plan_file};
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_run_application::error::RunLayerError;
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::{Settings, Workers};

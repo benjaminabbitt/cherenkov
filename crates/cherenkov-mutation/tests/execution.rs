@@ -1,7 +1,7 @@
 use std::time::Duration;
 
-use cherenkov_core::execution::{Budget, Outcome, RawOutcome, Tier, classify, combine};
-use cherenkov_core::verdict::Verdict;
+use cherenkov_mutation::execution::{Budget, Outcome, RawOutcome, Tier, classify, combine};
+use cherenkov_mutation::verdict::Verdict;
 
 fn exited(code: i32) -> RawOutcome {
     RawOutcome::Exited {
@@ -114,7 +114,7 @@ fn test_classify_crash_caught_by_the_debugger_is_killed_with_its_message() {
 #[test]
 fn test_exec_error_displays_its_message() {
     assert_eq!(
-        cherenkov_core::execution::ExecError("dlv not found".into()).to_string(),
+        cherenkov_mutation::execution::ExecError("dlv not found".into()).to_string(),
         "dlv not found"
     );
 }
@@ -230,34 +230,39 @@ fn test_combine_unviable_anywhere_without_a_detection_is_unviable() {
 
 /// Says which tests call what through `driven` alone, as an executor
 /// written before recordings were reported does.
-struct DrivenOnly(Option<Vec<cherenkov_core::execution::Driven>>);
+struct DrivenOnly(Option<Vec<cherenkov_mutation::execution::Driven>>);
 
-impl cherenkov_core::execution::MutantExecutor for DrivenOnly {
+impl cherenkov_mutation::execution::MutantExecutor for DrivenOnly {
     fn run(
         &mut self,
-        _: &cherenkov_core::plan::MutantPlan,
+        _: &cherenkov_mutation::plan::MutantPlan,
         _: Budget,
-    ) -> Result<RawOutcome, cherenkov_core::execution::ExecError> {
+    ) -> Result<RawOutcome, cherenkov_mutation::execution::ExecError> {
         Ok(exited(0))
     }
 
-    fn baseline(&mut self, _: Budget) -> Result<RawOutcome, cherenkov_core::execution::ExecError> {
+    fn baseline(
+        &mut self,
+        _: Budget,
+    ) -> Result<RawOutcome, cherenkov_mutation::execution::ExecError> {
         Ok(exited(0))
     }
 
     fn driven(
         &mut self,
-        _: &[cherenkov_core::plan::MutantPlan],
+        _: &[cherenkov_mutation::plan::MutantPlan],
         _: Budget,
-    ) -> Result<Option<Vec<cherenkov_core::execution::Driven>>, cherenkov_core::execution::ExecError>
-    {
+    ) -> Result<
+        Option<Vec<cherenkov_mutation::execution::Driven>>,
+        cherenkov_mutation::execution::ExecError,
+    > {
         Ok(self.0.clone())
     }
 }
 
 #[test]
 fn test_a_recording_is_what_driven_says_and_every_test_where_it_cannot_tell() {
-    use cherenkov_core::execution::{Driven, MutantExecutor, Selection};
+    use cherenkov_mutation::execution::{Driven, MutantExecutor, Selection};
     let budget = Budget::from_baseline(Duration::from_millis(10));
     let recorded = DrivenOnly(Some(vec![Driven::NotCalled]))
         .recording(&[], budget)

@@ -1,7 +1,7 @@
 //! Rust source facts about types' defaults ([`DefaultFacts`]): which types
 //! a file defines, which derive `Default`, which implement it by hand.
 
-use cherenkov_core::types::DefaultFacts;
+use cherenkov_mutation::types::DefaultFacts;
 use tree_sitter::{Node, Parser};
 
 /// The type definitions and `Default` impls of one Rust file.

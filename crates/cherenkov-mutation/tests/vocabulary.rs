@@ -1,11 +1,11 @@
 //! Names are the contract with profile data (capture names, token keys)
 //! and with mutant IDs (edit descriptions): they must round-trip and stay put.
 
-use cherenkov_core::concept::{Capture, Concept};
-use cherenkov_core::edit::{Edit, Lit};
-use cherenkov_core::id::MutantId;
-use cherenkov_core::syntax::{LanguageId, Pos, Span, StmtKind};
-use cherenkov_core::token::{Token, TokenTableError};
+use cherenkov_mutation::concept::{Capture, Concept};
+use cherenkov_mutation::edit::{Edit, Lit};
+use cherenkov_mutation::id::MutantId;
+use cherenkov_mutation::syntax::{LanguageId, Pos, Span, StmtKind};
+use cherenkov_mutation::token::{Token, TokenTableError};
 
 fn assert_round_trip<T: Copy + PartialEq + std::fmt::Debug>(
     all: &[T],

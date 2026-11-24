@@ -5,9 +5,9 @@ use std::path::PathBuf;
 use crate::selection::{SelectArgs, Selection};
 
 pub(crate) fn plan_in(id: &str, file: &str) -> MutantPlan {
-    use cherenkov_core::ports::SyntaxPort;
+    use cherenkov_mutation::ports::SyntaxPort;
     let syntax = cherenkov_syntax::TreeSitterSyntax::builtin().unwrap();
-    let rust = cherenkov_core::syntax::LanguageId::new("rust");
+    let rust = cherenkov_mutation::syntax::LanguageId::new("rust");
     let profile = syntax
         .profiles()
         .into_iter()
@@ -20,10 +20,13 @@ pub(crate) fn plan_in(id: &str, file: &str) -> MutantPlan {
             Arc::from("pub fn f() -> bool { true }\n"),
         )
         .unwrap();
-    let mut plan =
-        cherenkov_core::plan::plan_file(&parsed, &profile, &cherenkov_core::operator::catalog())
-            .plans
-            .remove(0);
+    let mut plan = cherenkov_mutation::plan::plan_file(
+        &parsed,
+        &profile,
+        &cherenkov_mutation::operator::catalog(),
+    )
+    .plans
+    .remove(0);
     plan.id = MutantId(id.into());
     plan.file = PathBuf::from(file);
     plan

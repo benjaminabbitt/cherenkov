@@ -22,7 +22,7 @@ use angzarr_embedded::ProjectorHandler;
 use angzarr_embedded::angzarr_router::error::CodedError;
 use angzarr_embedded::angzarr_router::hpb::{ProjectRequest, ProjectResponse};
 use angzarr_embedded::v1::{Cover, EventPage, Uuid};
-use cherenkov_core::plan::MutantPlan;
+use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::Edge;
 
 use crate::covers::run_cover;

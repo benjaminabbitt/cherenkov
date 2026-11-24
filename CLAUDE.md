@@ -20,7 +20,7 @@ The documents of `docs/output-events.md` are the messages of
 `cherenkov.output.v1`: change a document there, not in code.
 
 The plan of a mutant (`plan.proto`) and what an executor observed have
-domain types too; the planner's own types in `cherenkov-core` convert to
+domain types too; the planner's own types in `cherenkov-mutation` convert to
 and from them in `plan::encode` and `plan::decode`, `observation::encode`
 and `observation::decode`. The generated JSON covers the output package only
 (the generated readers of the plan's messages pass the complexity gate's

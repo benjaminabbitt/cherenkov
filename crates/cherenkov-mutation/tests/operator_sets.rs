@@ -3,12 +3,12 @@
 
 mod common;
 
-use cherenkov_core::concept::Concept;
-use cherenkov_core::edit::Edit;
-use cherenkov_core::operator::{MatchCx, Operator, catalog, operator_inputs};
-use cherenkov_core::operator_set::{OperatorSet, mutations, named, registry};
-use cherenkov_core::plan::plan_file;
-use cherenkov_core::token::Token;
+use cherenkov_mutation::concept::Concept;
+use cherenkov_mutation::edit::Edit;
+use cherenkov_mutation::operator::{MatchCx, Operator, catalog, operator_inputs};
+use cherenkov_mutation::operator_set::{OperatorSet, mutations, named, registry};
+use cherenkov_mutation::plan::plan_file;
+use cherenkov_mutation::token::Token;
 use common::{TOY_SRC, toy_file, toy_profile};
 
 fn swaps(set: &str, operator: &str, from: Token) -> Vec<Token> {
@@ -26,7 +26,7 @@ fn swaps(set: &str, operator: &str, from: Token) -> Vec<Token> {
             Concept::Binary,
             &src,
             0,
-            &[(cherenkov_core::concept::Capture::Op, &spell, 0)],
+            &[(cherenkov_mutation::concept::Capture::Op, &spell, 0)],
         )
         .build();
     let profile = toy_profile();
@@ -232,7 +232,7 @@ fn test_token_names_cover_the_new_operators() {
 
 // --- Asking for several sets: `a,b,custom.toml`.
 
-use cherenkov_core::operator_set::{CustomSet, SetError, custom_set, resolve_sets};
+use cherenkov_mutation::operator_set::{CustomSet, SetError, custom_set, resolve_sets};
 
 fn custom(mutations: &[&str], skips: &[&str]) -> CustomSet {
     CustomSet {
@@ -268,7 +268,7 @@ fn test_a_toml_item_is_a_custom_set_read_through_the_loader() {
     .unwrap();
     assert_eq!(sets[1].name, "mine");
     assert_eq!(sets[1].mutations, ["ror/lt->le"]);
-    assert_eq!(sets[1].skips, [cherenkov_core::syntax::SkipKind::Test]);
+    assert_eq!(sets[1].skips, [cherenkov_mutation::syntax::SkipKind::Test]);
     assert!(!sets[1].operators().is_empty());
 }
 
@@ -313,7 +313,7 @@ fn test_an_invalid_custom_set_is_reported_with_its_path_and_reason() {
 
 // --- Operators are families; a set gives each family a table.
 
-use cherenkov_core::operator_set::{Relation, families, mutation_named};
+use cherenkov_mutation::operator_set::{Relation, families, mutation_named};
 
 const FAMILIES: [&str; 15] = [
     "ror",
@@ -362,7 +362,7 @@ fn test_compound_assignment_is_one_family_of_its_own() {
     for m in mutations() {
         let assign = matches!(
             m.rule,
-            cherenkov_core::operator_set::Rule::ReplaceToken { from, .. }
+            cherenkov_mutation::operator_set::Rule::ReplaceToken { from, .. }
                 if from.name().ends_with("_assign")
         );
         assert_eq!(assign, m.family == "compound-assign", "{}", m.name);
@@ -548,7 +548,7 @@ fn test_every_family_has_a_definition_and_the_inventory_holds_every_replacement(
 
 #[test]
 fn test_the_default_set_is_cargo_mutants_for_rust_and_breadth_for_the_other_languages() {
-    use cherenkov_core::operator_set::default_set_name;
+    use cherenkov_mutation::operator_set::default_set_name;
     assert_eq!(default_set_name("rust"), "cargo-mutants");
     assert_eq!(default_set_name("go"), "breadth");
     assert_eq!(default_set_name("python"), "breadth");

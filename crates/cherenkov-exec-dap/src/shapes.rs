@@ -12,7 +12,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use cherenkov_core::token::Token;
+use cherenkov_mutation::token::Token;
 use serde::Deserialize;
 
 use crate::isa::IsaError;

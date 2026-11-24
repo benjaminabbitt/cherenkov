@@ -416,9 +416,9 @@ dependencies = [
  "angzarr-embedded",
  "angzarr-ports",
  "angzarr-presentation",
- "cherenkov-core",
  "cherenkov-exec-dap",
  "cherenkov-fs",
+ "cherenkov-mutation",
  "cherenkov-run-application",
  "cherenkov-run-domain",
  "cherenkov-run-store",
@@ -433,16 +433,6 @@ dependencies = [
  "serde_json",
  "sysinfo",
  "tokio",
- "toml 1.2.1+spec-1.1.0",
-]
-
-[[package]]
-name = "cherenkov-core"
-version = "0.1.0"
-dependencies = [
- "bitflags",
- "serde",
- "sha2 0.11.1",
  "toml 1.2.1+spec-1.1.0",
 ]
 
@@ -471,8 +461,8 @@ name = "cherenkov-exec-dap"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
- "cherenkov-core",
  "cherenkov-dap-types",
+ "cherenkov-mutation",
  "cherenkov-syntax",
  "gimli",
  "iced-x86",
@@ -488,9 +478,9 @@ dependencies = [
 name = "cherenkov-fidelity"
 version = "0.1.0"
 dependencies = [
- "cherenkov-core",
  "cherenkov-exec-dap",
  "cherenkov-fs",
+ "cherenkov-mutation",
  "cherenkov-syntax",
  "walkdir",
 ]
@@ -499,10 +489,20 @@ dependencies = [
 name = "cherenkov-fs"
 version = "0.1.0"
 dependencies = [
- "cherenkov-core",
+ "cherenkov-mutation",
  "cherenkov-syntax",
  "globset",
  "walkdir",
+]
+
+[[package]]
+name = "cherenkov-mutation"
+version = "0.1.0"
+dependencies = [
+ "bitflags",
+ "serde",
+ "sha2 0.11.1",
+ "toml 1.2.1+spec-1.1.0",
 ]
 
 [[package]]
@@ -513,8 +513,8 @@ dependencies = [
  "angzarr-embedded",
  "angzarr-embedded-macros",
  "angzarr-ports",
- "cherenkov-core",
  "cherenkov-embedded-edge",
+ "cherenkov-mutation",
  "cherenkov-run-domain",
  "cherenkov-run-ports",
  "cherenkov-run-wire",
@@ -532,8 +532,8 @@ dependencies = [
  "angzarr-embedded",
  "angzarr-embedded-macros",
  "angzarr-ports",
- "cherenkov-core",
  "cherenkov-fs",
+ "cherenkov-mutation",
  "cherenkov-run-wire",
  "cherenkov-syntax",
  "prost",
@@ -577,7 +577,7 @@ dependencies = [
 name = "cherenkov-syntax"
 version = "0.1.0"
 dependencies = [
- "cherenkov-core",
+ "cherenkov-mutation",
  "serde",
  "streaming-iterator",
  "toml 1.2.1+spec-1.1.0",
@@ -593,8 +593,8 @@ version = "0.1.0"
 dependencies = [
  "angzarr-embedded",
  "angzarr-ports",
- "cherenkov-core",
  "cherenkov-embedded-edge",
+ "cherenkov-mutation",
  "cherenkov-run-application",
  "cherenkov-run-domain",
  "cherenkov-run-ports",

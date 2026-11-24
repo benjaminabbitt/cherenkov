@@ -2,7 +2,7 @@ syntax = "proto3";
 
 // The plan of one mutant: everything an executor needs to run it, so that a
 // runner given a mutant's stream and its run's needs nothing from the
-// process that planned it. The planner's own types (`cherenkov-core`'s
+// process that planned it. The planner's own types (`cherenkov-mutation`'s
 // `MutantPlan` and the vocabulary it is made of) are what these messages
 // carry, field for field; the run layer converts between them at one
 // boundary, and a plan that round-trips through these is equal.

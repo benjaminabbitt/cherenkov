@@ -5,10 +5,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use cherenkov_core::operator_set::named;
-use cherenkov_core::plan::{plan_file, render_source};
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::syntax::LanguageId;
+use cherenkov_mutation::operator_set::named;
+use cherenkov_mutation::plan::{plan_file, render_source};
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_syntax::TreeSitterSyntax;
 
 /// (line, col) of the first fn-value mutant's site, and the rendered source.
@@ -76,7 +76,7 @@ fn fn_values(src: &str) -> Vec<Site> {
     .filter(|p| p.operator == "fn-value")
     .map(|p| {
         let value = match &p.action {
-            cherenkov_core::plan::Action::ReturnDefault { value_text, .. } => {
+            cherenkov_mutation::plan::Action::ReturnDefault { value_text, .. } => {
                 value_text.clone().unwrap_or_default()
             }
             _ => String::new(),

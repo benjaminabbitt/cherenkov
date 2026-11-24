@@ -17,10 +17,10 @@ pub mod rust_values;
 use std::path::Path;
 use std::sync::Arc;
 
-use cherenkov_core::concept::{Capture, Concept};
-use cherenkov_core::ports::{SyntaxError, SyntaxPort};
-use cherenkov_core::profile::Profile;
-use cherenkov_core::syntax::{
+use cherenkov_mutation::concept::{Capture, Concept};
+use cherenkov_mutation::ports::{SyntaxError, SyntaxPort};
+use cherenkov_mutation::profile::Profile;
+use cherenkov_mutation::syntax::{
     ConceptMatch, FileSyntax, LanguageId, Pos, SkipKind, SkipRegion, Span, Statement, StmtKind,
 };
 use std::collections::{BTreeMap, BTreeSet};

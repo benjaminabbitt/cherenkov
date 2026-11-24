@@ -1,9 +1,9 @@
 mod common;
 
-use cherenkov_core::concept::{Capture, Concept};
-use cherenkov_core::operator::catalog;
-use cherenkov_core::plan::{Action, Diagnostics, MutantPlan, Requires, Target, plan_file};
-use cherenkov_core::syntax::StmtKind;
+use cherenkov_mutation::concept::{Capture, Concept};
+use cherenkov_mutation::operator::catalog;
+use cherenkov_mutation::plan::{Action, Diagnostics, MutantPlan, Requires, Target, plan_file};
+use cherenkov_mutation::syntax::StmtKind;
 use common::{TOY_SRC, Toy, at, toy_file, toy_profile};
 
 fn plans_of(src: &str) -> Vec<MutantPlan> {
@@ -283,7 +283,7 @@ fn test_plan_compound_assignment_swap_evaluates_the_mutated_statement_then_skips
             ],
         )
         .build();
-    let set = cherenkov_core::operator_set::named("cargo-mutants").unwrap();
+    let set = cherenkov_mutation::operator_set::named("cargo-mutants").unwrap();
     let out = plan_file(&file, &toy_profile(), &set.operators());
     let listing: Vec<String> = out.plans.iter().map(|p| p.describe()).collect();
     assert_eq!(

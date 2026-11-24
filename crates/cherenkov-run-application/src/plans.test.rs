@@ -8,10 +8,10 @@ use std::sync::Arc;
 
 use angzarr_embedded::BusPolicy;
 use angzarr_embedded::angzarr_bus::Subscription;
-use cherenkov_core::operator::catalog;
-use cherenkov_core::plan::{MutantPlan, plan_file};
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::syntax::LanguageId;
+use cherenkov_mutation::operator::catalog;
+use cherenkov_mutation::plan::{MutantPlan, plan_file};
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_run_ports::Serving;
 use cherenkov_syntax::TreeSitterSyntax;
 
@@ -86,7 +86,7 @@ pub fn many(n: usize) -> Vec<MutantPlan> {
     let two = plans();
     (0..n)
         .map(|i| MutantPlan {
-            id: cherenkov_core::id::MutantId(format!("{i:016x}")),
+            id: cherenkov_mutation::id::MutantId(format!("{i:016x}")),
             ..two[i % 2].clone()
         })
         .collect()
@@ -104,9 +104,9 @@ pub fn prepared() -> cherenkov_run_domain::PreparationReported {
         selection_reason: None,
         index: 0,
         baseline: Some(cherenkov_run_domain::observation::encode(
-            &cherenkov_core::execution::RawOutcome::Exited {
+            &cherenkov_mutation::execution::RawOutcome::Exited {
                 code: 0,
-                tier: cherenkov_core::execution::Tier::P,
+                tier: cherenkov_mutation::execution::Tier::P,
                 wall: std::time::Duration::from_millis(1),
             },
         )),

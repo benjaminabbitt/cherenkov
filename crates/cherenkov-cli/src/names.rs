@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use cherenkov_core::plan::MutantPlan;
+use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_syntax::rust_names::{Names, arm_pattern, squash_lines, strip_attributes};
 
 /// The name of each of `plans`, in order. `root` is where their files are

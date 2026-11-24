@@ -4,8 +4,8 @@
 //! is one node with the operands and the `&&` tokens as its children, so
 //! each `&&` becomes a binary match of its own, between its neighbours.
 
-use cherenkov_core::concept::{Capture, Concept};
-use cherenkov_core::syntax::ConceptMatch;
+use cherenkov_mutation::concept::{Capture, Concept};
+use cherenkov_mutation::syntax::ConceptMatch;
 use tree_sitter::Node;
 
 use crate::span_of;

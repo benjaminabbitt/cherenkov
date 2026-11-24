@@ -1,5 +1,5 @@
 //! What an executor observed, between the executor port's types
-//! (`cherenkov_core::execution::RawOutcome`) and the run layer's
+//! (`cherenkov_mutation::execution::RawOutcome`) and the run layer's
 //! (`cherenkov.mutant.v1.Observation`). As the plan's ([`crate::plan`]),
 //! one place for both directions, and a value that goes through both comes
 //! back equal; a duration travels as `google.protobuf.Duration`, exact to
@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use cherenkov_core::execution::{RawOutcome, Tier as CoreTier};
+use cherenkov_mutation::execution::{RawOutcome, Tier as CoreTier};
 use prost_types::Duration as WireDuration;
 
 use crate::mutant::{

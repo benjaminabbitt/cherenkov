@@ -8,10 +8,10 @@ use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use cherenkov_core::operator_set::named;
-use cherenkov_core::plan::{PlanOutput, SkipReason, plan_file};
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::syntax::{LanguageId, SkipKind};
+use cherenkov_mutation::operator_set::named;
+use cherenkov_mutation::plan::{PlanOutput, SkipReason, plan_file};
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::syntax::{LanguageId, SkipKind};
 use cherenkov_syntax::TreeSitterSyntax;
 
 fn plan(src: &str, set: &str) -> PlanOutput {

@@ -9,7 +9,7 @@ publish.workspace = true
 
 [dependencies]
 angzarr-embedded.workspace = true
-cherenkov-core.workspace = true
+cherenkov-mutation.workspace = true
 cherenkov-embedded-edge.workspace = true
 cherenkov-run-application.workspace = true
 cherenkov-run-domain.workspace = true

@@ -30,11 +30,11 @@ use std::process::ExitCode;
 
 use angzarr_presentation::{Catalog, CatalogError, Format};
 
-use cherenkov_core::concept::Concept;
-use cherenkov_core::operator_set::{CustomSet, OperatorSet, SetError, registry, resolve_sets};
-use cherenkov_core::plan::{Diagnostics, MutantPlan, Provenance, SkipReason};
-use cherenkov_core::profile::Profile;
-use cherenkov_core::session::{FileProblem, ProjectPlan};
+use cherenkov_mutation::concept::Concept;
+use cherenkov_mutation::operator_set::{CustomSet, OperatorSet, SetError, registry, resolve_sets};
+use cherenkov_mutation::plan::{Diagnostics, MutantPlan, Provenance, SkipReason};
+use cherenkov_mutation::profile::Profile;
+use cherenkov_mutation::session::{FileProblem, ProjectPlan};
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::Settings;
 use cherenkov_run_domain::OperatorSet as LanguageSet;
@@ -392,7 +392,7 @@ pub(crate) fn operator_sets_for(
     asked: Option<&str>,
     lang: &str,
 ) -> Result<Vec<OperatorSet>, CliError> {
-    operator_sets(asked.unwrap_or(cherenkov_core::operator_set::default_set_name(lang)))
+    operator_sets(asked.unwrap_or(cherenkov_mutation::operator_set::default_set_name(lang)))
 }
 
 /// The sets' names, as `run.started` and the operators line show them.
@@ -446,8 +446,8 @@ pub(crate) fn provenance_line(
 }
 
 fn sets() {
-    use cherenkov_core::inventory::{Inventory, Spellings};
-    use cherenkov_core::operator_set::default_set_name;
+    use cherenkov_mutation::inventory::{Inventory, Spellings};
+    use cherenkov_mutation::operator_set::default_set_name;
     for s in registry() {
         let default = if s.name == default_set_name("rust") {
             " (default for rust)"
@@ -493,12 +493,12 @@ fn sets() {
 
 /// The inventory as the options ask, printed.
 fn operators(args: &OperatorsArgs) -> Result<(), CliError> {
-    use cherenkov_core::inventory::{Inventory, Spellings};
+    use cherenkov_mutation::inventory::{Inventory, Spellings};
     let syntax = TreeSitterSyntax::builtin().map_err(|e| CliError::Syntax {
         reason: e.to_string(),
     })?;
     let profiles = syntax.profiles();
-    let tables: Vec<(&str, &cherenkov_core::token::TokenTable)> = if args.no_spellings {
+    let tables: Vec<(&str, &cherenkov_mutation::token::TokenTable)> = if args.no_spellings {
         Vec::new()
     } else {
         profiles
@@ -526,8 +526,8 @@ fn operators(args: &OperatorsArgs) -> Result<(), CliError> {
 
 /// The operators and, under each, its replacements with their origins.
 fn mutations() {
-    use cherenkov_core::inventory::{Inventory, Spellings};
-    use cherenkov_core::operator_set::{Relation, families};
+    use cherenkov_mutation::inventory::{Inventory, Spellings};
+    use cherenkov_mutation::operator_set::{Relation, families};
     let all = families();
     let inventory = Inventory::of_all(&Spellings::none());
     println!("operators: {}", all.len());

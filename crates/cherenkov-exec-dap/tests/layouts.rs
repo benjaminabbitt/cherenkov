@@ -252,7 +252,7 @@ fn test_a_field_less_enum_is_its_tag() {
 }
 
 /// The fixture's source facts about its types' defaults.
-fn ops_facts() -> cherenkov_core::types::DefaultFacts {
+fn ops_facts() -> cherenkov_mutation::types::DefaultFacts {
     let src = include_str!("../../cherenkov-fidelity/fixtures/rust-ops/src/lib.rs");
     let mut facts = cherenkov_syntax::rust_types::default_facts(src);
     facts.project_crate("ops");

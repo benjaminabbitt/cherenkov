@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use cherenkov_core::execution::{Budget, RawOutcome, Tier};
 use cherenkov_exec_dap::delve::{DelveConfig, DelveSession, RunEnd, outcome_of};
+use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
 
 #[test]
 fn test_start_fails_fast_when_the_debugger_exits_without_listening() {

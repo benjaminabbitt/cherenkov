@@ -10,7 +10,7 @@ use angzarr_embedded::{EventStore, Handled, Kernel, Registry, Sampled, SnapshotS
 
 use std::time::Duration;
 
-use cherenkov_core::execution::{RawOutcome, Tier as CoreTier};
+use cherenkov_mutation::execution::{RawOutcome, Tier as CoreTier};
 
 use crate::events::{MutantEvent, RunEvent, mutant_event, run_event};
 use crate::mutant::Observation;

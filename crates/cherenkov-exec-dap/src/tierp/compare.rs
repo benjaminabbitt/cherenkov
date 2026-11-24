@@ -16,8 +16,8 @@
 //! stays exact only between `ja` and `jae`, and `==`/`!=`, which also read
 //! the parity flag, is not patched.
 
-use cherenkov_core::plan::MutantPlan;
-use cherenkov_core::token::Token;
+use cherenkov_mutation::plan::MutantPlan;
+use cherenkov_mutation::token::Token;
 
 use super::column::{Shaped, is_rust};
 use super::{Insn, Patch, Unpatchable};

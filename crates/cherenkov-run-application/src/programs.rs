@@ -7,8 +7,8 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use cherenkov_core::execution::{self as core, Budget, Selection as Chosen};
-use cherenkov_core::plan::MutantPlan;
+use cherenkov_mutation::execution::{self as core, Budget, Selection as Chosen};
+use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_domain::observation;
 use cherenkov_run_domain::{
     Drive, Driven, DrivenKind, Drives, PreparationReported, ProgramPrepared, Selection, TestList,

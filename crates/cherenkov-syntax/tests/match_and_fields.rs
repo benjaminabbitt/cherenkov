@@ -12,10 +12,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use cherenkov_core::operator_set::named;
-use cherenkov_core::plan::{plan_file, render_source};
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::syntax::LanguageId;
+use cherenkov_mutation::operator_set::named;
+use cherenkov_mutation::plan::{plan_file, render_source};
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_syntax::TreeSitterSyntax;
 
 /// (mutation, mutated source) for every mutant of `families`, in plan order.
@@ -164,7 +164,7 @@ fn test_go_map_and_positional_literals_have_no_field_mutants() {
 
 #[test]
 fn test_rust_guard_mutants_are_branches_to_the_arm_body() {
-    use cherenkov_core::plan::{Action, Target};
+    use cherenkov_mutation::plan::{Action, Target};
     let src = "fn f(x: Option<i64>) -> i64 {\n    match x {\n        Some(n) if n > 10 => 1,\n        Some(_) => 2,\n        None => 3,\n    }\n}\n";
     let syntax = TreeSitterSyntax::builtin().unwrap();
     let id = LanguageId::new("rust");

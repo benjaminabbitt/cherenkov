@@ -1,16 +1,16 @@
 use std::path::Path;
 
-use cherenkov_core::operator::Operator;
-use cherenkov_core::operator_set::registry;
+use cherenkov_mutation::operator::Operator;
+use cherenkov_mutation::operator_set::registry;
 use std::sync::Arc;
 
-use cherenkov_core::concept::Capture as CoreCapture;
-use cherenkov_core::plan::{MutantPlan as CorePlan, plan_file};
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::session::plan_project;
-use cherenkov_core::syntax::LanguageId;
-use cherenkov_core::token::Token as CoreToken;
 use cherenkov_fs::FsSourceReader;
+use cherenkov_mutation::concept::Capture as CoreCapture;
+use cherenkov_mutation::plan::{MutantPlan as CorePlan, plan_file};
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::session::plan_project;
+use cherenkov_mutation::syntax::LanguageId;
+use cherenkov_mutation::token::Token as CoreToken;
 use cherenkov_syntax::TreeSitterSyntax;
 
 use super::*;

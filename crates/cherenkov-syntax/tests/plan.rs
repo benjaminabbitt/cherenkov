@@ -4,10 +4,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use cherenkov_core::operator::catalog;
-use cherenkov_core::plan::{Action, MutantPlan, Target, plan_file};
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::syntax::LanguageId;
+use cherenkov_mutation::operator::catalog;
+use cherenkov_mutation::plan::{Action, MutantPlan, Target, plan_file};
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_syntax::TreeSitterSyntax;
 
 fn plans(lang: &str, src: &str) -> Vec<MutantPlan> {
@@ -93,7 +93,7 @@ fn cargo_plans(src: &str) -> Vec<MutantPlan> {
         .find(|p| p.lang == id)
         .unwrap();
     let file = syntax.analyze(&id, Path::new("t"), Arc::from(src)).unwrap();
-    let ops = cherenkov_core::operator_set::named("cargo-mutants")
+    let ops = cherenkov_mutation::operator_set::named("cargo-mutants")
         .unwrap()
         .operators();
     plan_file(&file, &profile, &ops).plans

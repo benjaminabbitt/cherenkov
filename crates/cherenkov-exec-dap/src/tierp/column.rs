@@ -10,8 +10,8 @@
 //! would need a different instruction shape (`+` to `*` on integers) is not
 //! patched.
 
-use cherenkov_core::plan::MutantPlan;
-use cherenkov_core::token::Token;
+use cherenkov_mutation::plan::MutantPlan;
+use cherenkov_mutation::token::Token;
 
 use super::{Insn, Patch, Region, Unpatchable};
 use crate::isa::{Isa, Matched};

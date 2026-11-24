@@ -13,8 +13,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use angzarr_embedded::angzarr_bus::Outcome;
 use angzarr_embedded::v1::Uuid;
-use cherenkov_core::execution::MutantExecutor;
-use cherenkov_core::plan::MutantPlan;
+use cherenkov_mutation::execution::MutantExecutor;
+use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::{Edge, Listing, Serving, Subscriptions};
 use tokio::sync::mpsc::unbounded_channel;
 

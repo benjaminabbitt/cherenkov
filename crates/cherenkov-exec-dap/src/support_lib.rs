@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use object::{Object, ObjectSymbol};
 use serde_json::Value;
 
-use cherenkov_core::types::{DefaultFacts, SourceDefault};
+use cherenkov_mutation::types::{DefaultFacts, SourceDefault};
 
 use crate::layouts::{Layout, Layouts, Refusal};
 

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use cherenkov_core::diff::AddedLines;
+use cherenkov_mutation::diff::AddedLines;
 
 const DIFF: &str = "\
 diff --git a/crates/x/src/hub.rs b/crates/x/src/hub.rs
@@ -74,7 +74,7 @@ fn test_an_added_line_that_looks_like_a_file_header_is_still_an_added_line() {
 fn test_the_files_of_a_diff_come_with_the_line_ranges_it_adds() {
     let diff =
         "--- a/x/a.rs\n+++ b/x/a.rs\n@@ -1,2 +1,3 @@\n k\n+n\n k\n@@ -9,1 +10,2 @@\n k\n+m\n";
-    let added = cherenkov_core::diff::AddedLines::parse(diff);
+    let added = cherenkov_mutation::diff::AddedLines::parse(diff);
     let files: Vec<_> = added.files().collect();
     assert_eq!(
         files,

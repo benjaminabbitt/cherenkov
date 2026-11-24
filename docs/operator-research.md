@@ -30,7 +30,7 @@ this together with docs/mutation-operators.md (the classic definitions).
 ## ROR families
 
 The tools fall into four camps on relational operators. The `same as`
-peers of the named mutations in `crates/cherenkov-core/src/operator_set.rs`
+peers of the named mutations in `crates/cherenkov-mutation/src/operator_set.rs`
 rest on this section: the boundary swaps (`<`↔`<=`, `>`↔`>=`) for camps
 1 and 2, and `==`↔`!=` for camp 2. PIT calls these mutators
 `CONDITIONALS_BOUNDARY` and `NEGATE_CONDITIONALS`.

@@ -7,16 +7,16 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use cherenkov_core::edit::{Edit, Lit};
-use cherenkov_core::operator_set::named;
-use cherenkov_core::plan::{Action, MutantPlan, plan_file};
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::syntax::LanguageId;
 use cherenkov_exec_dap::isa::Isa;
 use cherenkov_exec_dap::layouts::{Layout, Variant};
 use cherenkov_exec_dap::shapes::Table;
 use cherenkov_exec_dap::stubs::shape_of;
 use cherenkov_exec_dap::tierp::{Insn, Unpatchable, derive_returning};
+use cherenkov_mutation::edit::{Edit, Lit};
+use cherenkov_mutation::operator_set::named;
+use cherenkov_mutation::plan::{Action, MutantPlan, plan_file};
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_syntax::TreeSitterSyntax;
 
 const FILE: &str = "src/lib.rs";

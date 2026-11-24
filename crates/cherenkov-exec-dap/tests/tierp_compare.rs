@@ -6,13 +6,13 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use cherenkov_core::operator_set::registry;
-use cherenkov_core::plan::MutantPlan;
-use cherenkov_core::plan_sets::plan_file_sets;
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::syntax::LanguageId;
 use cherenkov_exec_dap::isa::Isa;
 use cherenkov_exec_dap::tierp::{Insn, Unpatchable, derive};
+use cherenkov_mutation::operator_set::registry;
+use cherenkov_mutation::plan::MutantPlan;
+use cherenkov_mutation::plan_sets::plan_file_sets;
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_syntax::TreeSitterSyntax;
 
 const FILE: &str = "s.rs";

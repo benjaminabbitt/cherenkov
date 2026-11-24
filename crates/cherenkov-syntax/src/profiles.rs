@@ -2,10 +2,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use cherenkov_core::concept::{Capture, Concept};
-use cherenkov_core::profile::{FileRules, Profile, ReturnValues};
-use cherenkov_core::syntax::{LanguageId, SkipKind, StmtKind};
-use cherenkov_core::token::{Token, TokenTable};
+use cherenkov_mutation::concept::{Capture, Concept};
+use cherenkov_mutation::profile::{FileRules, Profile, ReturnValues};
+use cherenkov_mutation::syntax::{LanguageId, SkipKind, StmtKind};
+use cherenkov_mutation::token::{Token, TokenTable};
 use serde::Deserialize;
 
 /// The three data files that make up a profile, plus its grammar.
@@ -20,7 +20,7 @@ pub struct ProfileSource<'a> {
 }
 
 /// Matches the language's queries cannot express, found in the parse tree.
-pub type ExtraMatches = fn(tree_sitter::Node<'_>) -> Vec<cherenkov_core::syntax::ConceptMatch>;
+pub type ExtraMatches = fn(tree_sitter::Node<'_>) -> Vec<cherenkov_mutation::syntax::ConceptMatch>;
 
 pub struct LoadedProfile {
     pub profile: Profile,
@@ -195,7 +195,7 @@ pub fn load(src: &ProfileSource<'_>) -> Result<LoadedProfile, ProfileError> {
             unit_types: profile_toml.unit_types,
             body_template: profile_toml.body_template,
             body_braces: profile_toml.body_braces,
-            comments: cherenkov_core::profile::Comments {
+            comments: cherenkov_mutation::profile::Comments {
                 line: profile_toml.line_comment,
                 block: profile_toml.block_comment,
                 doc: profile_toml.doc_comments,

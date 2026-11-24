@@ -4,11 +4,6 @@
 
 use std::path::{Path, PathBuf};
 
-use cherenkov_core::execution::{MutantExecutor, Tier};
-use cherenkov_core::operator::Operator;
-use cherenkov_core::operator_set::named;
-use cherenkov_core::plan::MutantPlan;
-use cherenkov_core::session::plan_project;
 use cherenkov_exec_dap::gdb::{GdbConfig, GdbExecutor};
 use cherenkov_exec_dap::isa::Isa;
 use cherenkov_exec_dap::toolchain::{build_rust_test_binaries, rustup_toolchain};
@@ -16,6 +11,11 @@ use cherenkov_fidelity::check::{Checked, Debugger, check};
 use cherenkov_fidelity::judge::Judgement;
 use cherenkov_fidelity::source::ScratchProject;
 use cherenkov_fs::FsSourceReader;
+use cherenkov_mutation::execution::{MutantExecutor, Tier};
+use cherenkov_mutation::operator::Operator;
+use cherenkov_mutation::operator_set::named;
+use cherenkov_mutation::plan::MutantPlan;
+use cherenkov_mutation::session::plan_project;
 use cherenkov_syntax::TreeSitterSyntax;
 
 /// The mutation name of a compound assignment's operator swap: the one
@@ -65,7 +65,7 @@ fn check_rust_tiers(root: &Path, set: &str) -> Vec<(MutantPlan, Checked, Option<
     binaries.sort();
     // What the fixture's source says about its types' defaults, as the CLI
     // gathers it for a workspace.
-    let mut facts = cherenkov_core::types::DefaultFacts::default();
+    let mut facts = cherenkov_mutation::types::DefaultFacts::default();
     facts.project_crate(root.file_name().unwrap().to_str().unwrap());
     facts.project_crate("ops");
     if let Ok(src) = std::fs::read_to_string(root.join("src/lib.rs")) {
@@ -298,13 +298,13 @@ fn test_every_cargo_mutants_mutant_of_rust_ops_is_faithful_unviable_or_an_accept
             );
         }
     }
-    let key = |p: &cherenkov_core::plan::MutantPlan| {
+    let key = |p: &cherenkov_mutation::plan::MutantPlan| {
         (
             p.function.clone().unwrap_or_default(),
             p.mutation.unwrap_or("?").to_string(),
         )
     };
-    let accepted = |p: &cherenkov_core::plan::MutantPlan| {
+    let accepted = |p: &cherenkov_mutation::plan::MutantPlan| {
         let (f, m) = key(p);
         ACCEPTED_REFUSALS
             .iter()
@@ -408,7 +408,7 @@ const STUBBED: &[(&str, &str)] = &[
 /// The value a body is replaced by.
 fn value_of(plan: &MutantPlan) -> Option<&str> {
     match &plan.action {
-        cherenkov_core::plan::Action::ReturnDefault {
+        cherenkov_mutation::plan::Action::ReturnDefault {
             value_text: Some(v),
             ..
         } => Some(v),

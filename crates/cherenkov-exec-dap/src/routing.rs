@@ -6,9 +6,11 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use cherenkov_core::execution::{Budget, Driven, ExecError, MutantExecutor, RawOutcome, Recording};
-use cherenkov_core::id::MutantId;
-use cherenkov_core::plan::MutantPlan;
+use cherenkov_mutation::execution::{
+    Budget, Driven, ExecError, MutantExecutor, RawOutcome, Recording,
+};
+use cherenkov_mutation::id::MutantId;
+use cherenkov_mutation::plan::MutantPlan;
 
 /// A test program that judges only the mutants `judged` holds: for any
 /// other, the recording says [`Driven::NotCalled`], which the run layer

@@ -1,10 +1,10 @@
 mod common;
 
-use cherenkov_core::concept::{Capture, Concept};
-use cherenkov_core::id::{IdParts, MutantId};
-use cherenkov_core::operator::catalog;
-use cherenkov_core::plan::{MutantPlan, plan_file};
-use cherenkov_core::syntax::StmtKind;
+use cherenkov_mutation::concept::{Capture, Concept};
+use cherenkov_mutation::id::{IdParts, MutantId};
+use cherenkov_mutation::operator::catalog;
+use cherenkov_mutation::plan::{MutantPlan, plan_file};
+use cherenkov_mutation::syntax::StmtKind;
 use common::{TOY_SRC, Toy, toy_file, toy_profile};
 
 fn parts<'a>() -> IdParts<'a> {

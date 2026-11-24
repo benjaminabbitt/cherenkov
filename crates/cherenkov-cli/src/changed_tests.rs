@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use cherenkov_core::diff::AddedLines;
+use cherenkov_mutation::diff::AddedLines;
 use cherenkov_syntax::rust_tests::test_functions;
 
 /// A test function a diff changes.

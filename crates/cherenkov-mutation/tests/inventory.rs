@@ -3,9 +3,9 @@
 
 mod common;
 
-use cherenkov_core::inventory::{Inventory, Spellings};
-use cherenkov_core::operator_set::{families, mutations, named, registry};
-use cherenkov_core::set_spec::{CustomSet, custom_set};
+use cherenkov_mutation::inventory::{Inventory, Spellings};
+use cherenkov_mutation::operator_set::{families, mutations, named, registry};
+use cherenkov_mutation::set_spec::{CustomSet, custom_set};
 
 fn without_spellings() -> Spellings<'static> {
     Spellings::none()
@@ -184,9 +184,9 @@ fn test_a_custom_set_does_not_accept_a_tools_alias_and_names_what_it_maps_to() {
 
 #[test]
 fn test_canonical_names_of_an_alias_are_empty_for_a_canonical_name() {
-    assert!(cherenkov_core::inventory::canonical_names("ror/lt->le").is_empty());
+    assert!(cherenkov_mutation::inventory::canonical_names("ror/lt->le").is_empty());
     assert_eq!(
-        cherenkov_core::inventory::canonical_names("cargo-mutants MatchArm"),
+        cherenkov_mutation::inventory::canonical_names("cargo-mutants MatchArm"),
         ["match-arm"]
     );
 }
@@ -214,7 +214,7 @@ fn test_markdown_has_a_table_row_for_each_family_naming_its_sources_and_tables()
             .unwrap_or_else(|| panic!("no row for {}", f.id));
         for m in &f.replacements {
             for o in m.origins {
-                if o.relation == cherenkov_core::operator_set::Relation::Derived {
+                if o.relation == cherenkov_mutation::operator_set::Relation::Derived {
                     assert!(row.contains(o.source), "{}: {}", f.id, o.source);
                 }
             }
@@ -226,7 +226,7 @@ fn test_markdown_has_a_table_row_for_each_family_naming_its_sources_and_tables()
 fn replacement<'a>(
     inv: &'a Inventory,
     name: &str,
-) -> &'a cherenkov_core::inventory::ReplacementEntry {
+) -> &'a cherenkov_mutation::inventory::ReplacementEntry {
     inv.operators
         .iter()
         .flat_map(|o| &o.replacements)
@@ -271,21 +271,21 @@ fn test_deletions_and_guards_are_defined_by_what_they_delete_or_set() {
     let single = replacement(&inv, "negate-condition");
     assert_eq!(single.definition, "Negate the condition of an if or loop.");
     assert_eq!(
-        cherenkov_core::operator_set::family_definition("lcr"),
+        cherenkov_mutation::operator_set::family_definition("lcr"),
         families()
             .iter()
             .find(|f| f.id == "lcr")
             .map(|f| f.definition)
     );
     assert_eq!(
-        cherenkov_core::operator_set::family_definition("nope"),
+        cherenkov_mutation::operator_set::family_definition("nope"),
         None
     );
 }
 
 /// Tokens spelled as Rust spells them, including the unary ones.
-fn rust_like() -> cherenkov_core::token::TokenTable {
-    use cherenkov_core::token::Token::*;
+fn rust_like() -> cherenkov_mutation::token::TokenTable {
+    use cherenkov_mutation::token::Token::*;
     let spell = [
         (Lt, "<"),
         (Le, "<="),
@@ -294,7 +294,8 @@ fn rust_like() -> cherenkov_core::token::TokenTable {
         (Not, "!"),
         (Neg, "-"),
     ];
-    cherenkov_core::token::TokenTable::new(spell.map(|(t, s)| (t, s.to_string())), "!{}").unwrap()
+    cherenkov_mutation::token::TokenTable::new(spell.map(|(t, s)| (t, s.to_string())), "!{}")
+        .unwrap()
 }
 
 #[test]

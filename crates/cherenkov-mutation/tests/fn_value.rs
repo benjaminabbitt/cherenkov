@@ -3,10 +3,10 @@
 
 mod common;
 
-use cherenkov_core::concept::{Capture, Concept};
-use cherenkov_core::operator_set::OperatorSet;
-use cherenkov_core::plan::{Action, MutantPlan, plan_file, render_source};
-use cherenkov_core::profile::{Profile, ReturnValues};
+use cherenkov_mutation::concept::{Capture, Concept};
+use cherenkov_mutation::operator_set::OperatorSet;
+use cherenkov_mutation::plan::{Action, MutantPlan, plan_file, render_source};
+use cherenkov_mutation::profile::{Profile, ReturnValues};
 use common::{Toy, at, toy_profile};
 
 /// The toy language's generator: booleans, and nothing else.

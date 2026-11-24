@@ -3,8 +3,8 @@
 
 mod common;
 
-use cherenkov_core::operator::catalog;
-use cherenkov_core::plan::{Action, MutantPlan, plan_file, render_source};
+use cherenkov_mutation::operator::catalog;
+use cherenkov_mutation::plan::{Action, MutantPlan, plan_file, render_source};
 use common::{TOY_SRC, toy_file, toy_profile};
 
 fn plans() -> Vec<MutantPlan> {

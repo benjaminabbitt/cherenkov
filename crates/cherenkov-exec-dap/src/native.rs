@@ -5,13 +5,13 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use cherenkov_core::edit::Edit;
-use cherenkov_core::execution::{
+use cherenkov_mutation::edit::Edit;
+use cherenkov_mutation::execution::{
     Budget, Driven, ExecError, MutantExecutor, RawOutcome, Recording, Selection, Tier,
 };
-use cherenkov_core::plan::{Action, MutantPlan};
-use cherenkov_core::syntax::Pos;
-use cherenkov_core::token::Token;
+use cherenkov_mutation::plan::{Action, MutantPlan};
+use cherenkov_mutation::syntax::Pos;
+use cherenkov_mutation::token::Token;
 
 use crate::isa::Isa;
 use crate::tierp::{Insn, Patch, Unpatchable, derive, derive_returning};
@@ -358,7 +358,7 @@ pub struct TierPExecutor<L: Launcher> {
     /// ones.
     selected: Option<Vec<String>>,
     /// What the project's source says about its types' defaults.
-    default_facts: cherenkov_core::types::DefaultFacts,
+    default_facts: cherenkov_mutation::types::DefaultFacts,
     /// The rustup toolchain the program is built with, for the support
     /// library; `None` builds it with whatever `cargo` is.
     toolchain: Option<String>,
@@ -420,7 +420,7 @@ impl<L: Launcher> TierPExecutor<L> {
 
     /// The project's source facts about its types' defaults, for values
     /// the binary has no code to make.
-    pub fn with_default_facts(mut self, facts: cherenkov_core::types::DefaultFacts) -> Self {
+    pub fn with_default_facts(mut self, facts: cherenkov_mutation::types::DefaultFacts) -> Self {
         self.default_facts = facts;
         self
     }
@@ -470,7 +470,7 @@ struct Program<'a> {
     /// Its load offset (run-time minus file address).
     bias: u64,
     /// What the project's source says about its types' defaults.
-    facts: &'a cherenkov_core::types::DefaultFacts,
+    facts: &'a cherenkov_mutation::types::DefaultFacts,
     /// Its rustup toolchain, which builds the support library.
     toolchain: Option<&'a str>,
 }
@@ -1517,10 +1517,12 @@ mod tests {
             insn(5, 3, 1),
         ];
         let nothing = Action::JumpOnly {
-            resume: cherenkov_core::plan::Target::AfterStatement(cherenkov_core::syntax::Span {
-                start: pos(1, 1),
-                end: pos(1, 2),
-            }),
+            resume: cherenkov_mutation::plan::Target::AfterStatement(
+                cherenkov_mutation::syntax::Span {
+                    start: pos(1, 1),
+                    end: pos(1, 2),
+                },
+            ),
         };
         // At or after the statement's column; an earlier one on the line is another statement's.
         assert_eq!(statement_stop(&nothing, pos(4, 9), &insns), Some(10));
@@ -1532,10 +1534,12 @@ mod tests {
     fn test_a_line_without_columns_stops_at_its_first_instruction() {
         let insns = [insn(30, 4, 0), insn(10, 4, 0), insn(5, 3, 0)];
         let nothing = Action::JumpOnly {
-            resume: cherenkov_core::plan::Target::AfterStatement(cherenkov_core::syntax::Span {
-                start: pos(1, 1),
-                end: pos(1, 2),
-            }),
+            resume: cherenkov_mutation::plan::Target::AfterStatement(
+                cherenkov_mutation::syntax::Span {
+                    start: pos(1, 1),
+                    end: pos(1, 2),
+                },
+            ),
         };
         assert_eq!(statement_stop(&nothing, pos(4, 1), &insns), Some(10));
         assert_eq!(statement_stop(&nothing, pos(9, 1), &insns), None);
@@ -1555,7 +1559,7 @@ mod tests {
     #[test]
     fn test_only_add_sub_and_mul_swaps_are_overflow_guarded() {
         let swap = |with| Edit::ReplaceToken {
-            capture: cherenkov_core::concept::Capture::Op,
+            capture: cherenkov_mutation::concept::Capture::Op,
             from: Token::Div,
             with,
         };
@@ -1917,9 +1921,9 @@ mod tests {
     }
 
     fn return_plan(source: &str, value: &str) -> MutantPlan {
-        use cherenkov_core::ports::SyntaxPort;
+        use cherenkov_mutation::ports::SyntaxPort;
         let syntax = cherenkov_syntax::TreeSitterSyntax::builtin().unwrap();
-        let rust = cherenkov_core::syntax::LanguageId::new("rust");
+        let rust = cherenkov_mutation::syntax::LanguageId::new("rust");
         let profile = syntax
             .profiles()
             .into_iter()
@@ -1928,8 +1932,8 @@ mod tests {
         let file = syntax
             .analyze(&rust, Path::new("src/lib.rs"), std::sync::Arc::from(source))
             .unwrap();
-        let set = cherenkov_core::operator_set::named("cargo-mutants").unwrap();
-        cherenkov_core::plan::plan_file(&file, &profile, &set.operators())
+        let set = cherenkov_mutation::operator_set::named("cargo-mutants").unwrap();
+        cherenkov_mutation::plan::plan_file(&file, &profile, &set.operators())
             .plans
             .into_iter()
             .find(|p| {

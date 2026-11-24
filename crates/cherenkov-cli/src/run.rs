@@ -8,12 +8,6 @@ use std::sync::Arc;
 
 use angzarr_presentation::Format;
 
-use cherenkov_core::diff::AddedLines;
-use cherenkov_core::execution::MutantExecutor;
-use cherenkov_core::id::MutantId;
-use cherenkov_core::operator_set::OperatorSet;
-use cherenkov_core::plan::MutantPlan;
-use cherenkov_core::types::DefaultFacts;
 use cherenkov_exec_dap::delve::{DelveConfig, DelveExecutor};
 use cherenkov_exec_dap::gdb::{GdbConfig, GdbExecutor};
 use cherenkov_exec_dap::isa::Isa;
@@ -26,6 +20,12 @@ use cherenkov_exec_dap::toolchain::{
     workspace_packages,
 };
 use cherenkov_exec_dap::viability::{self, RustcRejects};
+use cherenkov_mutation::diff::AddedLines;
+use cherenkov_mutation::execution::MutantExecutor;
+use cherenkov_mutation::id::MutantId;
+use cherenkov_mutation::operator_set::OperatorSet;
+use cherenkov_mutation::plan::MutantPlan;
+use cherenkov_mutation::types::DefaultFacts;
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::{Settings, Workers};
 use cherenkov_run_application::verdicts::VerdictFile;

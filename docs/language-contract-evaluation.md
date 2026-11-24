@@ -6,7 +6,7 @@ code changed. Revised the same day to add JavaScript and TypeScript
 docs/language-profiles.md section 6 (see "Corrections" below).
 
 The question: can the language-neutral contract (docs/design.md; the core in
-`crates/cherenkov-core`) carry eight languages (Java, Python, Rust, Go, C++,
+`crates/cherenkov-mutation`) carry eight languages (Java, Python, Rust, Go, C++,
 C#, JavaScript, TypeScript), measured by the canonical
 mutations Cherenkov already defines? That means the 21 rows of
 docs/rust-operator-evaluation.md and what was added since, the 65 named

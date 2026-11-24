@@ -1,4 +1,4 @@
-use cherenkov_core::execution::{ExecError, Selection, Tier};
+use cherenkov_mutation::execution::{ExecError, Selection, Tier};
 
 use super::*;
 use crate::test_plans::plans;
@@ -382,7 +382,7 @@ fn test_a_failing_exit_with_no_failed_test_in_the_output_is_killed_not_survived(
     };
     assert_eq!(
         classify(&raw).verdict,
-        cherenkov_core::verdict::Verdict::Killed
+        cherenkov_mutation::verdict::Verdict::Killed
     );
     assert!(killed_by.is_empty(), "no failed test to name");
 }

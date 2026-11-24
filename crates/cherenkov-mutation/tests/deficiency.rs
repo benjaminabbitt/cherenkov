@@ -1,4 +1,4 @@
-use cherenkov_core::deficiency::{unsupported_code as unsupported, unviable_code};
+use cherenkov_mutation::deficiency::{unsupported_code as unsupported, unviable_code};
 
 #[test]
 fn test_each_way_a_mutant_cannot_run_has_a_short_machine_readable_code() {

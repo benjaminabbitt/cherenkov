@@ -1,6 +1,6 @@
 mod common;
 
-use cherenkov_core::token::{Token, TokenTable, TokenTableError};
+use cherenkov_mutation::token::{Token, TokenTable, TokenTableError};
 
 #[test]
 fn test_token_table_resolves_spelling_both_ways() {

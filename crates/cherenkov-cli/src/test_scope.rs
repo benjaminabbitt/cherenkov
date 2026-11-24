@@ -23,9 +23,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::Arc;
 
-use cherenkov_core::id::MutantId;
-use cherenkov_core::plan::MutantPlan;
 use cherenkov_exec_dap::toolchain::{Package, package_of};
+use cherenkov_mutation::id::MutantId;
+use cherenkov_mutation::plan::MutantPlan;
 
 use crate::changed_tests::ChangedTest;
 

@@ -114,7 +114,7 @@ The domain core is pure Rust with no I/O dependencies. Everything that touches f
 | `MutationSession` use case | driving | CLI first; CI integration later |
 
 ```rust
-// cherenkov-core::ports (sketch)
+// cherenkov-mutation::ports (sketch)
 
 /// Read-only by construction: the core has no port that writes source.
 pub trait SourceReader {
@@ -149,7 +149,7 @@ pub trait ReportSink {
 ```
 cherenkov/
   crates/
-    cherenkov-core/          domain: concepts, operators, planner, verdicts, port traits. No I/O deps.
+    cherenkov-mutation/          domain: concepts, operators, planner, verdicts, port traits. No I/O deps.
     cherenkov-syntax/        adapter: tree-sitter parsing, profile loading (SyntaxPort)
     cherenkov-dap-types/     generated DAP protocol types (checked in, with a regeneration script)
     cherenkov-exec-dap/      adapter: DAP client, Driver trait, tier P patcher; debugpy, GDB and Delve drivers,
@@ -461,7 +461,7 @@ Verdict coverage: killed and survived (all), timeout (4), not reached (any site 
 
 ### 4.10 Application layer: angzarr-embedded [P]
 
-The run itself (planning, scheduling, execution, verdicts, reports) is event-sourced on angzarr-embedded, angzarr's in-app CQRS/ES kernel: single process, in memory or on SQLite. The domain logic stays in `cherenkov-core`; the application layer (`cherenkov-app`) is thin aggregates and projectors that call it.
+The run itself (planning, scheduling, execution, verdicts, reports) is event-sourced on angzarr-embedded, angzarr's in-app CQRS/ES kernel: single process, in memory or on SQLite. The domain logic stays in `cherenkov-mutation`; the application layer (`cherenkov-app`) is thin aggregates and projectors that call it.
 
 ```
  PlanRun / PlanFile ─► Cherenkov aggregate ── decide = core::plan + value policy ──► MutantPlanned (one event per mutation)
@@ -479,7 +479,7 @@ The run itself (planning, scheduling, execution, verdicts, reports) is event-sou
 - **A projector runs the mutants.** The run projector dequeues `MutantScheduled` events, drives the `MutantExecutor` port, and reports the result back to the aggregate as a **fact**, not a command: an outcome is something that already happened, which the aggregate ingests and cannot refuse. Ingest calls `core::classify` and emits `VerdictReached`.
 - **Delivery is at least once.** A crash between finishing a run and recording it re-runs that mutant on resume. Ingest keeps the first outcome per (mutant, run) and ignores repeats, so duplicates are harmless.
 - **Reports are projectors** over `VerdictReached`: JSON, JUnit and TAP, per-language concept coverage, and a baseline diff (survivors new since a previous run or commit), which stable mutant IDs and the event log make a plain read model.
-- **Boundary.** `cherenkov-core` does not depend on angzarr. Aggregates call the core's pure functions; the composition root (`cherenkov-cli`) wires the kernel, the store and the adapters.
+- **Boundary.** `cherenkov-mutation` does not depend on angzarr. Aggregates call the core's pure functions; the composition root (`cherenkov-cli`) wires the kernel, the store and the adapters.
 
 **Transport gap: events must queue.** angzarr-embedded's catch-up hands each projector its sources one stream at a time, from one position per stream. That is pub/sub with a cursor, not a work queue: there is no parallel dequeue, no per-item completion, no redelivery of an abandoned item. Running mutants in parallel needs queue semantics. Options:
 
@@ -633,7 +633,7 @@ Returns under Delve: `setVariable` the result variable (`~r0`) to the mutated va
 - **Report sinks:** JSON verdicts, plus JUnit XML with one test case per mutant.
 - **Acceptance criteria:**
   - No operator, planner or verdict code branches on language or backend; all differences come from profiles, ISA tables and adapters.
-  - `cherenkov-core` has no I/O dependencies and no port that writes files; no adapter writes files (architecture test).
+  - `cherenkov-mutation` has no I/O dependencies and no port that writes files; no adapter writes files (architecture test).
   - Tier P disarm leaves the patched range byte-identical to the original (tested).
 - **Deliverables:** CLI; per-mutant verdict JSON with tier and timings; per-language concept coverage; fidelity report.
 

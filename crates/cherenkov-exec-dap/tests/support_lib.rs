@@ -396,8 +396,8 @@ mod built {
         }
     }
 
-    fn facts() -> cherenkov_core::types::DefaultFacts {
-        let mut facts = cherenkov_core::types::DefaultFacts::default();
+    fn facts() -> cherenkov_mutation::types::DefaultFacts {
+        let mut facts = cherenkov_mutation::types::DefaultFacts::default();
         facts.project_crate("ops");
         let src = std::fs::read_to_string(fixture().join("src/lib.rs")).unwrap();
         facts.merge(cherenkov_syntax::rust_types::default_facts(&src));

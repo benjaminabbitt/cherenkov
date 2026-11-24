@@ -5,7 +5,7 @@
 //! usable on its own.
 
 use angzarr_embedded::v1::{EventPage, Uuid};
-use cherenkov_core::deficiency;
+use cherenkov_mutation::deficiency;
 use cherenkov_run_domain::events::{RunEvent, recorded_at, run_event};
 use cherenkov_run_domain::{
     MutantDecided, Outcome, PlannedMutant, ProgramPrepared, RunFinished, Selection, Verdict,

@@ -2,7 +2,7 @@
 //! (`#[derive(.., Default, ..)]`), implemented (`impl Default for T`), or
 //! absent.
 
-use cherenkov_core::types::SourceDefault;
+use cherenkov_mutation::types::SourceDefault;
 use cherenkov_syntax::rust_types::default_facts;
 
 #[test]

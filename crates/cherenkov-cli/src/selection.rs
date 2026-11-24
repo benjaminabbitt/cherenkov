@@ -7,13 +7,13 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use cherenkov_core::operator_set::OperatorSet;
-use cherenkov_core::plan::MutantPlan;
-use cherenkov_core::ports::SourceReader;
-use cherenkov_core::profile::Profile;
-use cherenkov_core::session::{ProjectPlan, plan_project_sets};
-use cherenkov_core::syntax::LanguageId;
 use cherenkov_fs::FsSourceReader;
+use cherenkov_mutation::operator_set::OperatorSet;
+use cherenkov_mutation::plan::MutantPlan;
+use cherenkov_mutation::ports::SourceReader;
+use cherenkov_mutation::profile::Profile;
+use cherenkov_mutation::session::{ProjectPlan, plan_project_sets};
+use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_syntax::rust_modules::module_files;
 use cherenkov_syntax::{DEFAULT_SKIP_CALLS, TreeSitterSyntax};
 use clap::Args;

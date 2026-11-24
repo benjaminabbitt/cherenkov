@@ -7,15 +7,15 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use cherenkov_core::concept::Capture;
-use cherenkov_core::edit::Edit;
-use cherenkov_core::operator_set::named;
-use cherenkov_core::plan::{Action, MutantPlan, plan_file};
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::syntax::{LanguageId, Pos, Span};
-use cherenkov_core::token::Token;
 use cherenkov_exec_dap::isa::Isa;
 use cherenkov_exec_dap::tierp::{Insn, Patch, Region, Unpatchable, derive};
+use cherenkov_mutation::concept::Capture;
+use cherenkov_mutation::edit::Edit;
+use cherenkov_mutation::operator_set::named;
+use cherenkov_mutation::plan::{Action, MutantPlan, plan_file};
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::syntax::{LanguageId, Pos, Span};
+use cherenkov_mutation::token::Token;
 use cherenkov_syntax::TreeSitterSyntax;
 
 const FILE: &str = "src/lib.rs";
@@ -365,7 +365,7 @@ fn statement(line: u32) -> Action {
         text: String::new(),
         target: String::new(),
         value: String::new(),
-        resume: cherenkov_core::plan::Target::AfterStatement(Span {
+        resume: cherenkov_mutation::plan::Target::AfterStatement(Span {
             start: at(5),
             end: at(20),
         }),
@@ -633,7 +633,7 @@ fn test_a_returned_value_and_a_condition_find_their_operator_by_column_too() {
     );
     let branch = Action::EvalBranch {
         cond_text: String::new(),
-        if_true: cherenkov_core::plan::Target::BlockStart(Span {
+        if_true: cherenkov_mutation::plan::Target::BlockStart(Span {
             start: Pos {
                 byte: 0,
                 line: 568,
@@ -645,7 +645,7 @@ fn test_a_returned_value_and_a_condition_find_their_operator_by_column_too() {
                 col: 2,
             },
         }),
-        if_false: cherenkov_core::plan::Target::AfterStatement(Span {
+        if_false: cherenkov_mutation::plan::Target::AfterStatement(Span {
             start: Pos {
                 byte: 0,
                 line: 568,

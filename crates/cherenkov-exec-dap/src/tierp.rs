@@ -3,10 +3,10 @@
 //! driver supplies the instructions, the ISA table supplies the rules.
 //! A plan that cannot be derived this way is never patched.
 
-use cherenkov_core::edit::{Edit, Lit};
-use cherenkov_core::plan::{Action, MutantPlan, Target};
-use cherenkov_core::syntax::{Pos, Span};
-use cherenkov_core::token::Token;
+use cherenkov_mutation::edit::{Edit, Lit};
+use cherenkov_mutation::plan::{Action, MutantPlan, Target};
+use cherenkov_mutation::syntax::{Pos, Span};
+use cherenkov_mutation::token::Token;
 
 use crate::isa::{Isa, Jcc, Matched, Signedness};
 use crate::layouts::Layout;

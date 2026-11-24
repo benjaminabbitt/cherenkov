@@ -14,8 +14,8 @@
 //! A pure function of the runs, so the same facts decide the same way
 //! wherever they are folded.
 
-use cherenkov_core::execution::{RawOutcome, classify, combine};
-use cherenkov_core::verdict::Verdict as Judged;
+use cherenkov_mutation::execution::{RawOutcome, classify, combine};
+use cherenkov_mutation::verdict::Verdict as Judged;
 
 use crate::mutant::{KilledBy, Outcome, ProgramRun, ProgramRunResult, Ran, Tier, Verdict};
 use crate::observation;

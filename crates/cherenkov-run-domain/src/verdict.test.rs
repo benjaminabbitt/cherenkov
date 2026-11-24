@@ -10,7 +10,7 @@ use angzarr_embedded::markup::pack_message;
 use angzarr_embedded::testing::Harness;
 use angzarr_embedded::v1::command_page;
 use angzarr_embedded::v1::{CommandBook, CommandPage, Cover, Fact, FactOrigin, Uuid};
-use cherenkov_core::execution::{RawOutcome, Tier as CoreTier};
+use cherenkov_mutation::execution::{RawOutcome, Tier as CoreTier};
 
 use crate::__MutantEvent as MutantEvent;
 use crate::mutant::{

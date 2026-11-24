@@ -66,7 +66,7 @@ Contents:
    |                                          `cherenkov plan` stops here
    |  --in-diff filter; for Rust, only files a non-test build compiles
    v
- MutantExecutor (port, in cherenkov-core)
+ MutantExecutor (port, in cherenkov-mutation)
    = TierPExecutor<L: Launcher> in cherenkov-exec-dap, one per test program
    |      locate the function's instructions with the line table
    |      derive a tier P patch from (action, edit)       -> arm, run, disarm
@@ -80,7 +80,7 @@ What is language-neutral, what is data, and what is an adapter:
 
 | Part | Where | Kind |
 |---|---|---|
-| Concepts, captures, tokens, edits, operators, sets, planner, ids, verdict classification | `crates/cherenkov-core/src/` | Neutral code. Nothing branches on language: `LanguageId` is an opaque string (`syntax.rs:14`) and no source file in core, syntax or exec-dap compares it to `"rust"`, `"go"` or `"python"`; the only literals are the registrations in `profiles.rs:207-233`, the Delve adapter id and the Delve calling-convention name. |
+| Concepts, captures, tokens, edits, operators, sets, planner, ids, verdict classification | `crates/cherenkov-mutation/src/` | Neutral code. Nothing branches on language: `LanguageId` is an opaque string (`syntax.rs:14`) and no source file in core, syntax or exec-dap compares it to `"rust"`, `"go"` or `"python"`; the only literals are the registrations in `profiles.rs:207-233`, the Delve adapter id and the Delve calling-convention name. |
 | Which grammar nodes are which concept | `profiles/<lang>/concepts.scm` | Data (tree-sitter queries). |
 | How a token is spelled, how to negate | `profiles/<lang>/tokens.toml` | Data. |
 | File extensions, exclude globs, default values, body syntax, comment syntax, disabled operators | `profiles/<lang>/profile.toml` | Data. |
@@ -124,7 +124,7 @@ counted as *unrepresentable* and skipped (`plan.rs:473`).
 <a id="concepts"></a>
 ### Concepts
 
-`crates/cherenkov-core/src/concept.rs:11`. Sixteen. Query lines are the
+`crates/cherenkov-mutation/src/concept.rs:11`. Sixteen. Query lines are the
 `@concept.<name>` lines in each profile's `concepts.scm`.
 
 | Concept | Meaning | Rust | Python | Go |
@@ -304,7 +304,7 @@ Step 6 is where a language costs the most; steps 1 to 5 are what makes
 
 ### The `Operator` trait
 
-`crates/cherenkov-core/src/operator.rs:71`:
+`crates/cherenkov-mutation/src/operator.rs:71`:
 
 ```rust
 pub trait Operator: Send + Sync {
@@ -337,7 +337,7 @@ The operators in the code:
 
 ### Edits
 
-`crates/cherenkov-core/src/edit.rs:20`:
+`crates/cherenkov-mutation/src/edit.rs:20`:
 
 | `Edit` | Rendered as (`plan.rs`, `replacement`) |
 |---|---|
@@ -796,7 +796,7 @@ is `Timeout`, even if its end was already queued (`native.rs`,
 
 `plan` and `run` accept a unified diff and keep a mutant when its `site`
 touches an added line (`crates/cherenkov-cli/src/run.rs:48`,
-`crates/cherenkov-core/src/diff.rs`). The diff's paths are from the
+`crates/cherenkov-mutation/src/diff.rs`). The diff's paths are from the
 repository root; the run's root is placed below it with `git rev-parse
 --show-prefix`. A `fn-value` mutant's site is the whole body, so any added
 line in the body keeps all of that function's value mutants. For Rust the
@@ -989,7 +989,7 @@ this subsection.
 | D20 | `isa/amd64.toml` and `isa/arm64.toml`; "the patcher has no amd64 knowledge of its own". | Only `amd64.toml`. The table holds condition codes, jump and call encodings, arithmetic pairs, bool stores, return stubs; but `x86.rs` (iced-x86) holds hand-written amd64 rewrites (inverting a jump, negating a bool normalisation), and `tierp.rs` has amd64 idioms. | arm64 is later (macOS and ARM64 are planned). | Drift | Design 4.1 layout and 8. When arm64 starts, the amd64-specific code needs a per-architecture trait (the data-only claim is not true). |
 | D21 | Crates: `cherenkov-tests`, `cherenkov-shim` (a cargo target runner), `cherenkov-report`, `cherenkov-app` on angzarr-embedded. | `cherenkov-fs`, `cherenkov-fidelity`, and `cherenkov-run-wire`, `-domain`, `-application`, `-store`. No `TestCatalog` or `ReportSink` port. Tests are listed by the test program (`libtest.rs`); GDB starts the test binary directly. The run layer is on the angzarr bus, with a proto-defined wire (`CLAUDE.md`). | The run layer was redesigned (`docs/runlayer-plan.md`). | Intentional | Design 4.1, 4.8, 4.10, 11. |
 | D22 | Verdicts: killed, survived, timeout, not reached, unevaluable, evaluator-raised, unsupported. | Eight in the core `Verdict`: adds `Unviable`; `UnsupportedByExecutor` is `unsupported` in events; `not-called` is a run-layer verdict. **Nothing produces `Unevaluable` or `EvaluatorRaised`**: `classify` has no path to them (`execution.rs:103`). | Cherenkov refuses rather than reporting an evaluator failure as a verdict. | Drift | Remove the two unused verdicts, or define when they are produced. Design 7. |
-| D23 | "An architecture test asserts that no adapter crate depends on file-writing APIs." | The test covers `cherenkov-core` only (`tests/architecture.rs`). `cherenkov-exec-dap` writes a scratch crate for the support library (`support_lib.rs:1030-1036`) and the CLI builds a Go test binary into a temp directory. Nothing is written into the project. | Compiled constructors need a scratch crate. | Intentional; invariant reworded | Design 1 and 4.1: say "nothing writes into the project or its build"; fix the test claim. |
+| D23 | "An architecture test asserts that no adapter crate depends on file-writing APIs." | The test covers `cherenkov-mutation` only (`tests/architecture.rs`). `cherenkov-exec-dap` writes a scratch crate for the support library (`support_lib.rs:1030-1036`) and the CLI builds a Go test binary into a temp directory. Nothing is written into the project. | Compiled constructors need a scratch crate. | Intentional; invariant reworded | Design 1 and 4.1: say "nothing writes into the project or its build"; fix the test claim. |
 | D24 | A profile "may disable an operator/concept pair". | `disabled_operators` lists operator ids; no pairs; empty in all three profiles. Counted in `Diagnostics.disabled`. | Never needed. | Open | Remove the key or use it (for example Python's `/`). |
 | D25 | Python chained comparisons are handled by profile exclusions. | A chained comparison is `unrepresentable` and counted. | The core, not the profile, decides what a repeated role means. | Intentional | Design 4.7. |
 | D26 | Prototype operator 2: arithmetic swap on an assignment's right-hand side; operator 3 relational swap in a condition. | Token swaps apply in any context: assignment, compound assignment, condition, guard, return value, else in place. | Needed for cargo-mutants parity. | Intentional | Design 4.9. |

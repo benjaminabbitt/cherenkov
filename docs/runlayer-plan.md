@@ -376,7 +376,7 @@ only the streams. What was done:
   types generated in `cherenkov-run-domain`; `PlanRun`, `MutantsPlanned`,
   `PlanMutant` and `MutantPlanned` carry it in an `ExecutableMutant`, beside
   the mutant as a reader needs it. **Deviation:** the planner's own types in
-  `cherenkov-core` are not replaced by the generated ones. The core stays
+  `cherenkov-mutation` are not replaced by the generated ones. The core stays
   free of the wire (its architecture test allows no dependency beyond
   `bitflags`, `serde` and `sha2`), and the generated structs derive neither
   `Copy` nor `Eq` nor `Hash`, which the planner uses (`Pos`, `Span`,

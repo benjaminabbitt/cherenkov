@@ -5,12 +5,12 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use cherenkov_core::operator::catalog;
-use cherenkov_core::plan::{MutantPlan, plan_file};
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::syntax::LanguageId;
 use cherenkov_exec_dap::isa::Isa;
 use cherenkov_exec_dap::tierp::{Insn, Patch, Region, Unpatchable, derive};
+use cherenkov_mutation::operator::catalog;
+use cherenkov_mutation::plan::{MutantPlan, plan_file};
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_syntax::TreeSitterSyntax;
 
 const FILE: &str = "/src/calc.go";
@@ -445,7 +445,7 @@ fn test_delete_call_statement_without_a_call_instruction_is_unpatchable() {
 
 /// The fixture's Go plan for `log(s)` with its lines moved to `line`.
 fn retarget(mut p: MutantPlan, line: u32) -> MutantPlan {
-    use cherenkov_core::plan::{Action, Target};
+    use cherenkov_mutation::plan::{Action, Target};
     if let Action::JumpOnly {
         resume: Target::AfterStatement(span),
     } = &mut p.action
@@ -620,7 +620,7 @@ fn test_body_default_writes_the_sysv_stub_without_touching_callee_saved_register
 #[test]
 fn test_body_default_needs_a_known_default_and_an_abi() {
     let mut p = plan("body-default", 11);
-    p.action = cherenkov_core::plan::Action::ReturnDefault {
+    p.action = cherenkov_mutation::plan::Action::ReturnDefault {
         value_text: None,
         zero_bits: false,
         async_fn: false,
@@ -640,7 +640,7 @@ fn test_body_default_needs_a_known_default_and_an_abi() {
 #[test]
 fn test_body_value_other_than_zero_is_not_patched_by_the_stub() {
     let mut p = plan("body-default", 11);
-    p.action = cherenkov_core::plan::Action::ReturnDefault {
+    p.action = cherenkov_mutation::plan::Action::ReturnDefault {
         value_text: Some("true".into()),
         zero_bits: false,
         async_fn: false,
@@ -683,10 +683,10 @@ fn test_body_default_refuses_a_function_shorter_than_the_stub() {
 #[test]
 fn test_mul_div_swap_and_token_edits_outside_conditions_or_assignments_have_no_rule() {
     let mut p = plan("aor", 6);
-    p.edit = cherenkov_core::edit::Edit::ReplaceToken {
-        capture: cherenkov_core::concept::Capture::Op,
-        from: cherenkov_core::token::Token::Mul,
-        with: cherenkov_core::token::Token::Div,
+    p.edit = cherenkov_mutation::edit::Edit::ReplaceToken {
+        capture: cherenkov_mutation::concept::Capture::Op,
+        from: cherenkov_mutation::token::Token::Mul,
+        with: cherenkov_mutation::token::Token::Div,
     };
     assert_eq!(
         derive(&p, FILE, &is_small("7c02"), &isa()),
@@ -699,9 +699,9 @@ fn test_mul_div_swap_and_token_edits_outside_conditions_or_assignments_have_no_r
 
 fn constant(value: bool) -> MutantPlan {
     let mut p = plan("negate-condition", 12);
-    p.edit = cherenkov_core::edit::Edit::ReplaceWithLiteral {
-        capture: cherenkov_core::concept::Capture::Cond,
-        lit: cherenkov_core::edit::Lit::Bool(value),
+    p.edit = cherenkov_mutation::edit::Edit::ReplaceWithLiteral {
+        capture: cherenkov_mutation::concept::Capture::Cond,
+        lit: cherenkov_mutation::edit::Lit::Bool(value),
     };
     p
 }
@@ -735,7 +735,7 @@ fn rust_plan(mutation: &str) -> MutantPlan {
     let file = syntax
         .analyze(&rust, Path::new("src/lib.rs"), Arc::from(src))
         .unwrap();
-    let ops = cherenkov_core::operator_set::named("cargo-mutants")
+    let ops = cherenkov_mutation::operator_set::named("cargo-mutants")
         .unwrap()
         .operators();
     plan_file(&file, &profile, &ops)
@@ -856,7 +856,7 @@ fn test_or_to_and_in_a_condition_evaluates_the_right_when_the_left_holds() {
 /// `is_local_path`'s chain of `||`, mutated at the operator before `line`,
 /// whose left operand starts the chain and whose right ends on `line`.
 fn chain_swap(line: u32, rhs_end: u32) -> MutantPlan {
-    use cherenkov_core::syntax::{Pos, Span};
+    use cherenkov_mutation::syntax::{Pos, Span};
     let at = |line: u32, col: u32| Pos { byte: 0, line, col };
     let mut p = rust_plan("lcr/or->and");
     p.stop_at = at(129, 5);
@@ -987,7 +987,7 @@ fn expand_line_36() -> Vec<Insn> {
 
 #[test]
 fn test_or_to_and_after_a_compound_left_steers_every_jump_out_of_it() {
-    use cherenkov_core::syntax::{Pos, Span};
+    use cherenkov_mutation::syntax::{Pos, Span};
     let at = |col: u32| Pos {
         byte: 0,
         line: 36,
@@ -1131,13 +1131,13 @@ fn is_local_path_whole() -> Vec<Insn> {
 }
 
 fn comparison(line: u32) -> MutantPlan {
-    use cherenkov_core::syntax::{Pos, Span};
+    use cherenkov_mutation::syntax::{Pos, Span};
     let at = |col: u32| Pos { byte: 0, line, col };
     let mut p = rust_plan("lcr/and->or");
-    p.edit = cherenkov_core::edit::Edit::ReplaceToken {
-        capture: cherenkov_core::concept::Capture::Op,
-        from: cherenkov_core::token::Token::Eq,
-        with: cherenkov_core::token::Token::Ne,
+    p.edit = cherenkov_mutation::edit::Edit::ReplaceToken {
+        capture: cherenkov_mutation::concept::Capture::Op,
+        from: cherenkov_mutation::token::Token::Eq,
+        with: cherenkov_mutation::token::Token::Ne,
     };
     p.stop_at = at(12);
     p.site = Span {
@@ -1154,7 +1154,7 @@ fn comparison(line: u32) -> MutantPlan {
             end: at(22),
         },
     ];
-    p.action = cherenkov_core::plan::Action::InPlace {
+    p.action = cherenkov_mutation::plan::Action::InPlace {
         expr_text: String::new(),
     };
     p
@@ -1178,16 +1178,16 @@ fn test_negating_a_comparison_whose_value_is_stored_flips_its_normalising_and() 
 
 #[test]
 fn test_deleting_a_not_compiled_as_xor_ff_normalises_the_bool_instead() {
-    use cherenkov_core::syntax::{Pos, Span};
+    use cherenkov_mutation::syntax::{Pos, Span};
     let at = |col: u32| Pos {
         byte: 0,
         line: 45,
         col,
     };
     let mut plan = comparison(45);
-    plan.edit = cherenkov_core::edit::Edit::DeleteToken {
-        capture: cherenkov_core::concept::Capture::Op,
-        token: cherenkov_core::token::Token::Not,
+    plan.edit = cherenkov_mutation::edit::Edit::DeleteToken {
+        capture: cherenkov_mutation::concept::Capture::Op,
+        token: cherenkov_mutation::token::Token::Not,
     };
     plan.stop_at = at(16);
     plan.site = Span {
@@ -1228,8 +1228,8 @@ fn test_deleting_a_not_compiled_as_xor_ff_normalises_the_bool_instead() {
 
 #[test]
 fn test_the_function_with_code_at_the_site_is_chosen_among_those_on_its_line() {
-    use cherenkov_core::syntax::{Pos, Span};
     use cherenkov_exec_dap::tierp::at_site;
+    use cherenkov_mutation::syntax::{Pos, Span};
     let insn = |pc, column| Insn {
         pc,
         bytes: hex_bytes("90"),
@@ -1267,16 +1267,16 @@ fn test_the_function_with_code_at_the_site_is_chosen_among_those_on_its_line() {
 
 #[test]
 fn test_deleting_a_not_folded_into_its_branch_inverts_the_branch() {
-    use cherenkov_core::syntax::{Pos, Span};
+    use cherenkov_mutation::syntax::{Pos, Span};
     let at = |col: u32| Pos {
         byte: 0,
         line: 384,
         col,
     };
     let mut plan = comparison(384);
-    plan.edit = cherenkov_core::edit::Edit::DeleteToken {
-        capture: cherenkov_core::concept::Capture::Op,
-        token: cherenkov_core::token::Token::Not,
+    plan.edit = cherenkov_mutation::edit::Edit::DeleteToken {
+        capture: cherenkov_mutation::concept::Capture::Op,
+        token: cherenkov_mutation::token::Token::Not,
     };
     plan.stop_at = at(12);
     plan.site = Span {
@@ -1315,17 +1315,17 @@ fn test_deleting_a_not_folded_into_its_branch_inverts_the_branch() {
 // `Closure::conflicts`: `.filter(|(_, hashes)| hashes.len() > 1)`, an
 // unsigned `>` (`seta`).
 
-fn value_compare(with: cherenkov_core::token::Token) -> MutantPlan {
-    use cherenkov_core::syntax::{Pos, Span};
+fn value_compare(with: cherenkov_mutation::token::Token) -> MutantPlan {
+    use cherenkov_mutation::syntax::{Pos, Span};
     let at = |col: u32| Pos {
         byte: 0,
         line: 96,
         col,
     };
     let mut p = comparison(96);
-    p.edit = cherenkov_core::edit::Edit::ReplaceToken {
-        capture: cherenkov_core::concept::Capture::Op,
-        from: cherenkov_core::token::Token::Gt,
+    p.edit = cherenkov_mutation::edit::Edit::ReplaceToken {
+        capture: cherenkov_mutation::concept::Capture::Op,
+        from: cherenkov_mutation::token::Token::Gt,
         with,
     };
     p.stop_at = at(35);
@@ -1343,7 +1343,7 @@ fn value_compare(with: cherenkov_core::token::Token) -> MutantPlan {
             end: at(51),
         },
     ];
-    p.action = cherenkov_core::plan::Action::EvalReturn {
+    p.action = cherenkov_mutation::plan::Action::EvalReturn {
         value_text: String::new(),
     };
     p
@@ -1374,7 +1374,7 @@ fn conflicts_closure() -> Vec<Insn> {
 
 #[test]
 fn test_a_comparison_made_into_a_value_has_its_setcc_condition_swapped() {
-    use cherenkov_core::token::Token;
+    use cherenkov_mutation::token::Token;
     let at = |with| {
         derive(
             &value_compare(with),
@@ -1394,16 +1394,16 @@ fn test_a_comparison_made_into_a_value_has_its_setcc_condition_swapped() {
 
 #[test]
 fn test_an_integer_not_is_not_undone_as_a_bool_s() {
-    use cherenkov_core::syntax::{Pos, Span};
+    use cherenkov_mutation::syntax::{Pos, Span};
     let at = |col: u32| Pos {
         byte: 0,
         line: 250,
         col,
     };
     let mut plan = comparison(250);
-    plan.edit = cherenkov_core::edit::Edit::DeleteToken {
-        capture: cherenkov_core::concept::Capture::Op,
-        token: cherenkov_core::token::Token::Not,
+    plan.edit = cherenkov_mutation::edit::Edit::DeleteToken {
+        capture: cherenkov_mutation::concept::Capture::Op,
+        token: cherenkov_mutation::token::Token::Not,
     };
     plan.stop_at = at(5);
     plan.site = Span {
@@ -1449,8 +1449,8 @@ fn test_aor_refuses_a_swap_rust_checks_by_comparing_the_result() {
 
 #[test]
 fn test_a_checked_operation_s_overflow_panic_is_its_check_s_target() {
-    use cherenkov_core::syntax::{Pos, Span};
     use cherenkov_exec_dap::tierp::overflow_panic;
+    use cherenkov_mutation::syntax::{Pos, Span};
     // `a + b` on u32: `add edi, esi; mov; cmp edi, eax; jb panic`, and the
     // panic block loads its location and calls.
     let at = |col: u32| Pos {
@@ -1497,8 +1497,8 @@ fn test_a_checked_operation_s_overflow_panic_is_its_check_s_target() {
 
 #[test]
 fn test_every_copy_of_a_generic_with_code_at_the_site_is_kept() {
-    use cherenkov_core::syntax::{Pos, Span};
     use cherenkov_exec_dap::tierp::at_site_all;
+    use cherenkov_mutation::syntax::{Pos, Span};
     let insn = |pc, column| Insn {
         pc,
         bytes: hex_bytes("90"),
@@ -1525,8 +1525,8 @@ fn test_every_copy_of_a_generic_with_code_at_the_site_is_kept() {
 
 #[test]
 fn test_copies_of_a_generic_with_different_code_at_the_site_are_all_kept() {
-    use cherenkov_core::syntax::{Pos, Span};
     use cherenkov_exec_dap::tierp::at_site_all;
+    use cherenkov_mutation::syntax::{Pos, Span};
     let insn = |pc, column| Insn {
         pc,
         bytes: hex_bytes("90"),
@@ -1594,7 +1594,7 @@ fn test_deleting_a_statement_through_an_overflow_check_still_resumes_after_its_c
 
 #[test]
 fn test_the_last_branch_of_a_negated_and_is_not_taken_for_the_not_s() {
-    use cherenkov_core::syntax::{Pos, Span};
+    use cherenkov_mutation::syntax::{Pos, Span};
     // `if !(p() && q())`: the last `test al, 1; jne` decides q, not the
     // whole negation; inverting it is no deleted `!`.
     let at = |col: u32| Pos {
@@ -1603,9 +1603,9 @@ fn test_the_last_branch_of_a_negated_and_is_not_taken_for_the_not_s() {
         col,
     };
     let mut plan = comparison(384);
-    plan.edit = cherenkov_core::edit::Edit::DeleteToken {
-        capture: cherenkov_core::concept::Capture::Op,
-        token: cherenkov_core::token::Token::Not,
+    plan.edit = cherenkov_mutation::edit::Edit::DeleteToken {
+        capture: cherenkov_mutation::concept::Capture::Op,
+        token: cherenkov_mutation::token::Token::Not,
     };
     plan.stop_at = at(8);
     plan.site = Span {

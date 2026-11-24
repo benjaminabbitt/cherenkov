@@ -7,10 +7,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use cherenkov_core::operator_set::named;
-use cherenkov_core::plan::plan_file;
-use cherenkov_core::ports::SyntaxPort;
-use cherenkov_core::syntax::{LanguageId, Span};
+use cherenkov_mutation::operator_set::named;
+use cherenkov_mutation::plan::plan_file;
+use cherenkov_mutation::ports::SyntaxPort;
+use cherenkov_mutation::syntax::{LanguageId, Span};
 use cherenkov_syntax::TreeSitterSyntax;
 
 /// For each logical swap in `src`, (mutation, left operand, right operand).

@@ -116,7 +116,7 @@ the library is loaded.
 ## Where it lives: a language port
 Everything language-specific lives in a language adapter
 (`cherenkov-lang-rust`, `cherenkov-lang-go`, ...) behind one port in
-`cherenkov-core`, so each language does the compatible thing in its own
+`cherenkov-mutation`, so each language does the compatible thing in its own
 terms. The debugger adapter (`cherenkov-exec-dap`) carries out language-
 neutral recipes and knows no language's semantics.
 
@@ -170,7 +170,7 @@ implement it.
   signals, recording) runs against every implementation on every fixture
   it claims; substitution is whatever passes.
 
-Today the Rust pieces are spread over `cherenkov-core` (`DefaultFacts`),
+Today the Rust pieces are spread over `cherenkov-mutation` (`DefaultFacts`),
 `cherenkov-syntax` (`rust_types.rs`), `cherenkov-exec-dap` (`toolchain.rs`,
 `libtest.rs`, Rust semantics inside `layouts.rs` and `gdb_tierb.py`) and
 `cherenkov-cli` (`run_rust`). Extracting them behind the port is a refactor

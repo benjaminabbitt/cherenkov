@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use cherenkov_core::token::Token;
+use cherenkov_mutation::token::Token;
 use serde::Deserialize;
 
 use crate::shapes::{Check, Kind, Shape, Table};

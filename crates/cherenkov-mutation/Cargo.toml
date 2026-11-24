@@ -1,5 +1,5 @@
 [package]
-name = "cherenkov-core"
+name = "cherenkov-mutation"
 description = "Pure domain core: concepts, operators, planner, verdicts, port traits. No I/O."
 version = "0.1.0"
 edition.workspace = true

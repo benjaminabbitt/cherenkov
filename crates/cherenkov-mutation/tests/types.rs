@@ -1,7 +1,7 @@
 //! A type's default by the project's source: derived, written by hand,
 //! absent, or unknown (not the project's, or ambiguous).
 
-use cherenkov_core::types::{DefaultFacts, SourceDefault};
+use cherenkov_mutation::types::{DefaultFacts, SourceDefault};
 
 #[test]
 fn test_a_type_s_default_is_what_its_one_definition_says() {

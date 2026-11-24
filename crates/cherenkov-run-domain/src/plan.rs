@@ -1,6 +1,6 @@
 //! A mutant's plan between the planner's types and the run layer's.
 //!
-//! The planner (`cherenkov-core`) works in its own vocabulary: `Copy` spans,
+//! The planner (`cherenkov-mutation`) works in its own vocabulary: `Copy` spans,
 //! hashable actions and edits, an operator named by a `&'static str`. The
 //! run layer records and ships the plan as the messages of
 //! `proto/cherenkov/mutant/v1/plan.proto`, and what an aggregate or a runner
@@ -15,13 +15,13 @@
 
 use std::path::PathBuf;
 
-use cherenkov_core::concept::Capture as CoreCapture;
-use cherenkov_core::edit::{Edit as CoreEdit, Lit as CoreLit};
-use cherenkov_core::operator::catalog;
-use cherenkov_core::operator_set::{mutation_named, mutations};
-use cherenkov_core::plan::{Action as CoreAction, MutantPlan as CorePlan, Requires, Target};
-use cherenkov_core::syntax::{Pos as CorePos, Span as CoreSpan};
-use cherenkov_core::token::Token as CoreToken;
+use cherenkov_mutation::concept::Capture as CoreCapture;
+use cherenkov_mutation::edit::{Edit as CoreEdit, Lit as CoreLit};
+use cherenkov_mutation::operator::catalog;
+use cherenkov_mutation::operator_set::{mutation_named, mutations};
+use cherenkov_mutation::plan::{Action as CoreAction, MutantPlan as CorePlan, Requires, Target};
+use cherenkov_mutation::syntax::{Pos as CorePos, Span as CoreSpan};
+use cherenkov_mutation::token::Token as CoreToken;
 
 use crate::mutant::Target as WireTarget;
 use crate::mutant::{
@@ -65,7 +65,7 @@ pub fn decode(plan: MutantPlan) -> Result<CorePlan, Unreadable> {
         })
         .transpose()?;
     Ok(CorePlan {
-        id: cherenkov_core::id::MutantId(plan.id),
+        id: cherenkov_mutation::id::MutantId(plan.id),
         operator,
         mutation,
         file: PathBuf::from(plan.file),

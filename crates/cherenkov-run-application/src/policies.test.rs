@@ -6,7 +6,7 @@ use crate::testing::{Core, new_core, new_run};
 use cherenkov_run_ports::Edge;
 
 use angzarr_embedded::v1::Uuid;
-use cherenkov_core::execution::{RawOutcome, Tier};
+use cherenkov_mutation::execution::{RawOutcome, Tier};
 use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, run_event};
 use cherenkov_run_domain::observation;
 use cherenkov_run_domain::{

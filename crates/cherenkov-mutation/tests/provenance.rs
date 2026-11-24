@@ -3,8 +3,8 @@
 
 mod common;
 
-use cherenkov_core::operator_set::{Relation, mutation_named, mutations, named};
-use cherenkov_core::plan::plan_file;
+use cherenkov_mutation::operator_set::{Relation, mutation_named, mutations, named};
+use cherenkov_mutation::plan::plan_file;
 use common::{TOY_SRC, toy_file, toy_profile};
 
 #[test]

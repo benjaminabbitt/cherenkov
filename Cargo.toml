@@ -10,7 +10,7 @@ license = "Apache-2.0 OR BSD-3-Clause"
 publish = false
 
 [workspace.dependencies]
-cherenkov-core = { path = "crates/cherenkov-core" }
+cherenkov-mutation = { path = "crates/cherenkov-mutation" }
 cherenkov-dap-types = { path = "crates/cherenkov-dap-types" }
 cherenkov-exec-dap = { path = "crates/cherenkov-exec-dap" }
 cherenkov-syntax = { path = "crates/cherenkov-syntax" }

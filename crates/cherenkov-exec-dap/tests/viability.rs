@@ -5,14 +5,14 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use cherenkov_core::execution::{ExecError, MutantExecutor, RawOutcome};
 use cherenkov_exec_dap::viability::{
     Blamed, Candidate, Diag, apply_edits, batches, blame, diagnostics, settle,
 };
+use cherenkov_mutation::execution::{ExecError, MutantExecutor, RawOutcome};
 
 fn candidate(file: &str, start: usize, end: usize) -> Candidate {
     Candidate {
-        id: cherenkov_core::id::MutantId(format!("{file}:{start}")),
+        id: cherenkov_mutation::id::MutantId(format!("{file}:{start}")),
         file: PathBuf::from(file),
         start,
         end,
@@ -175,14 +175,14 @@ fn test_a_failed_check_ends_the_settling() {
 
 // --- The executor that reports what rustc rejects.
 
-use cherenkov_core::execution::Budget;
+use cherenkov_mutation::execution::Budget;
 
 struct Fixed(RawOutcome, std::sync::Arc<std::sync::atomic::AtomicUsize>);
 
 impl MutantExecutor for Fixed {
     fn run(
         &mut self,
-        _: &cherenkov_core::plan::MutantPlan,
+        _: &cherenkov_mutation::plan::MutantPlan,
         _: Budget,
     ) -> Result<RawOutcome, ExecError> {
         self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -193,10 +193,10 @@ impl MutantExecutor for Fixed {
     }
 }
 
-fn plan_of(id: &str) -> cherenkov_core::plan::MutantPlan {
-    use cherenkov_core::ports::SyntaxPort;
+fn plan_of(id: &str) -> cherenkov_mutation::plan::MutantPlan {
+    use cherenkov_mutation::ports::SyntaxPort;
     let syntax = cherenkov_syntax::TreeSitterSyntax::builtin().unwrap();
-    let rust = cherenkov_core::syntax::LanguageId::new("rust");
+    let rust = cherenkov_mutation::syntax::LanguageId::new("rust");
     let profile = syntax
         .profiles()
         .into_iter()
@@ -210,11 +210,14 @@ fn plan_of(id: &str) -> cherenkov_core::plan::MutantPlan {
             std::sync::Arc::from(src),
         )
         .unwrap();
-    let mut plan =
-        cherenkov_core::plan::plan_file(&file, &profile, &cherenkov_core::operator::catalog())
-            .plans
-            .remove(0);
-    plan.id = cherenkov_core::id::MutantId(id.into());
+    let mut plan = cherenkov_mutation::plan::plan_file(
+        &file,
+        &profile,
+        &cherenkov_mutation::operator::catalog(),
+    )
+    .plans
+    .remove(0);
+    plan.id = cherenkov_mutation::id::MutantId(id.into());
     plan
 }
 
@@ -223,12 +226,12 @@ fn test_what_rustc_rejects_is_unviable_and_never_run_and_the_rest_is_left_alone(
     use cherenkov_exec_dap::viability::RustcRejects;
     use std::sync::atomic::{AtomicUsize, Ordering};
     let rejected = std::sync::Arc::new(HashMap::from([(
-        cherenkov_core::id::MutantId("bad".into()),
+        cherenkov_mutation::id::MutantId("bad".into()),
         "error[E0599]: no function".to_string(),
     )]));
     let killed = RawOutcome::Exited {
         code: 1,
-        tier: cherenkov_core::execution::Tier::P,
+        tier: cherenkov_mutation::execution::Tier::P,
         wall: std::time::Duration::ZERO,
     };
     let runs = std::sync::Arc::new(AtomicUsize::new(0));
@@ -260,7 +263,7 @@ pub fn d() -> u32 { 4 }
 fn candidate_at(lib: &str, body: &str, with: &str) -> Candidate {
     let start = lib.find(body).unwrap();
     Candidate {
-        id: cherenkov_core::id::MutantId(body.to_string()),
+        id: cherenkov_mutation::id::MutantId(body.to_string()),
         file: PathBuf::from("src/lib.rs"),
         start,
         end: start + body.len(),
@@ -268,8 +271,8 @@ fn candidate_at(lib: &str, body: &str, with: &str) -> Candidate {
     }
 }
 
-fn id(s: &str) -> cherenkov_core::id::MutantId {
-    cherenkov_core::id::MutantId(s.to_string())
+fn id(s: &str) -> cherenkov_mutation::id::MutantId {
+    cherenkov_mutation::id::MutantId(s.to_string())
 }
 
 fn workspace(name: &str) -> PathBuf {
@@ -347,10 +350,10 @@ fn test_a_project_that_does_not_pass_cargo_check_is_not_checked() {
 // --- Which plans are checked: a function body's replacement whose text is
 // still in the file where the plan found it.
 
-fn fn_value_plan(src: &str) -> cherenkov_core::plan::MutantPlan {
-    use cherenkov_core::ports::SyntaxPort;
+fn fn_value_plan(src: &str) -> cherenkov_mutation::plan::MutantPlan {
+    use cherenkov_mutation::ports::SyntaxPort;
     let syntax = cherenkov_syntax::TreeSitterSyntax::builtin().unwrap();
-    let rust = cherenkov_core::syntax::LanguageId::new("rust");
+    let rust = cherenkov_mutation::syntax::LanguageId::new("rust");
     let profile = syntax
         .profiles()
         .into_iter()
@@ -359,10 +362,10 @@ fn fn_value_plan(src: &str) -> cherenkov_core::plan::MutantPlan {
     let file = syntax
         .analyze(&rust, Path::new("lib.rs"), std::sync::Arc::from(src))
         .unwrap();
-    cherenkov_core::plan::plan_file(
+    cherenkov_mutation::plan::plan_file(
         &file,
         &profile,
-        &cherenkov_core::operator_set::named("cargo-mutants")
+        &cherenkov_mutation::operator_set::named("cargo-mutants")
             .unwrap()
             .operators(),
     )
@@ -423,7 +426,7 @@ struct Spy(std::sync::Arc<std::sync::Mutex<Asked>>);
 impl MutantExecutor for Spy {
     fn run(
         &mut self,
-        _: &cherenkov_core::plan::MutantPlan,
+        _: &cherenkov_mutation::plan::MutantPlan,
         _: Budget,
     ) -> Result<RawOutcome, ExecError> {
         Ok(RawOutcome::NotReached { reason: "r".into() })
@@ -433,11 +436,11 @@ impl MutantExecutor for Spy {
     }
     fn driven(
         &mut self,
-        plans: &[cherenkov_core::plan::MutantPlan],
+        plans: &[cherenkov_mutation::plan::MutantPlan],
         _: Budget,
-    ) -> Result<Option<Vec<cherenkov_core::execution::Driven>>, ExecError> {
+    ) -> Result<Option<Vec<cherenkov_mutation::execution::Driven>>, ExecError> {
         Ok(Some(vec![
-            cherenkov_core::execution::Driven::Every;
+            cherenkov_mutation::execution::Driven::Every;
             plans.len()
         ]))
     }
@@ -469,7 +472,7 @@ fn test_everything_else_is_the_inner_executors() {
         executor
             .driven(std::slice::from_ref(&plan), budget)
             .unwrap(),
-        Some(vec![cherenkov_core::execution::Driven::Every])
+        Some(vec![cherenkov_mutation::execution::Driven::Every])
     );
     assert_eq!(
         executor
