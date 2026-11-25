@@ -366,7 +366,8 @@ mod built {
         let toolchain = rustup_toolchain(&fixture());
         match resolve(toolchain.as_deref(), &request, &layout) {
             Err(Refusal::Unsupported(why)) => {
-                assert!(why.contains("laid out differently"), "{why}");
+                let why = why.to_string();
+                assert!(why.contains("laid-out-differently"), "{why}");
                 assert!(why.contains("HashSet<u32>"), "{why}");
             }
             other => panic!("{other:?}"),
@@ -392,7 +393,9 @@ mod built {
         cherenkov_exec_dap::support_lib::request(toolchain.as_deref(), &bad);
         assert!(resolve(toolchain.as_deref(), &good, &layout).is_ok());
         match resolve(toolchain.as_deref(), &bad, &layout) {
-            Err(Refusal::Unviable(why)) => assert!(why.contains("mismatched types"), "{why}"),
+            Err(Refusal::Unviable(why)) => {
+                assert!(why.to_string().contains("mismatched types"), "{why}")
+            }
             other => panic!("{other:?}"),
         }
     }

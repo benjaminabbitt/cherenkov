@@ -8,6 +8,7 @@ use std::time::Duration;
 use cherenkov_exec_dap::gdb::{GdbConfig, GdbExecutor, GdbSession};
 use cherenkov_exec_dap::isa::Isa;
 use cherenkov_exec_dap::native::{NativeSession, RunEnd};
+use cherenkov_exec_dap::reason::Reason;
 use cherenkov_exec_dap::tierp::derive;
 use cherenkov_exec_dap::toolchain::build_rust_test_binaries;
 use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
@@ -247,7 +248,7 @@ fn test_live_gdb_an_evaluation_that_never_finishes_is_refused_quickly() {
         started.elapsed()
     );
     let why = run.refused.expect("refused");
-    assert!(why.contains("did not finish"), "{why}");
+    assert!(matches!(why, Reason::EvaluationHung { .. }), "{why}");
     // GDB is stuck in the call: the session is not reused.
     assert!(!s.restart().unwrap());
 }

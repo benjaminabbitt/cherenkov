@@ -16,6 +16,7 @@ pub mod libtest;
 pub mod lines;
 pub mod load;
 pub mod native;
+pub mod reason;
 pub mod routing;
 pub mod rpc;
 pub mod shapes;
@@ -23,6 +24,7 @@ pub mod stubs;
 pub mod support_lib;
 pub mod tierp;
 pub mod toolchain;
+pub mod unbuildable;
 pub mod viability;
 pub mod x86;
 

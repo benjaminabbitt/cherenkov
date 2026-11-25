@@ -11,12 +11,15 @@ use angzarr_embedded::testing::Harness;
 use angzarr_embedded::v1::command_page;
 use angzarr_embedded::v1::{CommandBook, CommandPage, Cover, Fact, FactOrigin, Uuid};
 use cherenkov_mutation::execution::{RawOutcome, Tier as CoreTier};
+use coded_diagnostic::{Arg, Report};
 
 use crate::__MutantEvent as MutantEvent;
+use crate::failure::Failure;
 use crate::mutant::{
     DebuggerFailed, ExecutableMutant, KilledBy, Observation, Outcome, PlannedMutant, ProgramRun,
     ProgramRunReported, ProgramRunResult, Ran, RunId, Unit,
 };
+use crate::why;
 use crate::{Mutant, MutantDecided, MutantPlanned, ProgramRan, Verdict, mutant_root, observation};
 
 fn harness() -> Harness<Mutant> {
@@ -204,7 +207,20 @@ fn test_a_mutant_no_program_calls_is_not_called_when_the_last_says_so() {
     let events = told(&mut harness, not_called(1));
     let decided = outcome(&events);
     assert_eq!(decided.verdict, Verdict::NotCalled);
-    assert_eq!((decided.tier, decided.reason), (None, None));
+    assert_eq!(
+        (decided.tier, decided.reason, decided.why),
+        (None, None, None)
+    );
+}
+
+/// The reason an outcome records, read back as a report.
+fn said(outcome: &Outcome) -> Option<Report> {
+    outcome.why.as_ref().map(|why| why::decode(Some(why), ""))
+}
+
+/// What the run records of a debugger that failed for `cause`.
+fn debugger_failed(cause: Report) -> Report {
+    Report::new("cherenkov-run-domain-debugger-failed").arg("cause", Arg::nested(&cause))
 }
 
 #[test]
@@ -212,12 +228,16 @@ fn test_a_mutant_whose_code_no_run_reached_is_not_reached_with_the_reason() {
     let mut harness = harness();
     harness.given([planned(1)]);
     let missed = RawOutcome::NotReached {
-        reason: "the site never ran".to_string(),
+        why: Report::new("cherenkov-exec-dap-never-ran"),
     };
     let events = told(&mut harness, ran(0, &missed, 3, &[]));
     let decided = outcome(&events);
     assert_eq!(decided.verdict, Verdict::NotReached);
-    assert_eq!(decided.reason.as_deref(), Some("the site never ran"));
+    assert_eq!(
+        said(&decided),
+        Some(Report::new("cherenkov-exec-dap-never-ran"))
+    );
+    assert_eq!(decided.reason, None);
 }
 
 #[test]
@@ -225,12 +245,15 @@ fn test_a_mutant_an_executor_cannot_apply_is_unsupported_at_once_with_the_reason
     let mut harness = harness();
     harness.given([planned(2)]);
     let refused = RawOutcome::Unsupported {
-        reason: "inlined function".to_string(),
+        why: Report::new("cherenkov-exec-dap-inlined"),
     };
     let events = told(&mut harness, ran(0, &refused, 1, &[]));
     let decided = outcome(&events);
     assert_eq!(decided.verdict, Verdict::Unsupported);
-    assert_eq!(decided.reason.as_deref(), Some("inlined function"));
+    assert_eq!(
+        said(&decided),
+        Some(Report::new("cherenkov-exec-dap-inlined"))
+    );
 }
 
 #[test]
@@ -238,12 +261,15 @@ fn test_a_mutant_that_would_not_compile_is_unviable_at_once_with_the_reason() {
     let mut harness = harness();
     harness.given([planned(2)]);
     let refused = RawOutcome::Unviable {
-        reason: "no default".to_string(),
+        why: Report::new("cherenkov-exec-dap-no-default").arg("name", "Settle"),
     };
     let events = told(&mut harness, ran(0, &refused, 1, &[]));
     let decided = outcome(&events);
     assert_eq!(decided.verdict, Verdict::Unviable);
-    assert_eq!(decided.reason.as_deref(), Some("no default"));
+    assert_eq!(
+        said(&decided),
+        Some(Report::new("cherenkov-exec-dap-no-default").arg("name", "Settle"))
+    );
 }
 
 #[test]
@@ -263,14 +289,16 @@ fn test_a_debugger_that_fails_on_a_mutant_makes_it_unsupported_saying_what_faile
     let decided = outcome(&events);
     assert_eq!(decided.verdict, Verdict::Unsupported);
     assert_eq!(
-        decided.reason.as_deref(),
-        Some("the debugger failed on this mutant: evaluate: dap connection closed")
+        said(&decided),
+        Some(debugger_failed(Report::of(&Failure::Recorded {
+            reason: "evaluate: dap connection closed".to_string()
+        })))
     );
     assert_eq!((decided.tier, decided.took_ms), (None, 5));
 }
 
 #[test]
-fn test_a_coded_debugger_failure_is_named_by_its_code_in_the_reason() {
+fn test_a_coded_debugger_failure_is_carried_whole_in_the_reason() {
     let mut harness = harness();
     harness.given([planned(2)]);
     let events = told(
@@ -289,8 +317,10 @@ fn test_a_coded_debugger_failure_is_named_by_its_code_in_the_reason() {
     let decided = outcome(&events);
     assert_eq!(decided.verdict, Verdict::Unsupported);
     assert_eq!(
-        decided.reason.as_deref(),
-        Some("the debugger failed on this mutant: cherenkov-exec-dap-rpc detail=closed")
+        said(&decided),
+        Some(debugger_failed(
+            Report::new("cherenkov-exec-dap-rpc").arg("detail", "closed")
+        ))
     );
 }
 

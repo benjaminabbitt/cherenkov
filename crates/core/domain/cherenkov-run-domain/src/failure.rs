@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use coded_diagnostic::{Arg, Diagnostic, code};
+use coded_diagnostic::{Arg, Diagnostic, Report, code};
 
 /// Why the run domain failed a program or a run itself.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -18,6 +18,9 @@ pub enum Failure {
         outcome: String,
         failing: String,
     },
+    /// The debugger (or the harness driving it) failed on a mutant, for
+    /// `cause`: the mutant is not run.
+    DebuggerFailed { cause: Report },
 }
 
 impl fmt::Display for Failure {
@@ -34,6 +37,7 @@ impl Diagnostic for Failure {
             Failure::Recorded { .. } => code!("recorded-reason"),
             Failure::BaselineFailed { .. } => code!("baseline-failed"),
             Failure::ProgramBaselineFailed { .. } => code!("program-baseline-failed"),
+            Failure::DebuggerFailed { .. } => code!("debugger-failed"),
         }
     }
 
@@ -53,6 +57,7 @@ impl Diagnostic for Failure {
                 ("outcome", outcome.as_str().into()),
                 ("failing", failing.as_str().into()),
             ],
+            Failure::DebuggerFailed { cause } => vec![("cause", Arg::nested(cause))],
         }
     }
 }
@@ -70,6 +75,9 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             program: "p".into(),
             outcome: "o".into(),
             failing: "f".into(),
+        }),
+        Box::new(Failure::DebuggerFailed {
+            cause: Report::new("cherenkov-exec-dap-session-no-restart"),
         }),
     ]
 }

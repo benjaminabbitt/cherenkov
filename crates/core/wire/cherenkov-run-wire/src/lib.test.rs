@@ -98,6 +98,7 @@ fn outcome() -> Outcome {
             },
         ],
         reason: Some("exit 101".to_string()),
+        why: None,
     }
 }
 
@@ -148,12 +149,15 @@ fn observations() -> Vec<Observation> {
         }),
         Kind::NotReached(NotReached {
             reason: "not linked".to_string(),
+            why: None,
         }),
         Kind::Unsupported(Unsupported {
             reason: "inlined".to_string(),
+            why: None,
         }),
         Kind::Unviable(Unviable {
             reason: "no default".to_string(),
+            why: None,
         }),
     ]
     .into_iter()
@@ -566,13 +570,35 @@ fn coded_lines() -> Vec<String> {
     ]
 }
 
-/// The lines that carry a reason whose cause has no args of its own.
+/// The lines that carry a reason whose cause has no args of its own, and
+/// those of an outcome's reasons, coded.
 fn nested_lines() -> Vec<String> {
-    vec![line(&ProgramFailed {
-        program: None,
-        reason: String::new(),
-        why: Some(why_bare()),
-    })]
+    use observation::Kind;
+    let coded = |kind| line(&Observation { kind: Some(kind) });
+    vec![
+        line(&ProgramFailed {
+            program: None,
+            reason: String::new(),
+            why: Some(why_bare()),
+        }),
+        coded(Kind::NotReached(NotReached {
+            reason: String::new(),
+            why: Some(why()),
+        })),
+        coded(Kind::Unsupported(Unsupported {
+            reason: String::new(),
+            why: Some(why_many()),
+        })),
+        coded(Kind::Unviable(Unviable {
+            reason: String::new(),
+            why: Some(why_bare()),
+        })),
+        line(&Outcome {
+            reason: None,
+            why: Some(why_many()),
+            ..outcome()
+        }),
+    ]
 }
 
 /// A test program's run of a mutant that observed a failing test.

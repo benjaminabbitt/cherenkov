@@ -3,7 +3,9 @@
 //! (`cherenkov.mutant.v1.Observation`). As the plan's ([`crate::plan`]),
 //! one place for both directions, and a value that goes through both comes
 //! back equal; a duration travels as `google.protobuf.Duration`, exact to
-//! the nanosecond.
+//! the nanosecond. A reason an executor gives is a coded one
+//! ([`why`]); an observation recorded before reasons were coded holds its
+//! text, which reads back as a [`crate::failure::Failure::Recorded`].
 
 use std::time::Duration;
 
@@ -15,6 +17,7 @@ use crate::mutant::{
     Unsupported, Unviable,
 };
 use crate::rejection::Unreadable;
+use crate::why;
 
 /// `raw`, as the run layer records it.
 pub fn encode(raw: &RawOutcome) -> Observation {
@@ -40,14 +43,17 @@ pub fn encode(raw: &RawOutcome) -> Observation {
                 tier: tier_of(*tier),
                 wall: Some(duration(*wall)),
             }),
-            RawOutcome::NotReached { reason } => ObservationKind::NotReached(NotReached {
-                reason: reason.clone(),
+            RawOutcome::NotReached { why } => ObservationKind::NotReached(NotReached {
+                reason: String::new(),
+                why: Some(why::encode(why)),
             }),
-            RawOutcome::Unsupported { reason } => ObservationKind::Unsupported(Unsupported {
-                reason: reason.clone(),
+            RawOutcome::Unsupported { why } => ObservationKind::Unsupported(Unsupported {
+                reason: String::new(),
+                why: Some(why::encode(why)),
             }),
-            RawOutcome::Unviable { reason } => ObservationKind::Unviable(Unviable {
-                reason: reason.clone(),
+            RawOutcome::Unviable { why } => ObservationKind::Unviable(Unviable {
+                reason: String::new(),
+                why: Some(why::encode(why)),
             }),
         },
     }
@@ -89,9 +95,15 @@ pub fn decode(observation: Observation) -> Result<RawOutcome, Unreadable> {
             tier: core_tier(t.tier),
             wall: wall(t.wall, "wall")?,
         },
-        ObservationKind::NotReached(n) => RawOutcome::NotReached { reason: n.reason },
-        ObservationKind::Unsupported(u) => RawOutcome::Unsupported { reason: u.reason },
-        ObservationKind::Unviable(u) => RawOutcome::Unviable { reason: u.reason },
+        ObservationKind::NotReached(n) => RawOutcome::NotReached {
+            why: why::decode(n.why.as_ref(), &n.reason),
+        },
+        ObservationKind::Unsupported(u) => RawOutcome::Unsupported {
+            why: why::decode(u.why.as_ref(), &u.reason),
+        },
+        ObservationKind::Unviable(u) => RawOutcome::Unviable {
+            why: why::decode(u.why.as_ref(), &u.reason),
+        },
     })
 }
 

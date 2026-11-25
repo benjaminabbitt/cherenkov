@@ -5,6 +5,11 @@
 
 use std::time::Duration;
 
+use coded_diagnostic::{Arg, Diagnostic, code};
+
+/// What an executor says of a mutant it did not run: the type of the
+/// `why` of [`RawOutcome`]'s refusals.
+pub use coded_diagnostic::Report;
 use serde::Serialize;
 
 use crate::verdict::Verdict;
@@ -61,8 +66,7 @@ impl Budget {
 }
 
 /// What an executor observed. Facts only; no verdict.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "kebab-case", tag = "outcome")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RawOutcome {
     /// The test process ran to completion with this exit code.
     Exited {
@@ -81,22 +85,52 @@ pub enum RawOutcome {
     /// The run exceeded the budget and was killed.
     TimedOut { tier: Tier, wall: Duration },
     /// The mutated code is not in what this executor runs (for example, a
-    /// test binary that does not link the function).
-    NotReached { reason: String },
-    /// The executor cannot apply this plan; `reason` says why.
-    Unsupported { reason: String },
+    /// test binary that does not link the function); `why` says how.
+    NotReached { why: Report },
+    /// The executor cannot apply this plan; `why` says why.
+    Unsupported { why: Report },
     /// The mutated source would not compile (a value of a type that has no
-    /// such constructor); `reason` says why.
-    Unviable { reason: String },
+    /// such constructor); `why` says why.
+    Unviable { why: Report },
+}
+
+/// Why a mutant was reached by no program: there was none to run it in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unreached {
+    /// The mutant's outcomes are none: no test binary.
+    NoTestBinary,
+}
+
+impl std::fmt::Display for Unreached {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        coded_diagnostic::display(self, f)
+    }
+}
+
+impl std::error::Error for Unreached {}
+
+impl Diagnostic for Unreached {
+    fn code(&self) -> &str {
+        match self {
+            Unreached::NoTestBinary => code!("no-test-binary"),
+        }
+    }
+
+    fn args(&self) -> Vec<(&str, Arg)> {
+        Vec::new()
+    }
 }
 
 /// A verdict with the facts it was derived from.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Outcome {
     pub verdict: Verdict,
     /// Every verdict records the tier that applied the mutant (design section 7).
     pub tier: Option<Tier>,
+    /// How a mutant was killed: the exit code or the crash.
     pub detail: Option<String>,
+    /// Why a mutant was not run, or not reached.
+    pub why: Option<Report>,
 }
 
 /// What an executor observed of one run: the outcome of the process, and
@@ -201,11 +235,13 @@ pub fn classify(raw: &RawOutcome) -> Outcome {
             verdict: Verdict::Survived,
             tier: Some(*tier),
             detail: None,
+            why: None,
         },
         RawOutcome::Exited { code, tier, .. } => Outcome {
             verdict: Verdict::Killed,
             tier: Some(*tier),
             detail: Some(format!("exit code {code}")),
+            why: None,
         },
         RawOutcome::Crashed {
             kind,
@@ -216,26 +252,31 @@ pub fn classify(raw: &RawOutcome) -> Outcome {
             verdict: Verdict::Killed,
             tier: Some(*tier),
             detail: Some(format!("{kind}: {message}")),
+            why: None,
         },
         RawOutcome::TimedOut { tier, .. } => Outcome {
             verdict: Verdict::Timeout,
             tier: Some(*tier),
             detail: None,
+            why: None,
         },
-        RawOutcome::NotReached { reason } => Outcome {
+        RawOutcome::NotReached { why } => Outcome {
             verdict: Verdict::NotReached,
             tier: None,
-            detail: Some(reason.clone()),
+            detail: None,
+            why: Some(why.clone()),
         },
-        RawOutcome::Unsupported { reason } => Outcome {
+        RawOutcome::Unsupported { why } => Outcome {
             verdict: Verdict::UnsupportedByExecutor,
             tier: None,
-            detail: Some(reason.clone()),
+            detail: None,
+            why: Some(why.clone()),
         },
-        RawOutcome::Unviable { reason } => Outcome {
+        RawOutcome::Unviable { why } => Outcome {
             verdict: Verdict::Unviable,
             tier: None,
-            detail: Some(reason.clone()),
+            detail: None,
+            why: Some(why.clone()),
         },
     }
 }
@@ -281,7 +322,7 @@ pub fn combine(outcomes: Vec<RawOutcome>) -> RawOutcome {
             .into_iter()
             .next()
             .unwrap_or(RawOutcome::NotReached {
-                reason: "no test binary".into(),
+                why: Report::of(&Unreached::NoTestBinary),
             }),
     }
 }

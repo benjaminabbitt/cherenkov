@@ -748,6 +748,7 @@ fn outcome(verdict: Verdict) -> Outcome {
         tests_run: Vec::new(),
         killed_by: Vec::new(),
         reason: None,
+        why: None,
         tier: Some(Tier::P),
     }
 }

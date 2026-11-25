@@ -1,9 +1,16 @@
 use std::time::Duration;
 
 use cherenkov_mutation::execution::{
-    Budget, Failure, Observed, Outcome, RawOutcome, TestReport, TestResult, Tier, classify, combine,
+    Budget, Failure, Observed, Outcome, RawOutcome, TestReport, TestResult, Tier, Unreached,
+    classify, combine,
 };
 use cherenkov_mutation::verdict::Verdict;
+use coded_diagnostic::Report;
+
+/// A reason as an executor gives one.
+fn because(code: &str) -> Report {
+    Report::new(format!("cherenkov-exec-dap-{code}"))
+}
 
 fn exited(code: i32) -> RawOutcome {
     RawOutcome::Exited {
@@ -20,7 +27,8 @@ fn test_classify_passing_tests_is_survived() {
         Outcome {
             verdict: Verdict::Survived,
             tier: Some(Tier::P),
-            detail: None
+            detail: None,
+            why: None,
         }
     );
 }
@@ -33,7 +41,8 @@ fn test_classify_failing_or_crashing_tests_is_killed_with_exit_code() {
             Outcome {
                 verdict: Verdict::Killed,
                 tier: Some(Tier::P),
-                detail: Some(format!("exit code {code}"))
+                detail: Some(format!("exit code {code}")),
+                why: None,
             }
         );
     }
@@ -52,14 +61,15 @@ fn test_classify_timed_out_is_timeout() {
 #[test]
 fn test_classify_unsupported_keeps_the_reason_and_has_no_tier() {
     let raw = RawOutcome::Unsupported {
-        reason: "no conditional jump on line 12".into(),
+        why: because("unpatchable-conditional-jumps"),
     };
     assert_eq!(
         classify(&raw),
         Outcome {
             verdict: Verdict::UnsupportedByExecutor,
             tier: None,
-            detail: Some("no conditional jump on line 12".into()),
+            detail: None,
+            why: Some(because("unpatchable-conditional-jumps")),
         }
     );
 }
@@ -109,6 +119,7 @@ fn test_classify_crash_caught_by_the_debugger_is_killed_with_its_message() {
             verdict: Verdict::Killed,
             tier: Some(Tier::P),
             detail: Some("panic: runtime error: index out of range [2] with length 2".into()),
+            why: None,
         }
     );
 }
@@ -129,7 +140,7 @@ fn exit(code: i32, wall: u64) -> RawOutcome {
 
 fn not_reached() -> RawOutcome {
     RawOutcome::NotReached {
-        reason: "not in this binary".into(),
+        why: because("not-in-this-program"),
     }
 }
 
@@ -140,7 +151,8 @@ fn test_classify_not_reached_keeps_the_reason() {
         Outcome {
             verdict: Verdict::NotReached,
             tier: None,
-            detail: Some("not in this binary".into())
+            detail: None,
+            why: Some(because("not-in-this-program")),
         }
     );
 }
@@ -182,7 +194,7 @@ fn test_combine_nothing_reached_is_not_reached() {
     assert_eq!(
         combine(vec![]),
         RawOutcome::NotReached {
-            reason: "no test binary".into()
+            why: Report::of(&Unreached::NoTestBinary)
         }
     );
 }
@@ -190,7 +202,7 @@ fn test_combine_nothing_reached_is_not_reached() {
 #[test]
 fn test_combine_unsupported_anywhere_without_a_detection_is_unsupported() {
     let unsupported = RawOutcome::Unsupported {
-        reason: "no tier P rule".into(),
+        why: because("unpatchable-unsupported-edit"),
     };
     assert_eq!(combine(vec![exit(0, 1), unsupported.clone()]), unsupported);
     assert_eq!(combine(vec![unsupported.clone(), exit(1, 1)]), exit(1, 1));
@@ -201,11 +213,11 @@ fn test_classify_unviable_keeps_the_reason_has_no_tier_and_is_not_scored() {
     // The mutated source would not compile (cargo-mutants' "unviable"):
     // no test can say anything about it.
     let o = classify(&RawOutcome::Unviable {
-        reason: "Remote has no Default".into(),
+        why: because("no-default"),
     });
     assert_eq!(o.verdict, Verdict::Unviable);
     assert_eq!(o.tier, None);
-    assert_eq!(o.detail.as_deref(), Some("Remote has no Default"));
+    assert_eq!(o.why, Some(because("no-default")));
     assert!(!o.verdict.counts_in_score() && !o.verdict.detected());
 }
 
@@ -213,10 +225,10 @@ fn test_classify_unviable_keeps_the_reason_has_no_tier_and_is_not_scored() {
 fn test_combine_unviable_anywhere_without_a_detection_is_unviable() {
     let got = combine(vec![
         RawOutcome::NotReached {
-            reason: "elsewhere".into(),
+            why: because("not-in-this-program"),
         },
         RawOutcome::Unviable {
-            reason: "no Default".into(),
+            why: because("no-default"),
         },
     ]);
     assert!(matches!(got, RawOutcome::Unviable { .. }), "{got:?}");

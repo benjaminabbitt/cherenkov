@@ -9,3 +9,4 @@ cherenkov-mutation-invalid-set = { $path } is not an operator set: { $cause }
 cherenkov-mutation-unknown-mutation = no mutation named { $name }
 cherenkov-mutation-mutation-alias = { $alias } is another tool's name for { $canonical }
 cherenkov-mutation-unknown-skip = no skip kind named { $name }
+cherenkov-mutation-no-test-binary = no test binary

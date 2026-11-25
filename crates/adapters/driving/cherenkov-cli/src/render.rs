@@ -4,8 +4,8 @@
 //! Each has the event's name, the run and when it was recorded, and is
 //! usable on its own.
 
+use crate::code::reason_code;
 use angzarr_embedded::v1::{EventPage, Uuid};
-use cherenkov_mutation::deficiency;
 use cherenkov_run_domain::events::{RunEvent, recorded_at, run_event};
 use cherenkov_run_domain::why;
 use cherenkov_run_domain::{
@@ -69,7 +69,7 @@ pub fn documents(run: &Uuid, page: &EventPage, catalog: &Catalog) -> Vec<Documen
         }))],
         RunEvent::DecisionRecorded(record) => record
             .decision
-            .and_then(|decision| decided(run, at, decision))
+            .and_then(|decision| decided(run, at, decision, catalog))
             .map(Event::Decided)
             .map(document)
             .into_iter()
@@ -127,7 +127,12 @@ fn said(catalog: &Catalog, report: &Report) -> String {
 /// A decided mutant's document: the mutant, its verdict, and what the
 /// verdict says (who killed it, who executed it, why it was not run). None
 /// for a decision that holds no outcome.
-fn decided(run: &Uuid, at: angzarr_embedded::Timestamp, d: MutantDecided) -> Option<Decided> {
+fn decided(
+    run: &Uuid,
+    at: angzarr_embedded::Timestamp,
+    d: MutantDecided,
+    catalog: &Catalog,
+) -> Option<Decided> {
     let Outcome {
         verdict,
         tier,
@@ -135,12 +140,16 @@ fn decided(run: &Uuid, at: angzarr_embedded::Timestamp, d: MutantDecided) -> Opt
         tests_run,
         killed_by,
         reason,
+        why,
     } = d.verdict?;
-    let (reason, reason_code) = match reason {
-        Some(reason) => {
-            let code = reason_code(verdict, &reason);
-            (Some(reason), Some(code))
-        }
+    // A reason recorded as text (before reasons were coded) reads as a
+    // recorded one.
+    let recorded = match (why.as_ref(), reason) {
+        (None, None) => None,
+        (why, text) => Some(why::decode(why, &text.unwrap_or_default())),
+    };
+    let (reason, reason_code) = match recorded {
+        Some(why) => (Some(said(catalog, &why)), Some(reason_code(verdict, &why))),
         None => (None, None),
     };
     Some(Decided {
@@ -161,18 +170,6 @@ fn decided(run: &Uuid, at: angzarr_embedded::Timestamp, d: MutantDecided) -> Opt
         reason,
         reason_code,
     })
-}
-
-/// The short machine-readable form of the `reason` a mutant of `verdict`
-/// was not run for: its own for an unviable mutant or one the debugger
-/// cannot run, the verdict's name for a mutant no test calls or reaches.
-fn reason_code(verdict: Verdict, reason: &str) -> String {
-    match verdict {
-        Verdict::Unviable => deficiency::unviable_code(reason).to_string(),
-        Verdict::NotCalled | Verdict::NotReached => names::verdict(verdict.into()),
-        Verdict::Unsupported | Verdict::Error => deficiency::unsupported_code(reason).to_string(),
-        _ => "none".to_string(),
-    }
 }
 
 fn wire_mutant(m: PlannedMutant) -> wire::PlannedMutant {

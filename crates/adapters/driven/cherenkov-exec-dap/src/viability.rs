@@ -17,10 +17,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::error::Toolchain;
+use crate::reason::Reason;
 use cherenkov_mutation::execution::{Budget, Observed, RawOutcome};
 use cherenkov_mutation::id::MutantId;
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_ports::executor::{Driven, ExecError, MutantExecutor, Recording};
+use coded_diagnostic::Report;
 use serde_json::Value;
 
 /// A mutant to check: its text replaces `start..end` of `file` (relative to
@@ -480,9 +482,13 @@ impl<E> RustcRejects<E> {
     /// The outcome of a mutant rustc rejects: no program can be built from
     /// its source, so no debugger runs it.
     fn unviable(&self, plan: &MutantPlan) -> Option<RawOutcome> {
-        self.rejected.get(&plan.id).map(|why| RawOutcome::Unviable {
-            reason: format!("rustc rejects the mutant: {why}"),
-        })
+        self.rejected
+            .get(&plan.id)
+            .map(|detail| RawOutcome::Unviable {
+                why: Report::of(&Reason::RustcRejects {
+                    detail: detail.clone(),
+                }),
+            })
     }
 }
 

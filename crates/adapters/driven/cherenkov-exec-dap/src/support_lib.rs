@@ -15,12 +15,14 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 
+use coded_diagnostic::Report;
 use object::{Object, ObjectSymbol};
 use serde_json::Value;
 
 use cherenkov_mutation::types::{DefaultFacts, SourceDefault};
 
 use crate::layouts::{Layout, Layouts, Refusal};
+use crate::unbuildable::Unconstructed;
 
 /// A value to construct: its type (public Rust paths, and mirrors) and its
 /// source text.
@@ -282,7 +284,7 @@ pub fn request_in(
     value: &str,
     layouts: &Layouts,
     facts: &DefaultFacts,
-) -> Result<Request, String> {
+) -> Result<Request, Refusal> {
     let mut mirroring = Mirroring {
         layouts,
         facts,
@@ -290,7 +292,7 @@ pub fn request_in(
         sources: BTreeMap::new(),
         all_default: true,
     };
-    let ty = parse_type(dwarf, Some(&mut mirroring), true)?;
+    let ty = parse_type(dwarf, Some(&mut mirroring), true).map_err(not_a_type)?;
     requested(ty, value, mirroring.sources)
 }
 
@@ -298,19 +300,31 @@ pub fn request_in(
 /// A `Poll` the value is not one of is the poll of a future not known as
 /// the mutated fn's body: what the value would compile as is unknown, so
 /// it is refused rather than built (and found unviable).
-pub fn request_for(dwarf: &str, value: &str) -> Result<Request, String> {
-    requested(public_type(dwarf)?, value, BTreeMap::new())
+pub fn request_for(dwarf: &str, value: &str) -> Result<Request, Refusal> {
+    requested(
+        public_type(dwarf).map_err(not_a_type)?,
+        value,
+        BTreeMap::new(),
+    )
+}
+
+/// A type the support library does not name, for the parser's `detail`.
+fn not_a_type(detail: String) -> Refusal {
+    Refusal::Unsupported(Report::of(&Unconstructed::Type { detail }))
 }
 
 fn requested(
     ty: String,
     value: &str,
     mirrors: BTreeMap<String, String>,
-) -> Result<Request, String> {
+) -> Result<Request, Refusal> {
     if ty.starts_with("std::task::Poll<") && !value.starts_with("Poll::") {
-        return Err(format!(
-            "{value} is no {ty}: the poll of a future not known as the fn's body"
-        ));
+        return Err(Refusal::Unsupported(Report::of(
+            &Unconstructed::NotItsPoll {
+                value: value.to_string(),
+                ty,
+            },
+        )));
     }
     Ok(Request {
         ty,
@@ -918,6 +932,11 @@ pub fn request(toolchain: Option<&str>, request: &Request) {
     }
 }
 
+/// A request the support library refuses to make, for `why`.
+fn unsupported(why: Unconstructed) -> Refusal {
+    Refusal::Unsupported(Report::of(&why))
+}
+
 /// The library and symbol of `request`'s constructor, building the library
 /// (with every request so far) if it lacks it. `expected` is the type's
 /// layout in the program: a constructor whose type is laid out otherwise
@@ -929,7 +948,7 @@ pub fn resolve(
 ) -> Result<(PathBuf, String), Refusal> {
     let mut libs = LIBRARIES
         .lock()
-        .map_err(|_| Refusal::Unsupported("the support library's state is poisoned".into()))?;
+        .map_err(|_| unsupported(Unconstructed::Poisoned))?;
     let key = toolchain.map(str::to_string);
     let lib = libs.entry(key).or_default();
     lib.requested.insert(request.clone());
@@ -944,29 +963,28 @@ pub fn resolve(
         lib.build = Some(build(&dir, toolchain, &requests, lib.builds));
     }
     let Some(b) = &lib.build else {
-        return Err(Refusal::Unsupported("no support library".into()));
+        return Err(unsupported(Unconstructed::NoLibrary));
     };
     let (path, symbol) = b
         .built
         .get(request)
         .cloned()
-        .unwrap_or_else(|| Err(Refusal::Unsupported("not in the support library".into())))?;
+        .unwrap_or_else(|| Err(unsupported(Unconstructed::NotInLibrary)))?;
     let there = b
         .layouts
         .as_ref()
         .zip(b.entries.get(&symbol))
         .and_then(|(l, &e)| l.first_param_pointee(e))
         .ok_or_else(|| {
-            Refusal::Unsupported(format!(
-                "{}: the support library has no layout for it",
-                request.ty
-            ))
+            unsupported(Unconstructed::NoLayout {
+                ty: request.ty.clone(),
+            })
         })?;
-    same_layout(&there, expected).map_err(|e| {
-        Refusal::Unsupported(format!(
-            "{} is laid out differently in the support library: {e}",
-            request.ty
-        ))
+    same_layout(&there, expected).map_err(|detail| {
+        unsupported(Unconstructed::LaidOutDifferently {
+            ty: request.ty.clone(),
+            detail,
+        })
     })?;
     Ok((path, symbol))
 }
@@ -985,7 +1003,7 @@ fn build(dir: &Path, toolchain: Option<&str>, requests: &[Request], generation: 
         let these: Vec<Request> = kept.iter().map(|&k| requests[k].clone()).collect();
         let (stdout, ok) = match compile(dir, toolchain, &these) {
             Ok(o) => o,
-            Err(why) => return failed(why, requests),
+            Err(detail) => return failed(Unconstructed::Io { detail }, requests),
         };
         if ok {
             return built(dir, &stdout, generation, requests, &kept, refused);
@@ -996,10 +1014,7 @@ fn build(dir: &Path, toolchain: Option<&str>, requests: &[Request], generation: 
                 .first()
                 .cloned()
                 .unwrap_or_else(|| "unknown error".into());
-            return failed(
-                format!("the support library does not build: {why}"),
-                requests,
-            );
+            return failed(Unconstructed::Build { detail: why }, requests);
         }
         refuse_mirrors(by_mirror, &kept, requests, &mut refused);
         for (i, (code, why)) in by_ctor {
@@ -1009,18 +1024,15 @@ fn build(dir: &Path, toolchain: Option<&str>, requests: &[Request], generation: 
                 .or_insert_with(|| ctor_refusal(&requests[k], &code, &why));
         }
     }
-    failed(
-        "the support library does not build without its failing constructors".into(),
-        requests,
-    )
+    failed(Unconstructed::NeverBuilds, requests)
 }
 
 /// A build in which every request is refused for `why`.
-fn failed(why: String, requests: &[Request]) -> Build {
+fn failed(why: Unconstructed, requests: &[Request]) -> Build {
     Build {
         built: requests
             .iter()
-            .map(|r| (r.clone(), Err(Refusal::Unsupported(why.clone()))))
+            .map(|r| (r.clone(), Err(unsupported(why.clone()))))
             .collect(),
         layouts: None,
         entries: HashMap::new(),
@@ -1041,10 +1053,10 @@ fn conflicting_mirrors(requests: &[Request]) -> HashMap<usize, Refusal> {
         {
             refused.insert(
                 k,
-                Refusal::Unsupported(format!(
-                    "{}: its mirror {module} is laid out differently in another program",
-                    r.ty
-                )),
+                unsupported(Unconstructed::MirrorConflict {
+                    ty: r.ty.clone(),
+                    module: module.clone(),
+                }),
             );
             continue;
         }
@@ -1065,12 +1077,22 @@ fn built(
     mut refused: HashMap<usize, Refusal>,
 ) -> Build {
     let Some(so) = cdylib_of(stdout) else {
-        return failed("cargo named no library".into(), requests);
+        return failed(
+            Unconstructed::Io {
+                detail: "cargo named no library".into(),
+            },
+            requests,
+        );
     };
     // A copy per build: a process may still have the last one loaded.
     let path = dir.join(format!("libcherenkov_support-{generation}.so"));
     if let Err(e) = std::fs::copy(&so, &path) {
-        return failed(format!("{}: {e}", path.display()), requests);
+        return failed(
+            Unconstructed::Io {
+                detail: format!("{}: {e}", path.display()),
+            },
+            requests,
+        );
     }
     let mut built = HashMap::new();
     for (k, r) in requests.iter().enumerate() {
@@ -1104,11 +1126,11 @@ fn refuse_mirrors(
             if let Some(source) = r.mirrors.get(&module) {
                 let of = source.lines().next().unwrap_or_default();
                 refused.entry(k).or_insert_with(|| {
-                    Refusal::Unsupported(format!(
-                        "{}: the mirror of {} does not compile: {why}",
-                        r.ty,
-                        of.trim_start_matches("/// ")
-                    ))
+                    unsupported(Unconstructed::MirrorDoesNotCompile {
+                        ty: r.ty.clone(),
+                        of: of.trim_start_matches("/// ").to_string(),
+                        detail: why.clone(),
+                    })
                 });
             }
         }
@@ -1118,10 +1140,11 @@ fn refuse_mirrors(
 /// Why the constructor of `r` did not compile (rustc's error `code`).
 fn ctor_refusal(r: &Request, code: &str, why: &str) -> Refusal {
     if UNRESOLVED.contains(&code) {
-        Refusal::Unsupported(format!(
-            "{} for {}: a name the support library does not import: {why}",
-            r.value, r.ty
-        ))
+        unsupported(Unconstructed::NameNotImported {
+            value: r.value.clone(),
+            ty: r.ty.clone(),
+            detail: why.to_string(),
+        })
     } else if !r.mirrors.is_empty()
         && code != "E0308"
         && !r.mirrors.iter().any(|(module, source)| {
@@ -1130,12 +1153,17 @@ fn ctor_refusal(r: &Request, code: &str, why: &str) -> Refusal {
     {
         // A mirror has none of its original's traits but a derived
         // Default: the original may have the one asked for.
-        Refusal::Unsupported(format!(
-            "{} for {}: needs more of a mirrored type than its layout: {why}",
-            r.value, r.ty
-        ))
+        unsupported(Unconstructed::NeedsMirror {
+            value: r.value.clone(),
+            ty: r.ty.clone(),
+            detail: why.to_string(),
+        })
     } else {
-        Refusal::Unviable(format!("{} does not compile as {}: {why}", r.value, r.ty))
+        Refusal::Unviable(Report::of(&Unconstructed::DoesNotCompile {
+            value: r.value.clone(),
+            ty: r.ty.clone(),
+            detail: why.to_string(),
+        }))
     }
 }
 

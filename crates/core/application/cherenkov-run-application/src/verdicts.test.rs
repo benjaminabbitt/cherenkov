@@ -69,6 +69,7 @@ fn decision(run: &Uuid, id: &str, killers: &[&str]) -> DecisionReported {
                 tests_run: Vec::new(),
                 killed_by: killers.iter().map(|t| killed_by(t)).collect(),
                 reason: None,
+                why: None,
             }),
             run: Some(cherenkov_run_domain::RunId::from(run.clone())),
             programs: vec!["calc".to_string()],

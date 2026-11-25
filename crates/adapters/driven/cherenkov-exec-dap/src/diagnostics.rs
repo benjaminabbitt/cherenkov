@@ -21,6 +21,9 @@ pub fn diagnostic_samples() -> Vec<Box<dyn coded_diagnostic::Diagnostic>> {
     ];
     isa.into_iter()
         .chain(crate::error::diagnostic_samples())
+        .chain(crate::reason::diagnostic_samples())
+        .chain(crate::unbuildable::diagnostic_samples())
+        .chain(crate::tierp::diagnostic_samples())
         .collect()
 }
 

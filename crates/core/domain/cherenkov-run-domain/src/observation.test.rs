@@ -1,6 +1,7 @@
 use super::*;
 
 use cherenkov_mutation::execution::Failure;
+use coded_diagnostic::Report;
 
 fn wall() -> Duration {
     Duration::new(3, 123_456_789)
@@ -25,13 +26,13 @@ fn observations() -> Vec<RawOutcome> {
             wall: wall(),
         },
         RawOutcome::NotReached {
-            reason: "not linked".to_string(),
+            why: Report::new("cherenkov-exec-dap-not-in-this-program").arg("file", "src/lib.rs"),
         },
         RawOutcome::Unsupported {
-            reason: "inlined".to_string(),
+            why: Report::new("cherenkov-exec-dap-inlined"),
         },
         RawOutcome::Unviable {
-            reason: "no default".to_string(),
+            why: Report::new("cherenkov-exec-dap-no-default").arg("name", "Settle"),
         },
     ]
 }
@@ -43,6 +44,58 @@ fn test_every_observation_goes_through_proto_and_comes_back_equal() {
         let decoded = decode(Observation::try_from(wire).unwrap()).unwrap();
         assert_eq!(decoded, raw);
     }
+}
+
+#[test]
+fn test_an_observation_recorded_with_text_only_decodes_as_a_recorded_reason() {
+    let recorded = crate::failure::Failure::Recorded {
+        reason: "inlined function".to_string(),
+    };
+    let old = |kind| Observation { kind };
+    for (kind, expected) in [
+        (
+            ObservationKind::NotReached(NotReached {
+                reason: "inlined function".to_string(),
+                why: None,
+            }),
+            RawOutcome::NotReached {
+                why: Report::of(&recorded),
+            },
+        ),
+        (
+            ObservationKind::Unsupported(Unsupported {
+                reason: "inlined function".to_string(),
+                why: None,
+            }),
+            RawOutcome::Unsupported {
+                why: Report::of(&recorded),
+            },
+        ),
+        (
+            ObservationKind::Unviable(Unviable {
+                reason: "inlined function".to_string(),
+                why: None,
+            }),
+            RawOutcome::Unviable {
+                why: Report::of(&recorded),
+            },
+        ),
+    ] {
+        assert_eq!(decode(old(kind)), Ok(expected));
+    }
+}
+
+#[test]
+fn test_a_coded_reason_leaves_the_text_of_its_observation_empty() {
+    let ObservationKind::Unsupported(unsupported) = encode(&RawOutcome::Unsupported {
+        why: Report::new("cherenkov-exec-dap-inlined"),
+    })
+    .kind
+    else {
+        panic!("an unsupported observation");
+    };
+    assert_eq!(unsupported.reason, "");
+    assert!(unsupported.why.is_some());
 }
 
 #[test]

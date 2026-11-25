@@ -23,6 +23,7 @@ use crate::native::{
     Effect, Evaluated, FunctionCode, Launcher, NativeSession, Recorded, RunEnd, TierPExecutor,
     kill_debuggee,
 };
+use crate::reason::{Reason, evaluator_said};
 use crate::tierp::Insn;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1307,7 +1308,7 @@ impl GdbSession {
                 return Ok(Some(Evaluated {
                     end: RunEnd::TimedOut,
                     reached: false,
-                    refused: Some(why.to_string()),
+                    refused: Some(evaluator_said(why)),
                 }));
             }
         }
@@ -1431,13 +1432,13 @@ impl GdbSession {
             // done.
             Within::Unanswered => {
                 self.stuck = true;
-                return done(RunEnd::TimedOut, Some(refusal_text()));
+                return done(RunEnd::TimedOut, Some(evaluation_hung()));
             }
         };
         // Stops from the evaluator's own calls are already queued.
         let _ = self.dap.take_events("stopped");
         match evaluator_answer(&out)["error"].as_str() {
-            Some(why) => done(RunEnd::TimedOut, Some(why.to_string())),
+            Some(why) => done(RunEnd::TimedOut, Some(evaluator_said(why))),
             None => Ok(Step::Resume),
         }
     }
@@ -1447,12 +1448,10 @@ impl GdbSession {
 /// evaluation is given, net of what the scheduler took, so it is waiting on a
 /// thread it stopped. An evaluation the run's own budget cut short is no
 /// refusal: the run timed out, and a busy machine only makes that likelier.
-fn refusal_text() -> String {
-    format!(
-        "the evaluation did not finish within {} s with the program's \
-         other threads stopped",
-        EVALUATION.as_secs()
-    )
+fn evaluation_hung() -> Reason {
+    Reason::EvaluationHung {
+        secs: EVALUATION.as_secs(),
+    }
 }
 
 /// What a run does after an event.
@@ -1478,11 +1477,12 @@ fn evaluator_answer(out: &str) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{alive, refusal_text};
+    use super::{alive, evaluation_hung};
+    use crate::reason::Reason;
 
     #[test]
     fn test_an_evaluation_that_had_its_whole_time_and_did_not_finish_is_refused() {
-        assert!(refusal_text().contains("5 s"), "{}", refusal_text());
+        assert_eq!(evaluation_hung(), Reason::EvaluationHung { secs: 5 });
     }
 
     #[test]

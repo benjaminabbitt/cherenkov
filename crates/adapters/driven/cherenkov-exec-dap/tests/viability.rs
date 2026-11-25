@@ -256,7 +256,7 @@ fn test_what_rustc_rejects_is_unviable_and_never_run_and_the_rest_is_left_alone(
     let budget = Budget::for_mutant(std::time::Duration::ZERO);
     let got = executor.run(&plan_of("bad"), budget).unwrap();
     assert!(
-        matches!(&got.outcome, RawOutcome::Unviable { reason } if reason.contains("rustc rejects") && reason.contains("E0599")),
+        matches!(&got.outcome, RawOutcome::Unviable { why } if why.to_string().contains("rustc-rejects") && why.to_string().contains("E0599")),
         "{got:?}"
     );
     assert!(got.tests.is_empty(), "nothing ran to report");
@@ -460,10 +460,16 @@ impl MutantExecutor for Spy {
         _: &cherenkov_mutation::plan::MutantPlan,
         _: Budget,
     ) -> Result<Observed, ExecError> {
-        Ok(RawOutcome::NotReached { reason: "r".into() }.into())
+        Ok(RawOutcome::NotReached {
+            why: Report::new("r"),
+        }
+        .into())
     }
     fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
-        Ok(RawOutcome::NotReached { reason: "b".into() }.into())
+        Ok(RawOutcome::NotReached {
+            why: Report::new("b"),
+        }
+        .into())
     }
     fn driven(
         &mut self,
@@ -496,7 +502,10 @@ fn test_everything_else_is_the_inner_executors() {
     assert_eq!(executor.describe().as_deref(), Some("spy"));
     assert_eq!(
         executor.baseline(budget).unwrap(),
-        RawOutcome::NotReached { reason: "b".into() }.into()
+        RawOutcome::NotReached {
+            why: Report::new("b")
+        }
+        .into()
     );
     assert_eq!(
         executor

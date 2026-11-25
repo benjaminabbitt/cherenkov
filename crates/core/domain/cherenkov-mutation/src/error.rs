@@ -11,6 +11,7 @@ pub const EN_US: (&str, &str) = (
 /// One value of every error, for the catalog test.
 #[cfg(test)]
 pub fn diagnostic_samples() -> Vec<Box<dyn coded_diagnostic::Diagnostic>> {
+    use crate::execution::Unreached;
     use crate::set_spec::SetError;
     use crate::token::TokenTableError;
     use coded_diagnostic::Report;
@@ -36,6 +37,7 @@ pub fn diagnostic_samples() -> Vec<Box<dyn coded_diagnostic::Diagnostic>> {
             canonical: "b, c".into(),
         }),
         Box::new(SetError::UnknownSkip { name: "n".into() }),
+        Box::new(Unreached::NoTestBinary),
     ]
 }
 

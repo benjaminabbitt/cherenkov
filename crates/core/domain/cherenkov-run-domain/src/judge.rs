@@ -16,12 +16,15 @@
 
 use cherenkov_mutation::execution::{RawOutcome, classify, combine};
 use cherenkov_mutation::verdict::Verdict as Judged;
+use coded_diagnostic::Report;
 
+use crate::failure::Failure;
 use crate::mutant::{
     DebuggerFailed, KilledBy, Outcome, ProgramRun, ProgramRunResult, Ran, Tier, Verdict,
 };
 use crate::observation;
 use crate::rejection::Unreadable;
+use crate::why;
 
 /// A mutant decided: its outcome, and the test programs it ran in.
 #[derive(Clone, Debug, PartialEq)]
@@ -60,7 +63,9 @@ struct Folded {
 struct Concluded {
     verdict: Verdict,
     tier: Option<Tier>,
-    detail: Option<String>,
+    /// Why the mutant was not run or not reached, for a verdict that is
+    /// not a test's.
+    why: Option<Report>,
 }
 
 impl Folded {
@@ -72,14 +77,10 @@ impl Folded {
             ProgramRunResult::NotCalled(_) => Ok(None),
             ProgramRunResult::Failed(failed) => {
                 self.ran_in(run);
-                let reason = format!(
-                    "the debugger failed on this mutant: {}",
-                    debugger_failure(failed)
-                );
                 let concluded = Concluded {
                     verdict: Verdict::Unsupported,
                     tier: None,
-                    detail: Some(reason),
+                    why: Some(debugger_failure(failed)),
                 };
                 Ok(Some(self.decided(concluded, &[])))
             }
@@ -134,28 +135,24 @@ impl Folded {
             return Concluded {
                 verdict: Verdict::NotCalled,
                 tier: None,
-                detail: None,
+                why: None,
             };
         }
         let outcome = classify(&combine(std::mem::take(&mut self.outcomes)));
         Concluded {
             verdict: verdict(outcome.verdict),
             tier: outcome.tier.map(observation::tier_of),
-            detail: outcome.detail,
+            why: outcome.why,
         }
     }
 
     fn decided(&self, concluded: Concluded, killers: &[KilledBy]) -> Decision {
-        let Concluded {
-            verdict,
-            tier,
-            detail,
-        } = concluded;
+        let Concluded { verdict, tier, why } = concluded;
         // A reason is for a verdict that is not a test's: an error, a
         // refusal, code no test reached.
-        let reason = match verdict {
+        let why = match verdict {
             Verdict::Killed | Verdict::Survived | Verdict::Timeout => None,
-            _ => detail,
+            _ => why,
         };
         Decision {
             outcome: Outcome {
@@ -164,22 +161,20 @@ impl Folded {
                 took_ms: self.took_ms,
                 tests_run: self.tests_run.clone(),
                 killed_by: killers.to_vec(),
-                reason,
+                reason: None,
+                why: why.as_ref().map(why::encode),
             },
             programs: self.programs.clone(),
         }
     }
 }
 
-/// What the debugger's failure says, for the mutant's outcome reason (a
-/// text, which the verdict file and the output hold): a failure recorded as
-/// text says it; a coded one is named by its keyed form, whose English is
-/// the output's catalog's, and not the domain's.
-fn debugger_failure(failed: &DebuggerFailed) -> String {
-    match &failed.why {
-        Some(why) => crate::why::decode(Some(why), &failed.reason).to_string(),
-        None => failed.reason.clone(),
-    }
+/// Why the debugger failed on a mutant: the failure it recorded, wrapped,
+/// for the output's catalog to say in words (this domain holds none).
+fn debugger_failure(failed: &DebuggerFailed) -> Report {
+    Report::of(&Failure::DebuggerFailed {
+        cause: why::decode(failed.why.as_ref(), &failed.reason),
+    })
 }
 
 /// `judged`, the core's verdict, as the run records it.

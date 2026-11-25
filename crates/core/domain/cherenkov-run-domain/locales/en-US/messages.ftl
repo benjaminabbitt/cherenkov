@@ -30,3 +30,4 @@ cherenkov-run-domain-unreadable-unknown = this record names a { $kind } the plan
 cherenkov-run-domain-recorded-reason = { $reason }
 cherenkov-run-domain-baseline-failed = unmutated tests do not pass under the debugger: { $outcome }{ $failing }
 cherenkov-run-domain-program-baseline-failed = unmutated tests do not pass under the debugger ({ $program }): { $outcome }{ $failing }
+cherenkov-run-domain-debugger-failed = the debugger failed on this mutant: { $cause }

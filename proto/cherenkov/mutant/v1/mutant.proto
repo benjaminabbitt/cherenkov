@@ -104,15 +104,21 @@ message TimedOut {
 }
 
 message NotReached {
+  // As text; empty in an observation recorded with `why`.
   string reason = 1;
+  optional io.angzarr.v1.Diagnostic why = 2;
 }
 
 message Unsupported {
+  // As text; empty in an observation recorded with `why`.
   string reason = 1;
+  optional io.angzarr.v1.Diagnostic why = 2;
 }
 
 message Unviable {
+  // As text; empty in an observation recorded with `why`.
   string reason = 1;
+  optional io.angzarr.v1.Diagnostic why = 2;
 }
 
 // endregion what an executor observed
@@ -177,7 +183,10 @@ message Outcome {
   uint64 took_ms = 3;
   repeated string tests_run = 4;
   repeated KilledBy killed_by = 5;
+  // As text; unset in an outcome recorded with `why`.
   optional string reason = 6;
+  // Why the mutant was not run, or not reached, coded.
+  optional io.angzarr.v1.Diagnostic why = 7;
 }
 
 // A test that killed a mutant, and how it failed.

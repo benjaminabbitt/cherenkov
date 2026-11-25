@@ -10,8 +10,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::error::Toolchain;
+use crate::unbuildable::Unbuildable;
 use cherenkov_mutation::types::{DefaultFacts, SourceDefault};
 use cherenkov_run_ports::executor::ExecError;
+use coded_diagnostic::Report;
 use gimli::{AttributeValue, EndianArcSlice, Reader, RunTimeEndian, UnitOffset};
 use object::{Object, ObjectSection};
 
@@ -1068,26 +1070,28 @@ impl Built {
 pub enum Refusal {
     /// The value is no value of the type at all (`Default::default()` of a
     /// type without `Default`): the mutated source does not compile.
-    Unviable(String),
+    Unviable(Report),
     /// The value exists, but this builder cannot make it.
-    Unsupported(String),
+    Unsupported(Report),
 }
 
-impl std::fmt::Display for Refusal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Refusal {
+    /// A value this builder cannot make, for `why`.
+    pub(crate) fn unsupported(why: Unbuildable) -> Refusal {
+        Refusal::Unsupported(Report::of(&why))
+    }
+
+    /// Why, whichever the refusal.
+    pub fn report(&self) -> &Report {
         match self {
-            Refusal::Unviable(why) | Refusal::Unsupported(why) => f.write_str(why),
+            Refusal::Unviable(why) | Refusal::Unsupported(why) => why,
         }
     }
 }
 
-/// Marks a refusal, inside the builder, as unviable rather than unsupported.
-const UNVIABLE: &str = "unviable: ";
-
-fn refusal(why: String) -> Refusal {
-    match why.find(UNVIABLE) {
-        Some(at) => Refusal::Unviable(why[at + UNVIABLE.len()..].to_string()),
-        None => Refusal::Unsupported(why),
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.report())
     }
 }
 
@@ -1096,14 +1100,16 @@ fn refusal(why: String) -> Refusal {
 pub fn build(layout: &Layout, value: &str) -> Result<Vec<u8>, Refusal> {
     let built = build_value(layout, value)?;
     if !built.calls.is_empty() {
-        Err(Refusal::Unsupported(format!(
-            "{value} for {} needs the program's code",
-            layout_name(layout)
-        )))
+        Err(Refusal::unsupported(Unbuildable::NeedsProgramCode {
+            value: value.to_string(),
+            name: layout_name(layout).to_string(),
+        }))
     } else if built.heap.is_empty() {
         Ok(built.bytes)
     } else {
-        Err(Refusal::Unsupported(format!("{value} needs heap memory")))
+        Err(Refusal::unsupported(Unbuildable::NeedsHeap {
+            value: value.to_string(),
+        }))
     }
 }
 
@@ -1136,7 +1142,7 @@ pub fn build_value_with(
         calls: Vec::new(),
         constructs: Vec::new(),
     };
-    write(layout, value.trim(), &mut out, 0, facts).map_err(refusal)?;
+    write(layout, value.trim(), &mut out, 0, facts)?;
     Ok(out)
 }
 
@@ -1266,7 +1272,7 @@ fn write(
     out: &mut Built,
     at: u64,
     facts: &DefaultFacts,
-) -> Result<(), String> {
+) -> Result<(), Refusal> {
     if let Some(done) = write_default(layout, value, out, at, facts) {
         return done;
     }
@@ -1281,7 +1287,10 @@ fn write(
         Layout::Struct { name, fields, .. } => {
             write_struct(layout, name, fields, value, out, at, facts)
         }
-        other => Err(format!("{value} for {other:?} is not built yet")),
+        other => Err(Refusal::unsupported(Unbuildable::NotBuiltYet {
+            value: value.to_string(),
+            layout: format!("{other:?}"),
+        })),
     }
 }
 
@@ -1293,7 +1302,7 @@ fn write_default(
     out: &mut Built,
     at: u64,
     facts: &DefaultFacts,
-) -> Option<Result<(), String>> {
+) -> Option<Result<(), Refusal>> {
     match (value, layout) {
         ("()", l) if l.size() == 0 => Some(Ok(())),
         ("Default::default()", Layout::Int { .. } | Layout::Float { .. }) => Some(Ok(())),
@@ -1322,7 +1331,7 @@ fn write_type_default(
     out: &mut Built,
     at: u64,
     facts: &DefaultFacts,
-) -> Result<(), String> {
+) -> Result<(), Refusal> {
     // The source's facts are about the project's types: a type
     // declared elsewhere (a dependency) may share its short name.
     let said = match layout.krate() {
@@ -1343,26 +1352,32 @@ fn write_type_default(
             Ok(())
         }
         (_, SourceDefault::Absent, _) => {
-            Err(format!("{UNVIABLE}{name} has no Default in the source"))
+            Err(Refusal::Unviable(Report::of(&Unbuildable::NoDefault {
+                name: name.to_string(),
+            })))
         }
         // No code for it in the binary, which does not mean the type
         // has no Default: a derived one is `#[inline]`, compiled only
         // where something uses it, and leaves no DWARF otherwise.
-        (DefaultImpl::Absent, ..) => Err(format!(
-            "{name}'s Default, if it has one, is not in the test binary"
-        )),
-        (DefaultImpl::Unlinked, ..) => Err(format!(
-            "{name}'s Default is not in the test binary (unused, so not linked)"
-        )),
+        (DefaultImpl::Absent, ..) => Err(Refusal::unsupported(Unbuildable::DefaultNotInBinary {
+            name: name.to_string(),
+        })),
+        (DefaultImpl::Unlinked, ..) => Err(Refusal::unsupported(Unbuildable::DefaultNotLinked {
+            name: name.to_string(),
+        })),
     }
 }
 
 /// An integer of `size` bytes: `true`, `false` or a number.
-fn write_int(value: &str, size: u64, out: &mut Built, at: u64) -> Result<(), String> {
+fn write_int(value: &str, size: u64, out: &mut Built, at: u64) -> Result<(), Refusal> {
     let v: i128 = match value {
         "true" => 1,
         "false" => 0,
-        v => v.parse().map_err(|_| format!("{v:?} is not an integer"))?,
+        v => v.parse().map_err(|_| {
+            Refusal::unsupported(Unbuildable::NotAnInteger {
+                value: format!("{v:?}"),
+            })
+        })?,
     };
     if size > 8 {
         // A 128-bit integer: all of its bytes, two's complement.
@@ -1383,25 +1398,33 @@ fn write_enum(
     out: &mut Built,
     at: u64,
     facts: &DefaultFacts,
-) -> Result<(), String> {
+) -> Result<(), Refusal> {
     let (variant, payload) = call(value);
     let variant = variant.rsplit("::").next().unwrap_or(variant);
-    let v = variants
-        .iter()
-        .find(|v| v.name == variant)
-        .ok_or_else(|| format!("{name} has no variant {variant}"))?;
+    let v = variants.iter().find(|v| v.name == variant).ok_or_else(|| {
+        Refusal::unsupported(Unbuildable::NoVariant {
+            name: name.to_string(),
+            variant: variant.to_string(),
+        })
+    })?;
     if let Some(p) = payload {
-        let field = v
-            .fields
-            .first()
-            .ok_or_else(|| format!("{name}::{variant} has no payload"))?;
+        let field = v.fields.first().ok_or_else(|| {
+            Refusal::unsupported(Unbuildable::NoPayload {
+                name: name.to_string(),
+                variant: variant.to_string(),
+            })
+        })?;
         write(&field.layout, p, out, at + field.offset, facts)?;
     }
     match (tag, v.tag) {
         (Some((offset, size)), Some(t)) => put(&mut out.bytes, at + offset, size, t),
         // The niche-holding variant: its payload's own bytes are its tag.
         (_, None) => {}
-        (None, Some(_)) => return Err(format!("{name}: a tag value without a tag")),
+        (None, Some(_)) => {
+            return Err(Refusal::unsupported(Unbuildable::TagWithoutTag {
+                name: name.to_string(),
+            }));
+        }
     }
     Ok(())
 }
@@ -1415,7 +1438,7 @@ fn write_struct(
     out: &mut Built,
     at: u64,
     facts: &DefaultFacts,
-) -> Result<(), String> {
+) -> Result<(), Refusal> {
     // A tuple: its elements, in order.
     if !fields.is_empty()
         && fields.iter().all(|f| f.name.starts_with("__"))
@@ -1424,7 +1447,10 @@ fn write_struct(
     {
         let parts = items(&value[1..value.len() - 1]);
         if parts.len() != fields.len() {
-            return Err(format!("{value} does not fit {name}"));
+            return Err(Refusal::unsupported(Unbuildable::DoesNotFit {
+                value: value.to_string(),
+                name: name.to_string(),
+            }));
         }
         for (f, p) in fields.iter().zip(parts) {
             write(&f.layout, p, out, at + f.offset, facts)?;
@@ -1439,8 +1465,12 @@ fn write_struct(
 
 /// A string slice: its bytes on the heap (never freed: a `&str` does not
 /// own them).
-fn write_str_slice(fields: &[Field], value: &str, out: &mut Built, at: u64) -> Result<(), String> {
-    let text = string_text(value).ok_or_else(|| format!("{value} is not a string"))?;
+fn write_str_slice(fields: &[Field], value: &str, out: &mut Built, at: u64) -> Result<(), Refusal> {
+    let text = string_text(value).ok_or_else(|| {
+        Refusal::unsupported(Unbuildable::NotAString {
+            value: value.to_string(),
+        })
+    })?;
     for f in fields {
         let here = at + f.offset;
         match &f.layout {
@@ -1470,9 +1500,12 @@ fn write_vec_like(
     out: &mut Built,
     at: u64,
     facts: &DefaultFacts,
-) -> Result<(), String> {
+) -> Result<(), Refusal> {
     let Some(elem) = element(layout) else {
-        return Err(format!("{value} for {name} needs the program's code"));
+        return Err(Refusal::unsupported(Unbuildable::NeedsProgramCode {
+            value: value.to_string(),
+            name: name.to_string(),
+        }));
     };
     let align = align_of(elem);
     if matches!(value, "String::new()" | "vec![]" | "Vec::new()") {
@@ -1507,5 +1540,8 @@ fn write_vec_like(
         fill_vec(layout, align, parts.len() as u64, Some(&block), out, at);
         return Ok(());
     }
-    Err(format!("{value} for {name} needs the program's code"))
+    Err(Refusal::unsupported(Unbuildable::NeedsProgramCode {
+        value: value.to_string(),
+        name: name.to_string(),
+    }))
 }

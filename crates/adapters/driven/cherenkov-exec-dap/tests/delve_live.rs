@@ -10,7 +10,8 @@ use cherenkov_exec_dap::delve::{
 };
 use cherenkov_exec_dap::isa::Isa;
 use cherenkov_exec_dap::native::NativeSession;
-use cherenkov_exec_dap::tierp::{Patch, derive};
+use cherenkov_exec_dap::reason::Reason;
+use cherenkov_exec_dap::tierp::{Patch, Unpatchable, derive};
 use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
 use cherenkov_mutation::operator::catalog;
 use cherenkov_mutation::plan::{MutantPlan, plan_file};
@@ -18,6 +19,7 @@ use cherenkov_mutation::syntax::LanguageId;
 use cherenkov_run_ports::executor::MutantExecutor;
 use cherenkov_run_ports::syntax::SyntaxPort;
 use cherenkov_syntax::TreeSitterSyntax;
+use coded_diagnostic::Report;
 
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -192,7 +194,10 @@ fn test_live_executor_reports_unpatchable_plan_as_unsupported() {
     assert_eq!(
         raw,
         RawOutcome::Unsupported {
-            reason: "no tier B evaluator here (tier P: no tier P rule for aor mul -> div)".into()
+            why: Report::of(&Reason::Unappliable {
+                cause: Report::of(&Reason::NoTierBEvaluator),
+                tier_p: Report::of(&Unpatchable::UnsupportedEdit("aor mul -> div".into())),
+            })
         }
     );
 }

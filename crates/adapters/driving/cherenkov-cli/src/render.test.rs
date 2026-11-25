@@ -2,6 +2,7 @@ use angzarr_embedded::markup::pack_message;
 use angzarr_embedded::v1::{EventMeta, event_page};
 use angzarr_embedded::{Any, Timestamp};
 
+use coded_diagnostic::{Arg, Report};
 use serde_json::{Value, json};
 
 use super::*;
@@ -143,6 +144,7 @@ fn test_a_killed_mutant_s_document_holds_the_mutant_and_every_test_that_killed_i
                 expected: Some("5".to_string()),
             }],
             reason: None,
+            why: None,
         }),
         ..MutantDecided::default()
     }));
@@ -166,9 +168,11 @@ fn test_a_killed_mutant_s_document_holds_the_mutant_and_every_test_that_killed_i
     assert!(doc.get("reason").is_none());
 }
 
-#[test]
-fn test_a_survivor_names_the_tests_that_executed_it_and_a_refusal_its_reason() {
-    let decided = |verdict, reason: Option<&str>| MutantDecided {
+/// A decision of `verdict` for a mutant no test ran in, with the reason
+/// recorded as `why` (coded) or `reason` (text, from before reasons were
+/// coded).
+fn refused(verdict: Verdict, why: Option<&Report>, reason: Option<&str>) -> MutantDecided {
+    MutantDecided {
         mutant: Some(mutant()),
         verdict: Some(Outcome {
             verdict,
@@ -177,27 +181,56 @@ fn test_a_survivor_names_the_tests_that_executed_it_and_a_refusal_its_reason() {
             tests_run: vec!["test_total".to_string()],
             killed_by: Vec::new(),
             reason: reason.map(String::from),
+            why: why.map(cherenkov_run_domain::why::encode),
         }),
         ..MutantDecided::default()
-    };
-    let survived = one(recorded(decided(Verdict::Survived, None)));
+    }
+}
+
+#[test]
+fn test_a_survivor_names_the_tests_that_executed_it() {
+    let survived = one(recorded(refused(Verdict::Survived, None, None)));
     assert_eq!(survived["executed_by"], json!(["test_total"]));
     assert!(survived.get("killed_by").is_none());
     assert!(survived.get("tier").is_none(), "no tier when none is said");
-    let unsupported = one(recorded(decided(Verdict::Unsupported, Some("no rule"))));
-    assert_eq!(unsupported["reason"], "no rule");
-    assert_eq!(unsupported["reason_code"], "other");
-    let inlined = one(recorded(decided(
-        Verdict::Unsupported,
-        Some(
-            "the evaluator cannot apply the mutant: Can not force return from an inlined function.",
-        ),
-    )));
-    assert_eq!(inlined["reason_code"], "inlined");
+    assert!(survived.get("reason").is_none(), "none without a reason");
     assert!(
         survived.get("reason_code").is_none(),
         "none without a reason"
     );
+}
+
+#[test]
+fn test_a_refusal_has_its_coded_reason_said_and_its_documented_code() {
+    let inlined = Report::new("cherenkov-exec-dap-evaluator-refused").arg(
+        "cause",
+        Arg::nested(&Report::new("cherenkov-exec-dap-inlined")),
+    );
+    let unsupported = one(recorded(refused(
+        Verdict::Unsupported,
+        Some(&inlined),
+        None,
+    )));
+    assert_eq!(unsupported["reason"], inlined.to_string());
+    assert_eq!(unsupported["reason_code"], "inlined");
+    let unknown = Report::new("cherenkov-exec-dap-something-new");
+    let other = one(recorded(refused(
+        Verdict::Unsupported,
+        Some(&unknown),
+        None,
+    )));
+    assert_eq!(other["reason_code"], "other");
+}
+
+#[test]
+fn test_a_refusal_recorded_as_text_still_prints_its_text() {
+    let doc = one(recorded(refused(
+        Verdict::Unsupported,
+        None,
+        Some("no rule"),
+    )));
+    assert_eq!(doc["reason"], "no rule");
+    assert_eq!(doc["reason_code"], "other");
 }
 
 #[test]
@@ -348,36 +381,4 @@ fn test_a_document_reads_its_event_first() {
         ),
         "{doc}"
     );
-}
-
-#[test]
-fn test_each_reason_has_the_code_of_its_verdict() {
-    let coded = |verdict, reason: &str| reason_code(verdict, reason);
-    assert_eq!(
-        coded(Verdict::Unviable, "Settle has no Default in the source"),
-        "no-default"
-    );
-    assert_eq!(
-        coded(
-            Verdict::Unviable,
-            "Poll::Ready(Ok(())) does not compile as Poll<X>"
-        ),
-        "does-not-compile"
-    );
-    assert_eq!(
-        coded(Verdict::NotCalled, "no selected test calls it"),
-        "not-called"
-    );
-    assert_eq!(
-        coded(
-            Verdict::NotReached,
-            "the selected tests never execute the mutated code"
-        ),
-        "not-reached"
-    );
-    assert_eq!(
-        coded(Verdict::Error, "the debugger failed"),
-        "debugger-failed"
-    );
-    assert_eq!(coded(Verdict::Timeout, "anything"), "none");
 }

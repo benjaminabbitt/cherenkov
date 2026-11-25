@@ -7,7 +7,6 @@
 //! contribute [`syntax::FileSyntax`].
 
 pub mod concept;
-pub mod deficiency;
 pub mod diff;
 pub mod edit;
 pub mod error;

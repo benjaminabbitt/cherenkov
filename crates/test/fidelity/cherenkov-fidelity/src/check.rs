@@ -239,13 +239,13 @@ fn outcomes(tests: &[TestReport]) -> std::collections::BTreeMap<String, TestOutc
 /// cover the tests, are incomplete, never a verdict.
 fn program_run(raw: &RawOutcome, tests: &[TestReport], expected: &[String]) -> Program {
     match raw {
-        RawOutcome::Unsupported { reason } => Program::Ends(Observed::Unsupported(reason.clone())),
+        RawOutcome::Unsupported { why } => Program::Ends(Observed::Unsupported(why.to_string())),
         RawOutcome::Unviable { .. } => Program::Ends(Observed::Ran(Run::Unviable)),
         RawOutcome::TimedOut { .. } => Program::Ends(Observed::Ran(Run::TimedOut)),
         RawOutcome::Crashed { kind, .. } => {
             Program::Ends(Observed::Ran(Run::Crashed(kind.clone())))
         }
-        RawOutcome::NotReached { reason } => Program::NotReached(reason.clone()),
+        RawOutcome::NotReached { why } => Program::NotReached(why.to_string()),
         RawOutcome::Exited { code, .. } => {
             let parsed = outcomes(tests);
             match incomplete(*code, &parsed, expected) {
@@ -327,6 +327,7 @@ mod tests {
     use std::path::Path;
     use std::sync::Arc;
 
+    use cherenkov_mutation::execution::Report;
     use cherenkov_mutation::operator_set::named;
     use cherenkov_mutation::plan::plan_file;
     use cherenkov_mutation::syntax::LanguageId;
@@ -506,12 +507,12 @@ mod tests {
     fn test_run_reports_not_reached_even_when_the_program_printed_results() {
         let seen = observe(
             RawOutcome::NotReached {
-                reason: "not called".into(),
+                why: Report::new("not-called"),
             },
             BASELINE_OUTPUT,
             None,
         );
-        assert_eq!(seen, Observed::NotReached("not called".into()));
+        assert_eq!(seen, Observed::NotReached("not-called".into()));
     }
 
     #[test]
@@ -524,12 +525,12 @@ mod tests {
     fn test_run_reports_a_refusal_as_unsupported_with_its_reason() {
         let seen = observe(
             RawOutcome::Unsupported {
-                reason: "no way".into(),
+                why: Report::new("no-way"),
             },
             "",
             None,
         );
-        assert_eq!(seen, Observed::Unsupported("no way".into()));
+        assert_eq!(seen, Observed::Unsupported("no-way".into()));
     }
 
     fn baseline_run() -> Run {
@@ -610,7 +611,7 @@ mod tests {
         let scratch = ScratchProject::copy(&root, Path::new("cargo")).unwrap();
         let mut debugger = Debugger::new(vec![Box::new(Scripted {
             raw: RawOutcome::NotReached {
-                reason: "elsewhere".into(),
+                why: Report::new("elsewhere"),
             },
             output: "",
             driven: None,
@@ -665,7 +666,7 @@ mod tests {
     fn test_tier_is_none_for_a_mutant_no_tier_applied() {
         let plan = a_plan();
         let mut debugger = debugger_of(RawOutcome::NotReached {
-            reason: "not called".into(),
+            why: Report::new("not-called"),
         });
         debugger.run(&plan).unwrap();
         assert_eq!(debugger.tier(&plan), None);

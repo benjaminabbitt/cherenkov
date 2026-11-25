@@ -7,6 +7,7 @@ use cherenkov_mutation::edit::{Edit, Lit};
 use cherenkov_mutation::plan::{Action, MutantPlan, Target};
 use cherenkov_mutation::syntax::{Pos, Span};
 use cherenkov_mutation::token::Token;
+use coded_diagnostic::{Arg, Diagnostic, code};
 
 use crate::isa::{Isa, Jcc, Matched, Signedness};
 use crate::layouts::Layout;
@@ -130,56 +131,64 @@ pub enum Unpatchable {
 
 impl std::fmt::Display for Unpatchable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        coded_diagnostic::display(self, f)
+    }
+}
+
+impl Diagnostic for Unpatchable {
+    fn code(&self) -> &str {
         match self {
-            Unpatchable::UnsupportedEdit(what) => write!(f, "no tier P rule for {what}"),
-            Unpatchable::NoCodeAt { line, col } => write!(f, "no code at {line}:{col}"),
-            Unpatchable::ConditionalJumps { line, found } => {
-                write!(
-                    f,
-                    "expected one conditional jump on line {line}, found {found}"
-                )
+            Unpatchable::NoCodeAt { .. } => code!("unpatchable-no-code-at"),
+            Unpatchable::UnsupportedEdit(_) => code!("unpatchable-unsupported-edit"),
+            Unpatchable::ConditionalJumps { .. } => code!("unpatchable-conditional-jumps"),
+            Unpatchable::UnknownDestination(_) => code!("unpatchable-unknown-destination"),
+            Unpatchable::AmbiguousPolarity { .. } => code!("unpatchable-ambiguous-polarity"),
+            Unpatchable::ConditionMismatch { .. } => code!("unpatchable-condition-mismatch"),
+            Unpatchable::NoInstructions { .. } => code!("unpatchable-no-instructions"),
+            Unpatchable::NoCall { .. } => code!("unpatchable-no-call"),
+            Unpatchable::ArithmeticInstructions { .. } => {
+                code!("unpatchable-arithmetic-instructions")
             }
-            Unpatchable::UnknownDestination(pc) => {
-                write!(f, "jump destination {pc:#x} is outside the function")
+            Unpatchable::NoConstant { .. } => code!("unpatchable-no-constant"),
+            Unpatchable::NoDefault => code!("unpatchable-no-default"),
+            Unpatchable::NonZeroValue(_) => code!("unpatchable-non-zero-value"),
+            Unpatchable::NoReturnStub => code!("unpatchable-no-return-stub"),
+            Unpatchable::JumpIntoStub(_) => code!("unpatchable-jump-into-stub"),
+            Unpatchable::FunctionTooShort { .. } => code!("unpatchable-function-too-short"),
+            Unpatchable::NoResumePoint { .. } => code!("unpatchable-no-resume-point"),
+            Unpatchable::TooShort { .. } => code!("unpatchable-too-short"),
+        }
+    }
+
+    fn args(&self) -> Vec<(&str, Arg)> {
+        match self {
+            Unpatchable::UnsupportedEdit(what) => vec![("what", what.as_str().into())],
+            Unpatchable::NonZeroValue(value) => vec![("value", value.as_str().into())],
+            Unpatchable::NoCodeAt { line, col } => {
+                vec![("line", (*line).into()), ("col", (*col).into())]
             }
-            Unpatchable::AmbiguousPolarity { line } => {
-                write!(f, "conditional jump on line {line} lands on its own line")
+            Unpatchable::ConditionalJumps { line, found }
+            | Unpatchable::ArithmeticInstructions { line, found } => {
+                vec![("line", (*line).into()), ("found", (*found).into())]
             }
+            Unpatchable::UnknownDestination(pc) | Unpatchable::JumpIntoStub(pc) => {
+                vec![("pc", format!("{pc:#x}").into())]
+            }
+            Unpatchable::AmbiguousPolarity { line }
+            | Unpatchable::NoInstructions { line }
+            | Unpatchable::NoCall { line }
+            | Unpatchable::NoConstant { line }
+            | Unpatchable::NoResumePoint { line } => vec![("line", (*line).into())],
             Unpatchable::ConditionMismatch { cc, token } => {
-                write!(f, "condition code {cc} does not implement `{token}`")
-            }
-            Unpatchable::NoInstructions { line } => write!(f, "no instructions for line {line}"),
-            Unpatchable::ArithmeticInstructions { line, found } => write!(
-                f,
-                "expected one add/sub instruction of the source operator on line {line}, found {found}"
-            ),
-            Unpatchable::NoConstant { line } => {
-                write!(f, "no store of the returned boolean on line {line}")
-            }
-            Unpatchable::NoDefault => write!(f, "the result type has no known zero value"),
-            Unpatchable::NonZeroValue(v) => write!(f, "a return stub cannot produce the value {v}"),
-            Unpatchable::NoReturnStub => write!(f, "no return stub for this calling convention"),
-            Unpatchable::JumpIntoStub(pc) => {
-                write!(f, "a jump lands at {pc:#x}, inside the return stub")
+                vec![("cc", cc.as_str().into()), ("token", token.as_str().into())]
             }
             Unpatchable::FunctionTooShort { bytes, stub } => {
-                write!(
-                    f,
-                    "function is {bytes} bytes, shorter than the {stub}-byte return stub"
-                )
-            }
-            Unpatchable::NoCall { line } => {
-                write!(f, "statement on line {line} contains no call instruction")
-            }
-            Unpatchable::NoResumePoint { line } => {
-                write!(f, "nothing follows the statement on line {line}")
+                vec![("bytes", (*bytes).into()), ("stub", (*stub).into())]
             }
             Unpatchable::TooShort { line, bytes } => {
-                write!(
-                    f,
-                    "statement on line {line} is {bytes} bytes, too short for a jump"
-                )
+                vec![("line", (*line).into()), ("bytes", (*bytes).into())]
             }
+            Unpatchable::NoDefault | Unpatchable::NoReturnStub => Vec::new(),
         }
     }
 }
@@ -1529,4 +1538,36 @@ pub fn overflow_panic(plan: &MutantPlan, file: &str, insns: &[Insn]) -> Option<u
                     && decoded(t + 1).is_some_and(|d| d.is_call())
             })
         })
+}
+
+/// One value of every reason a patch cannot be derived, for the catalog
+/// test.
+#[cfg(test)]
+pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
+    let text = |s: &str| s.to_string();
+    let all = vec![
+        Unpatchable::NoCodeAt { line: 1, col: 2 },
+        Unpatchable::UnsupportedEdit(text("w")),
+        Unpatchable::ConditionalJumps { line: 1, found: 2 },
+        Unpatchable::UnknownDestination(0x10),
+        Unpatchable::AmbiguousPolarity { line: 1 },
+        Unpatchable::ConditionMismatch {
+            cc: text("e"),
+            token: text("<"),
+        },
+        Unpatchable::NoInstructions { line: 1 },
+        Unpatchable::NoCall { line: 1 },
+        Unpatchable::ArithmeticInstructions { line: 1, found: 2 },
+        Unpatchable::NoConstant { line: 1 },
+        Unpatchable::NoDefault,
+        Unpatchable::NonZeroValue(text("1")),
+        Unpatchable::NoReturnStub,
+        Unpatchable::JumpIntoStub(0x20),
+        Unpatchable::FunctionTooShort { bytes: 5, stub: 6 },
+        Unpatchable::NoResumePoint { line: 1 },
+        Unpatchable::TooShort { line: 1, bytes: 2 },
+    ];
+    all.into_iter()
+        .map(|d| Box::new(d) as Box<dyn Diagnostic>)
+        .collect()
 }

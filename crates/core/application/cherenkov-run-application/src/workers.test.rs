@@ -451,9 +451,15 @@ fn seen_ending(outcome: RawOutcome) -> Seen {
 #[test]
 fn test_a_run_that_reached_nothing_keeps_its_outcome_and_drops_the_reports() {
     for outcome in [
-        RawOutcome::NotReached { reason: "r".into() },
-        RawOutcome::Unsupported { reason: "u".into() },
-        RawOutcome::Unviable { reason: "v".into() },
+        RawOutcome::NotReached {
+            why: Report::new("cherenkov-exec-dap-no-code"),
+        },
+        RawOutcome::Unsupported {
+            why: Report::new("cherenkov-exec-dap-no-code"),
+        },
+        RawOutcome::Unviable {
+            why: Report::new("cherenkov-exec-dap-no-code"),
+        },
     ] {
         assert_eq!(
             seen_ending(outcome.clone()),

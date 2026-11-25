@@ -15,7 +15,9 @@ use cherenkov_run_ports::executor::{Driven, ExecError, MutantExecutor, Recording
 use coded_diagnostic::Report;
 
 use crate::isa::Isa;
+use crate::reason::Reason;
 use crate::tierp::{Insn, Patch, Unpatchable, derive, derive_returning};
+use crate::unbuildable::Unbuildable;
 
 /// One function's instructions, with the path its debug info reports for
 /// the requested source file (instructions from other files are inlined code).
@@ -108,7 +110,7 @@ pub struct OverflowGuard {
 pub struct Evaluated {
     pub end: RunEnd,
     pub reached: bool,
-    pub refused: Option<String>,
+    pub refused: Option<Reason>,
 }
 
 /// How a recording run ended, and who called each function entry it hit.
@@ -319,15 +321,40 @@ fn spent(judged: Duration, budget: Budget) -> bool {
 /// A tier B run the evaluator refused: unsupported, unless the run had used
 /// its whole budget by then, when it is a timeout like any run that ran out
 /// of time (a hot site's stop per hit cannot finish), never a refusal.
-fn refusal_outcome(reason: String, wall: Duration, judged: Duration, budget: Budget) -> RawOutcome {
+fn refusal_outcome(why: Report, wall: Duration, judged: Duration, budget: Budget) -> RawOutcome {
     if spent(judged, budget) {
         RawOutcome::TimedOut {
             tier: Tier::B,
             wall,
         }
     } else {
-        RawOutcome::Unsupported { reason }
+        RawOutcome::Unsupported { why }
     }
+}
+
+/// A mutant refused at tier B, for `cause`, with no tier P patch to apply
+/// instead, for `tier_p`.
+fn unappliable(cause: Report, tier_p: &Unpatchable) -> RawOutcome {
+    RawOutcome::Unsupported {
+        why: Report::of(&Reason::Unappliable {
+            cause,
+            tier_p: Report::of(tier_p),
+        }),
+    }
+}
+
+/// The mutated code never ran: the selected tests do not execute it.
+fn never_executed() -> RawOutcome {
+    RawOutcome::NotReached {
+        why: Report::of(&Reason::NeverExecuted),
+    }
+}
+
+/// A generic function's copies, one of which has no patch for `cause`.
+fn generic_copies(cause: &Unpatchable) -> Report {
+    Report::of(&Reason::GenericCopies {
+        cause: Report::of(cause),
+    })
 }
 
 /// A run's outcome, judged on its wall time less what the session says
@@ -445,7 +472,7 @@ impl<L: Launcher> TierPExecutor<L> {
 
     /// The unresolvable names of a body replacement's value, when the
     /// mutated source would not compile with them.
-    fn unresolved_value(&self, plan: &MutantPlan) -> Option<String> {
+    fn unresolved_value(&self, plan: &MutantPlan) -> Option<Reason> {
         let Action::ReturnDefault {
             value_text: Some(v),
             ..
@@ -455,11 +482,13 @@ impl<L: Launcher> TierPExecutor<L> {
         };
         let source = std::fs::read_to_string(self.scope_root.as_ref()?.join(&plan.file)).ok()?;
         let names = self.unresolved?(&source, plan.site.start.byte, v);
-        (!names.is_empty()).then(|| {
-            format!(
-                "{v} does not compile in the source: cannot find `{}` in this scope",
-                names.join("`, `")
-            )
+        (!names.is_empty()).then(|| Reason::UnresolvedInSource {
+            value: v.clone(),
+            names: names
+                .iter()
+                .map(|n| format!("`{n}`"))
+                .collect::<Vec<_>>()
+                .join(", "),
         })
     }
 
@@ -538,9 +567,7 @@ fn initial_effect(
     match (flip, action_effect(plan)) {
         (Some(at), _) => Ok((vec![at], Effect::FlipResult)),
         (None, Some(e)) => Ok((Vec::new(), e)),
-        (None, None) => Err(RawOutcome::Unsupported {
-            reason: format!("a negated boolean not computed by a call (tier P: {tier_p})"),
-        }),
+        (None, None) => Err(unappliable(Report::of(&Reason::NegatedNotFromCall), tier_p)),
     }
 }
 
@@ -585,12 +612,12 @@ fn constructed_effect(
     // A small value holding a float may come back in xmm registers under
     // Rust's ABI, which this builder does not write.
     if layout.has_float() && layout.size() <= 16 {
-        return Err(RawOutcome::Unsupported {
-            reason: format!(
-                "a {}-byte result holding a float (tier P: {tier_p})",
-                layout.size()
-            ),
-        });
+        return Err(unappliable(
+            Report::of(&Reason::FloatResult {
+                bytes: layout.size(),
+            }),
+            tier_p,
+        ));
     }
     let entry = entry.wrapping_sub(program.bias);
     // An async fn's body runs in a future's poll: the mutated fn's future
@@ -617,9 +644,10 @@ fn compound_effect(
     let bias = program.bias;
     let pointer = matches!(layout, Layout::Pointer { .. });
     let built = if pointer {
-        Err(Refusal::Unsupported(format!(
-            "{v} for a pointer needs the program's code"
-        )))
+        Err(Refusal::unsupported(Unbuildable::NeedsProgramCode {
+            value: v.to_string(),
+            name: "a pointer".to_string(),
+        }))
     } else {
         crate::layouts::build_value_with(&layout, v, program.facts)
     };
@@ -638,7 +666,6 @@ fn compound_effect(
             (Ok(request), Ok(b)) => request.mirrors.is_empty() || !calls_program(b),
             _ => true,
         });
-    let unsupported = |reason: String| Err(RawOutcome::Unsupported { reason });
     match (named, built) {
         (Some(Ok(request)), built) => {
             crate::support_lib::request(program.toolchain, &request);
@@ -655,11 +682,15 @@ fn compound_effect(
             in_registers: layout.in_registers(),
             value: value.rebased(bias),
         })),
-        (_, Err(Refusal::Unviable(reason))) => Err(RawOutcome::Unviable { reason }),
-        (Some(Err(why)), Err(e)) => {
-            unsupported(format!("{e}; no constructor: {why} (tier P: {tier_p})"))
-        }
-        (None, Err(why)) => unsupported(format!("{why} (tier P: {tier_p})")),
+        (_, Err(Refusal::Unviable(why))) => Err(RawOutcome::Unviable { why }),
+        (Some(Err(why)), Err(e)) => Err(unappliable(
+            Report::of(&Reason::NoConstructor {
+                built: e.report().clone(),
+                constructor: why.report().clone(),
+            }),
+            tier_p,
+        )),
+        (None, Err(why)) => Err(unappliable(why.report().clone(), tier_p)),
     }
 }
 
@@ -867,20 +898,19 @@ impl<L: Launcher> TierPExecutor<L> {
                     *if_false = exits.if_false;
                     stops = vec![exits.stop];
                 }
-                Err(e) => {
-                    return Err(RawOutcome::Unsupported {
-                        reason: format!("{e} (tier P: {tier_p})"),
-                    });
-                }
+                Err(e) => return Err(unappliable(Report::of(&e), tier_p)),
             }
         }
         if stops.is_empty() {
             stops.extend(statement_stop(&plan.action, plan.stop_at, &code.insns));
         }
         if stops.is_empty() {
-            return Err(RawOutcome::Unsupported {
-                reason: format!("no code for line {} (tier P: {tier_p})", plan.stop_at.line),
-            });
+            return Err(unappliable(
+                Report::of(&Reason::NoCodeForLine {
+                    line: plan.stop_at.line,
+                }),
+                tier_p,
+            ));
         }
         Ok((stops, effect, unsteered))
     }
@@ -914,14 +944,12 @@ impl<L: Launcher> TierPExecutor<L> {
                 },
                 in_registers: *in_registers,
             }),
-            Err(crate::layouts::Refusal::Unviable(reason)) => Err(RawOutcome::Unviable { reason }),
+            Err(crate::layouts::Refusal::Unviable(why)) => Err(RawOutcome::Unviable { why }),
             Err(_) if fallback.is_some() => Ok(Effect::ReturnBuilt {
                 value: fallback.as_deref().cloned().unwrap_or_default(),
                 in_registers: *in_registers,
             }),
-            Err(why) => Err(RawOutcome::Unsupported {
-                reason: format!("{why} (tier P: {tier_p})"),
-            }),
+            Err(why) => Err(unappliable(why.report().clone(), tier_p)),
         }
     }
 
@@ -961,7 +989,6 @@ impl<L: Launcher> TierPExecutor<L> {
         budget: Budget,
         tier_p: Unpatchable,
     ) -> Result<(RawOutcome, String), ExecError> {
-        let unsupported = |reason: String| Ok((RawOutcome::Unsupported { reason }, String::new()));
         let (stops, effect, unsteered) = match Self::tier_b_all(plan, copies, program, &tier_p) {
             Ok(p) => p,
             Err(outcome) => return Ok((outcome, String::new())),
@@ -969,23 +996,31 @@ impl<L: Launcher> TierPExecutor<L> {
         let budget = budget.evaluating();
         let start = Instant::now();
         let Some(run) = session.run_evaluating(&stops, &effect, budget.timeout)? else {
-            return unsupported(format!("no tier B evaluator here (tier P: {tier_p})"));
+            let refused = unappliable(Report::of(&Reason::NoTierBEvaluator), &tier_p);
+            return Ok((refused, String::new()));
         };
         let output = session.take_output();
         if let Some(why) = run.refused {
-            let unsteered = unsteered
-                .map(|e| format!(" (not steered: {e})"))
-                .unwrap_or_default();
-            let reason = format!(
-                "the evaluator cannot apply the mutant: {why}{unsteered} (tier P: {tier_p})"
-            );
+            let refused = Report::of(&Reason::EvaluatorRefused {
+                cause: Report::of(&why),
+            });
+            let cause = match unsteered {
+                Some(e) => Report::of(&Reason::Unsteered {
+                    cause: refused,
+                    unsteered: Report::of(&e),
+                }),
+                None => refused,
+            };
+            let why = Report::of(&Reason::Unappliable {
+                cause,
+                tier_p: Report::of(&tier_p),
+            });
             let wall = start.elapsed();
             let judged = wall.saturating_sub(session.lost_to_load());
-            return Ok((refusal_outcome(reason, wall, judged, budget), output));
+            return Ok((refusal_outcome(why, wall, judged, budget), output));
         }
         if !run.reached && matches!(run.end, RunEnd::Exited(_)) {
-            let reason = "the selected tests never execute the mutated code".to_string();
-            return Ok((RawOutcome::NotReached { reason }, output));
+            return Ok((never_executed(), output));
         }
         Ok((
             judge(Tier::B, run.end, start.elapsed(), session, budget),
@@ -1001,7 +1036,8 @@ impl<L: Launcher> TierPExecutor<L> {
         budget: Budget,
     ) -> Result<(RawOutcome, String), ExecError> {
         if let Some(reason) = self.unresolved_value(plan) {
-            return Ok((RawOutcome::Unviable { reason }, String::new()));
+            let why = Report::of(&reason);
+            return Ok((RawOutcome::Unviable { why }, String::new()));
         }
         // Mutants neither tier can run are rejected before a debugger starts.
         if let Err(e @ Unpatchable::UnsupportedEdit(_)) = derive(plan, "", &[], &self.isa)
@@ -1010,7 +1046,7 @@ impl<L: Launcher> TierPExecutor<L> {
         {
             return Ok((
                 RawOutcome::Unsupported {
-                    reason: e.to_string(),
+                    why: Report::of(&e),
                 },
                 String::new(),
             ));
@@ -1163,7 +1199,7 @@ impl<L: Launcher> TierPExecutor<L> {
     /// first is the one tier B would stop in), or why there is none.
     fn derive_all(&self, plan: &MutantPlan, copies: &[FunctionCode]) -> Derived {
         let Some((code, rest)) = copies.split_first() else {
-            return Derived::Refused("no code".into());
+            return Derived::Refused(Report::of(&Reason::NoCode));
         };
         // The other copies of a generic function: the mutant changes each.
         // Tier P patches them all; tier B applies to one stop's frame, so a
@@ -1173,11 +1209,7 @@ impl<L: Launcher> TierPExecutor<L> {
             match self.derive_copy(plan, copy) {
                 Ok(p) => others.extend(p.regions),
                 Err(e) if effect_of(plan).is_some() => return Derived::TierB(e),
-                Err(e) => {
-                    return Derived::Refused(format!(
-                        "a generic function's copies cannot all be patched: {e}"
-                    ));
-                }
+                Err(e) => return Derived::Refused(generic_copies(&e)),
             }
         }
         let derived = match self.derive_copy(plan, code) {
@@ -1203,11 +1235,11 @@ impl<L: Launcher> TierPExecutor<L> {
                 p.regions.extend(others);
                 Derived::Patch(p)
             }
-            Err(e) if !rest.is_empty() && effect_of(plan).is_none() => Derived::Refused(format!(
-                "a generic function's copies cannot all be patched: {e}"
-            )),
+            Err(e) if !rest.is_empty() && effect_of(plan).is_none() => {
+                Derived::Refused(generic_copies(&e))
+            }
             Err(e) if effect_of(plan).is_some() => Derived::TierB(e),
-            Err(e) => Derived::Refused(e.to_string()),
+            Err(e) => Derived::Refused(Report::of(&e)),
         }
     }
 
@@ -1220,26 +1252,20 @@ impl<L: Launcher> TierPExecutor<L> {
         let copies = match self.locate_all(session, plan) {
             Ok(c) if !c.is_empty() => c,
             Ok(_) => {
-                let reason = format!(
-                    "{}:{} is not in this program",
-                    plan.file.display(),
-                    plan.stop_at.line
-                );
-                return Ok((RawOutcome::NotReached { reason }, String::new()));
+                let why = Report::of(&Reason::NotInProgram {
+                    file: plan.file.display().to_string(),
+                    line: plan.stop_at.line,
+                });
+                return Ok((RawOutcome::NotReached { why }, String::new()));
             }
             Err(e) => {
-                return Ok((
-                    RawOutcome::Unsupported {
-                        reason: e.to_string(),
-                    },
-                    String::new(),
-                ));
+                return Ok((RawOutcome::Unsupported { why: e.cause }, String::new()));
             }
         };
         let patch = match self.derive_all(plan, &copies) {
             Derived::Patch(p) => p,
-            Derived::Refused(reason) => {
-                return Ok((RawOutcome::Unsupported { reason }, String::new()));
+            Derived::Refused(why) => {
+                return Ok((RawOutcome::Unsupported { why }, String::new()));
             }
             Derived::TierB(e) => {
                 return Self::tier_b(session, plan, &copies, &self.program(), budget, e);
@@ -1252,8 +1278,7 @@ impl<L: Launcher> TierPExecutor<L> {
         let (end, reached) = session.run_reaching(&reach, budget.timeout)?;
         let output = session.take_output();
         if !reached && matches!(end, RunEnd::Exited(_)) {
-            let reason = "the selected tests never execute the mutated code".to_string();
-            return Ok((RawOutcome::NotReached { reason }, output));
+            return Ok((never_executed(), output));
         }
         Ok((
             judge(Tier::P, end, start.elapsed(), session, budget),
@@ -1427,7 +1452,7 @@ enum Derived {
     /// A tier P patch.
     Patch(Patch),
     /// Unsupported, and why.
-    Refused(String),
+    Refused(Report),
     /// Through the debugger at a stop: tier P cannot, for this reason.
     TierB(Unpatchable),
 }
@@ -1604,7 +1629,7 @@ mod tests {
     fn test_a_refusal_after_the_whole_budget_is_spent_is_a_timeout_not_unsupported() {
         let wall = Duration::from_secs(9);
         assert_eq!(
-            refusal_outcome("it did not finish".into(), wall, wall, budget_of(5)),
+            refusal_outcome(Report::of(&Reason::NoCode), wall, wall, budget_of(5)),
             RawOutcome::TimedOut {
                 tier: Tier::B,
                 wall
@@ -1616,21 +1641,21 @@ mod tests {
     fn test_a_refusal_with_budget_left_stays_unsupported() {
         let wall = Duration::from_secs(5);
         assert_eq!(
-            refusal_outcome("no".into(), wall, wall, budget_of(5)),
+            refusal_outcome(Report::of(&Reason::NoCode), wall, wall, budget_of(5)),
             RawOutcome::Unsupported {
-                reason: "no".into()
+                why: Report::of(&Reason::NoCode)
             }
         );
         // Time lost to a busy machine is not the program's.
         assert_eq!(
             refusal_outcome(
-                "no".into(),
+                Report::of(&Reason::NoCode),
                 Duration::from_secs(9),
                 Duration::from_secs(4),
                 budget_of(5)
             ),
             RawOutcome::Unsupported {
-                reason: "no".into()
+                why: Report::of(&Reason::NoCode)
             }
         );
     }
