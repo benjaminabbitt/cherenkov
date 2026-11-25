@@ -48,7 +48,12 @@ every crate of it at one full commit, `2f7d267`, the one angzarr pins:
 one `coded-diagnostic`. `Recovery` is angzarr-ports'
 (`cherenkov_run_ports::Recovery` re-exports it). A change to what an aggregate's state holds or how its events
 fold bumps `cherenkov-run-domain`'s minor version: it is the rules version
-under which snapshots are kept.
+under which snapshots are kept. Its replay fixtures
+(`cherenkov-run-domain/tests/fixtures/<major.minor>/`: both aggregates' stored
+logs and the states they fold to) pin the folds and snapshots across versions:
+a bump leaves `test_the_current_rules_version_has_its_fixtures` red until `just
+regen-replay-fixtures` records the new directory, which it never overwrites; the
+older directories stay and keep replaying.
 
 # Layout
 
