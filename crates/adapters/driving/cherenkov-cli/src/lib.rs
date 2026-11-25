@@ -3,6 +3,7 @@
 //! ends the process with. The program that composes these with the
 //! toolchains and the run layer is `cherenkov` (root/bin).
 
+pub mod code;
 pub mod error;
 pub mod notice;
 pub mod output;
