@@ -93,10 +93,15 @@ One per mutant, in completion order. Self-contained:
 - for `survived`: `executed_by`, the tests that executed the mutated code
   and did not notice — where a new or stronger assertion belongs;
 - for `unsupported`, `unviable`, `not-reached`, `error`: `reason`, and
-  `reason_code`, its short machine-readable form. For `unsupported` (a
+  `reason_code`, its short machine-readable form. The `reason` is said in
+  the catalog's words from the diagnostic the run recorded; the
+  `reason_code` is a table over the codes of the diagnostics in it (a run
+  that recorded its reasons as text, before they were coded, prints that
+  text with the code `other`, or `does-not-compile` for `unviable`). For
+  `unsupported` (a
   mutant Cherenkov cannot run, which a run accepts and logs, never fails
   on): `inlined`, `generic-copies`, `value-not-buildable`,
-  `evaluation-hung`, `function-not-found`, `symbol-not-in-scope`,
+  `value-name-unresolved`, `evaluation-hung`, `function-not-found`, `symbol-not-in-scope`,
   `evaluator-cannot-apply`, `debugger-failed` (the debugger session failed
   on this mutant), `no-breakpoint-site`, `no-patch-rule`, `other`. For
   `unviable`: `no-default`, `does-not-compile`. A hung mutant is `timeout`,

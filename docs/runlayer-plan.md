@@ -39,8 +39,13 @@ works its own way:
 - **Layering** (5.8): ctxloom's rings, `crates/<ring>/<role>/<crate>`, held
   by `arch-lint` in `just check`; the port traits are in `cherenkov-run-ports`
   and the planning use case in `cherenkov-run-application`. Six edges are
-  ruled exceptions (the CLI's two edges to the domains, until `cherenkov-run-reads`, 5.8). `Diagnostic` is
-  still only at the top (5.9).
+  ruled exceptions (the CLI's two edges to the domains, until `cherenkov-run-reads`, 5.8).
+- **Every reason is a `Diagnostic`** (5.9): the errors of the run layer and
+  of the adapters, and why a mutant was not run or not reached (a refusal
+  at tier P or tier B, an unviable value, the debugger's failure), are
+  coded, with a catalog each, and the output says them through the
+  catalog. The output's `reason_code` is a table in `cherenkov-cli`
+  (`code.rs`) over the codes in a reason's tree.
 
 ## Done
 1. **Spike**: events, aggregate, a projector over the workers, follow, dry
@@ -192,7 +197,7 @@ In ctxloom's layout, `crates/<ring>/<role>/<crate>`:
 | core/domain | `cherenkov-mutation` | the mutation domain: concepts, operators, operator sets, the planner, verdicts and ids; `classify` and `combine`; the mutant plan's domain types, generated |
 | core/domain | `cherenkov-run-domain` | the run and mutant aggregates and the fan-out and fan-in policies, from `markup_domain`: the run judges its programs' preparation and records `RunReady` and finishes; the mutant decides its verdict |
 | core/read-model | `cherenkov-run-reads` | live runs (resume, completion, and each run's programs' preparation, which the runner reads), the verdict projection |
-| core/ports | `cherenkov-run-ports` | the edge to the core (handle, report, read, wait for a commit); the executor port, the source port and the syntax port, moved out of `cherenkov-mutation` (5.8); the executor's `Observed` (outcome and typed test reports); `Diagnostic` errors come with 5.9 |
+| core/ports | `cherenkov-run-ports` | the edge to the core (handle, report, read, wait for a commit); the executor port, the source port and the syntax port, moved out of `cherenkov-mutation` (5.8); the executor's `Observed` (outcome and typed test reports); `Diagnostic` errors (5.9) |
 | core/application | `cherenkov-run-application` | plan a project's files (`session`, moved from `cherenkov-mutation` because it drives the ports), plan a run, prepare its programs, the runner projector (a mutant's program runs, each recorded as a fact through the kernel, stopping at `MutantDecided`), resume or abandon |
 | adapters/driven | `cherenkov-exec-dap`, `cherenkov-syntax`, `cherenkov-fs`, `cherenkov-run-store` | executors, each parsing its own runner's output; parsing; sources; the store with Cherenkov's codec |
 | adapters/driving | `cherenkov-cli` | what a run prints as (JSON Lines or text, the output projector) and the errors a command fails with |
@@ -842,12 +847,31 @@ calling domain behaviour rather than using its types. The warnings are
 dev-dependency edges of tests (`exec-dap` and `fs` to `syntax`, two: the
 `embedded-edge` to `run-domain` one went with the widened rule). Upstream: none. Unblocks: phase 8.
 
-**5.9 Diagnostic everywhere.** Changes: `ExecError`, `SyntaxError`,
+**5.9 Diagnostic everywhere.** Done. Changes: `ExecError`, `SyntaxError`,
 `TokenTableError`, `ProfileError`, `DapError`, `RpcError`, `IsaError`, the
-patcher's and layouts' refusals and the run layer's string reasons become
+patcher's and layouts' refusals and the run layer's string reasons became
 `Diagnostic`s with catalogs and catalog tests; notices go through
 cli-support and honour `--format json`. Exit: no `reason: String` in a
 run-layer error; no `eprintln!` in the CLI but the failure reporter's.
+
+Where it stands: both exits are met. The last step made an outcome's reason
+coded: `RawOutcome::{NotReached, Unsupported, Unviable}` hold a `Report`
+(`why`), and so do the `Observation` messages and the `Outcome` of
+`cherenkov.mutant.v1` (an `io.angzarr.v1.Diagnostic why`, the old text kept
+beside it for streams written before). The executor's reasons are
+`cherenkov-exec-dap`'s `Reason`, `Unbuildable`, `Unconstructed` and
+`Unpatchable`; a refusal wraps its causes (a tier B refusal holds why tier P
+had no patch). `cherenkov-mutation`'s `deficiency.rs`, which recovered the
+documented `reason_code` by matching English, is gone: the table in
+`cherenkov-cli`'s `code.rs` gives a mutant the first documented code, in its
+order, that any diagnostic in the reason's tree has. What stays text: the
+debugger's own words (`detail`, `Reason::Inlined` and its kin, classified in
+one place, `reason::evaluator_said`); the old text a stream recorded
+(`Failure::Recorded`, and the wire's `string reason` fields, read when
+`why` is unset); and `detail` args, the tools' and the operating system's
+text. A reason recorded as text reads back with the `reason_code`
+`other` (`does-not-compile` for an unviable mutant), since the code
+cannot be recovered from English any more.
 
 **5.10 angzarr test support.** Changes: the remaining tests onto `Harness`,
 `Samples` and `FaultyStore`; replay fixtures pinning snapshots and folds
