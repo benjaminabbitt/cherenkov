@@ -1,12 +1,10 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use angzarr_embedded::angzarr_ports::memory::MemoryStore;
 use angzarr_embedded::markup::DomainMessage;
 use angzarr_embedded::markup::decode_message;
+use angzarr_embedded::testing::{Harness, block_on_ready};
 use angzarr_embedded::v1::{
     Command, CommandBook, CommandPage, Cover, Fact, FactOrigin, command_page,
 };
-use angzarr_embedded::{EventStore, Handled, Kernel, Registry, Sampled, SnapshotStore, StreamRef};
+use angzarr_embedded::{Domain, Handled, Registry, SnapshotStore, StreamRef};
 
 use std::time::Duration;
 
@@ -24,35 +22,26 @@ enum Delivery {
     Duplicate,
 }
 
-/// The two aggregates served by the kernel over a store in memory.
-struct Core {
-    registry: Registry,
-    store: MemoryStore,
+/// The `n`th run's id: the same in every test, never nil.
+fn id(n: u8) -> Uuid {
+    Uuid::from_bytes([n; 16])
 }
 
-fn core() -> Core {
+/// The id of the run `run_harness` holds.
+fn run_id() -> Uuid {
+    id(1)
+}
+
+fn run_harness() -> Harness<Run> {
     let mut registry = Registry::new();
     registry.aggregate::<Run>(Run::default).unwrap();
+    Harness::new(registry, run_cover(&run_id()))
+}
+
+fn mutant_harness(id: &str) -> Harness<Mutant> {
+    let mut registry = Registry::new();
     registry.aggregate::<Mutant>(Mutant::default).unwrap();
-    Core {
-        registry,
-        store: MemoryStore::new(),
-    }
-}
-
-fn sample() -> Sampled {
-    let since = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    Sampled {
-        now: Timestamp {
-            seconds: i64::try_from(since.as_secs()).unwrap(),
-            nanos: i32::try_from(since.subsec_nanos()).unwrap(),
-        },
-        command_id: Uuid::from_bytes(*uuid::Uuid::now_v7().as_bytes()),
-    }
-}
-
-fn new_run() -> Uuid {
-    Uuid::from_bytes(*uuid::Uuid::now_v7().as_bytes())
+    Harness::new(registry, mutant_cover(id))
 }
 
 fn run_cover(run: &Uuid) -> Cover {
@@ -71,36 +60,20 @@ fn mutant_cover(id: &str) -> Cover {
     }
 }
 
-impl Core {
-    async fn handle(&self, cover: Cover, body: command_page::Body) -> Result<Delivery, String> {
-        let book = CommandBook {
-            cover: Some(cover),
-            page: Some(CommandPage {
-                body: Some(body),
-                ..CommandPage::default()
-            }),
-        };
-        match Kernel::new(&self.registry)
-            .handle_any(&self.store, book, &sample())
-            .await
-        {
-            Ok(Handled::Applied(_)) => Ok(Delivery::Applied),
-            Ok(Handled::Duplicate(..)) => Ok(Delivery::Duplicate),
-            Err(e) => Err(e.to_string()),
-        }
-    }
+/// Sending a command or a fact to the harness's stream, as a client does.
+trait Sends {
+    fn handle(&mut self, body: command_page::Body) -> Result<Delivery, String>;
 
-    async fn command<C: DomainMessage>(&self, cover: Cover, command: &C) -> Result<(), String> {
+    fn command<C: DomainMessage>(&mut self, command: &C) -> Result<(), String> {
         let body = command_page::Body::Command(Command {
             payload: Some(pack_message(command)),
             handling: None,
         });
-        self.handle(cover, body).await.map(drop)
+        self.handle(body).map(drop)
     }
 
-    async fn report<F: DomainMessage>(
-        &self,
-        cover: Cover,
+    fn report<F: DomainMessage>(
+        &mut self,
         fact: &F,
         external_id: &str,
     ) -> Result<Delivery, String> {
@@ -111,21 +84,24 @@ impl Core {
                 description: "test".to_string(),
             }),
         });
-        self.handle(cover, body).await
+        self.handle(body)
     }
+}
 
-    async fn events(
-        &self,
-        cover: &Cover,
-        from: u64,
-    ) -> Result<Vec<angzarr_embedded::v1::EventPage>, String> {
-        let stream = StreamRef::try_from(cover).map_err(|e| e.to_string())?;
-        let slice = self
-            .store
-            .read(stream, from, None)
-            .await
-            .map_err(|e| e.to_string())?;
-        Ok(slice.pages)
+impl<D: Domain> Sends for Harness<D> {
+    fn handle(&mut self, body: command_page::Body) -> Result<Delivery, String> {
+        let book = CommandBook {
+            cover: Some(self.cover().clone()),
+            page: Some(CommandPage {
+                body: Some(body),
+                ..CommandPage::default()
+            }),
+        };
+        match self.when_book(book).handled() {
+            Ok(Handled::Applied(_)) => Ok(Delivery::Applied),
+            Ok(Handled::Duplicate(..)) => Ok(Delivery::Duplicate),
+            Err(e) => Err(e.to_string()),
+        }
     }
 }
 
@@ -215,22 +191,12 @@ fn decision(id: &str, verdict: Verdict) -> DecisionReported {
     }
 }
 
-async fn run_events(core: &Core, run: &Uuid) -> Vec<RunEvent> {
-    core.events(&run_cover(run), 0)
-        .await
-        .unwrap()
-        .iter()
-        .filter_map(run_event)
-        .collect()
+fn run_events(core: &Harness<Run>) -> Vec<RunEvent> {
+    core.pages().iter().filter_map(run_event).collect()
 }
 
-async fn mutant_events(core: &Core, id: &str) -> Vec<MutantEvent> {
-    core.events(&mutant_cover(id), 0)
-        .await
-        .unwrap()
-        .iter()
-        .filter_map(mutant_event)
-        .collect()
+fn mutant_events(core: &Harness<Mutant>) -> Vec<MutantEvent> {
+    core.pages().iter().filter_map(mutant_event).collect()
 }
 
 fn finishes(events: &[RunEvent]) -> Vec<&RunFinished> {
@@ -243,14 +209,11 @@ fn finishes(events: &[RunEvent]) -> Vec<&RunFinished> {
         .collect()
 }
 
-#[tokio::test]
-async fn test_planning_a_run_records_its_start_then_its_mutants_in_plan_order() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a", "b"]))
-        .await
-        .unwrap();
-    let events = run_events(&core, &run).await;
+#[test]
+fn test_planning_a_run_records_its_start_then_its_mutants_in_plan_order() {
+    let mut core = run_harness();
+    core.command(&plan(&["a", "b"])).unwrap();
+    let events = run_events(&core);
     let [
         RunEvent::RunStarted(started),
         RunEvent::MutantsPlanned(planned),
@@ -276,46 +239,34 @@ async fn test_planning_a_run_records_its_start_then_its_mutants_in_plan_order() 
     assert_eq!(ids, ["a", "b"]);
 }
 
-#[tokio::test]
-async fn test_a_run_is_planned_once() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a"])).await.unwrap();
-    assert!(core.command(run_cover(&run), &plan(&["b"])).await.is_err());
-    assert_eq!(run_events(&core, &run).await.len(), 2);
+#[test]
+fn test_a_run_is_planned_once() {
+    let mut core = run_harness();
+    core.command(&plan(&["a"])).unwrap();
+    assert!(core.command(&plan(&["b"])).is_err());
+    assert_eq!(run_events(&core).len(), 2);
 }
 
-#[tokio::test]
-async fn test_a_run_of_no_mutants_finishes_with_its_plan() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&[])).await.unwrap();
-    let events = run_events(&core, &run).await;
+#[test]
+fn test_a_run_of_no_mutants_finishes_with_its_plan() {
+    let mut core = run_harness();
+    core.command(&plan(&[])).unwrap();
+    let events = run_events(&core);
     let finished = finishes(&events);
     assert_eq!(finished.len(), 1, "{events:?}");
     assert_eq!(finished[0].status, RunStatus::Complete);
 }
 
-#[tokio::test]
-async fn test_each_decision_is_counted_and_the_last_finishes_the_run_with_its_tallies() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a", "b", "c"]))
-        .await
-        .unwrap();
+#[test]
+fn test_each_decision_is_counted_and_the_last_finishes_the_run_with_its_tallies() {
+    let mut core = run_harness();
+    core.command(&plan(&["a", "b", "c"])).unwrap();
     for (id, v) in [("a", Verdict::Killed), ("b", Verdict::Survived)] {
-        core.report(run_cover(&run), &decision(id, v), id)
-            .await
-            .unwrap();
+        core.report(&decision(id, v), id).unwrap();
     }
-    assert!(
-        finishes(&run_events(&core, &run).await).is_empty(),
-        "c is owed"
-    );
-    core.report(run_cover(&run), &decision("c", Verdict::Killed), "c")
-        .await
-        .unwrap();
-    let events = run_events(&core, &run).await;
+    assert!(finishes(&run_events(&core)).is_empty(), "c is owed");
+    core.report(&decision("c", Verdict::Killed), "c").unwrap();
+    let events = run_events(&core);
     let decided: Vec<(&str, Verdict)> = events
         .iter()
         .filter_map(|e| match e {
@@ -343,30 +294,20 @@ async fn test_each_decision_is_counted_and_the_last_finishes_the_run_with_its_ta
     assert!(matches!(events.last(), Some(RunEvent::RunFinished(_))));
 }
 
-#[tokio::test]
-async fn test_a_decision_redelivered_under_its_id_is_a_duplicate() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a", "b"]))
-        .await
-        .unwrap();
-    let first = core
-        .report(run_cover(&run), &decision("a", Verdict::Killed), "a")
-        .await;
-    let again = core
-        .report(run_cover(&run), &decision("a", Verdict::Killed), "a")
-        .await;
+#[test]
+fn test_a_decision_redelivered_under_its_id_is_a_duplicate() {
+    let mut core = run_harness();
+    core.command(&plan(&["a", "b"])).unwrap();
+    let first = core.report(&decision("a", Verdict::Killed), "a");
+    let again = core.report(&decision("a", Verdict::Killed), "a");
     assert_eq!(first, Ok(Delivery::Applied));
     assert_eq!(again, Ok(Delivery::Duplicate));
 }
 
-#[tokio::test]
-async fn test_a_prepared_program_is_recorded_with_its_budget_from_its_baseline() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan_for(&["a"], 2))
-        .await
-        .unwrap();
+#[test]
+fn test_a_prepared_program_is_recorded_with_its_budget_from_its_baseline() {
+    let mut core = run_harness();
+    core.command(&plan_for(&["a"], 2)).unwrap();
     let drives = Drives {
         drives: vec![Drive {
             mutant: "a".to_string(),
@@ -386,11 +327,9 @@ async fn test_a_prepared_program_is_recorded_with_its_budget_from_its_baseline()
         drives: Some(drives.clone()),
         ..preparation_at(1, "target/debug/deps/calc-1")
     };
-    core.report(run_cover(&run), &prepared, "program 1")
-        .await
-        .unwrap();
+    core.report(&prepared, "program 1").unwrap();
     assert_eq!(
-        run_events(&core, &run).await.last(),
+        run_events(&core).last(),
         Some(&RunEvent::ProgramPrepared(ProgramPrepared {
             selection_why: None,
             program: "target/debug/deps/calc-1".to_string(),
@@ -409,32 +348,25 @@ async fn test_a_prepared_program_is_recorded_with_its_budget_from_its_baseline()
     );
 }
 
-#[tokio::test]
-async fn test_the_last_program_prepared_makes_the_run_ready_with_its_mutants_in_plan_order() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan_for(&["c", "a", "b"], 2))
-        .await
-        .unwrap();
+#[test]
+fn test_the_last_program_prepared_makes_the_run_ready_with_its_mutants_in_plan_order() {
+    let mut core = run_harness();
+    core.command(&plan_for(&["c", "a", "b"], 2)).unwrap();
     let ready = |events: &[RunEvent]| {
         events
             .iter()
             .filter(|e| matches!(e, RunEvent::RunReady(_)))
             .count()
     };
-    core.report(run_cover(&run), &preparation_at(1, "it-2"), "program 1")
-        .await
+    core.report(&preparation_at(1, "it-2"), "program 1")
         .unwrap();
-    assert_eq!(ready(&run_events(&core, &run).await), 0, "one of two");
+    assert_eq!(ready(&run_events(&core)), 0, "one of two");
     // Told again under another id, a program prepared is not counted twice.
-    core.report(run_cover(&run), &preparation_at(1, "it-2"), "again")
-        .await
+    core.report(&preparation_at(1, "it-2"), "again").unwrap();
+    assert_eq!(ready(&run_events(&core)), 0, "the same one");
+    core.report(&preparation_at(0, "calc-1"), "program 0")
         .unwrap();
-    assert_eq!(ready(&run_events(&core, &run).await), 0, "the same one");
-    core.report(run_cover(&run), &preparation_at(0, "calc-1"), "program 0")
-        .await
-        .unwrap();
-    let events = run_events(&core, &run).await;
+    let events = run_events(&core);
     let [.., RunEvent::ProgramPrepared(_), RunEvent::RunReady(ready)] = &events[..] else {
         panic!("{events:?}");
     };
@@ -449,11 +381,10 @@ async fn test_the_last_program_prepared_makes_the_run_ready_with_its_mutants_in_
     assert!(ready.mutants.iter().all(|m| m.plan.is_some()));
 }
 
-#[tokio::test]
-async fn test_a_baseline_that_fails_finishes_the_run_failed_and_it_is_never_ready() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a"])).await.unwrap();
+#[test]
+fn test_a_baseline_that_fails_finishes_the_run_failed_and_it_is_never_ready() {
+    let mut core = run_harness();
+    core.command(&plan(&["a"])).unwrap();
     let failing = PreparationReported {
         selection_why: None,
         baseline: Some(observation::encode(&RawOutcome::Exited {
@@ -464,10 +395,8 @@ async fn test_a_baseline_that_fails_finishes_the_run_failed_and_it_is_never_read
         baseline_failures: vec!["calc::test_total at tests/calc.rs:5:5: boom".to_string()],
         ..preparation("calc-1")
     };
-    core.report(run_cover(&run), &failing, "program 0")
-        .await
-        .unwrap();
-    let events = run_events(&core, &run).await;
+    core.report(&failing, "program 0").unwrap();
+    let events = run_events(&core);
     let [
         ..,
         RunEvent::ProgramFailed(program),
@@ -495,54 +424,41 @@ async fn test_a_baseline_that_fails_finishes_the_run_failed_and_it_is_never_read
     assert!(!events.iter().any(|e| matches!(e, RunEvent::RunReady(_))));
 }
 
-#[tokio::test]
-async fn test_a_baseline_the_executor_did_not_report_is_a_bug_of_the_reporter() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a"])).await.unwrap();
+#[test]
+fn test_a_baseline_the_executor_did_not_report_is_a_bug_of_the_reporter() {
+    let mut core = run_harness();
+    core.command(&plan(&["a"])).unwrap();
     let silent = PreparationReported {
         selection_why: None,
         baseline: None,
         ..preparation("calc-1")
     };
-    assert!(
-        core.report(run_cover(&run), &silent, "program 0")
-            .await
-            .is_err()
-    );
-    assert_eq!(run_events(&core, &run).await.len(), 2, "nothing recorded");
+    assert!(core.report(&silent, "program 0").is_err());
+    assert_eq!(run_events(&core).len(), 2, "nothing recorded");
 }
 
-#[tokio::test]
-async fn test_a_dry_run_is_never_ready() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan_for(&["a"], 0))
-        .await
-        .unwrap();
-    core.report(run_cover(&run), &preparation("calc-1"), "stray")
-        .await
-        .unwrap();
-    let events = run_events(&core, &run).await;
+#[test]
+fn test_a_dry_run_is_never_ready() {
+    let mut core = run_harness();
+    core.command(&plan_for(&["a"], 0)).unwrap();
+    core.report(&preparation("calc-1"), "stray").unwrap();
+    let events = run_events(&core);
     assert!(!events.iter().any(|e| matches!(e, RunEvent::RunReady(_))));
 }
 
-#[tokio::test]
-async fn test_a_program_that_does_not_prepare_is_recorded_and_finishes_the_run_failed() {
+#[test]
+fn test_a_program_that_does_not_prepare_is_recorded_and_finishes_the_run_failed() {
     // A reader of the stream learns why the run stopped, and that it is
     // over, from the stream alone.
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a"])).await.unwrap();
+    let mut core = run_harness();
+    core.command(&plan(&["a"])).unwrap();
     let failed = PreparationFailed {
         why: None,
         program: Some("calc-1".to_string()),
         reason: "unmutated tests do not pass".to_string(),
     };
-    core.report(run_cover(&run), &failed, "preparation failed")
-        .await
-        .unwrap();
-    let events = run_events(&core, &run).await;
+    core.report(&failed, "preparation failed").unwrap();
+    let events = run_events(&core);
     let [
         ..,
         RunEvent::ProgramFailed(program),
@@ -592,20 +508,17 @@ fn test_a_report_with_several_args_encodes_to_the_same_bytes_every_time() {
     }
 }
 
-#[tokio::test]
-async fn test_a_coded_failure_is_recorded_as_it_was_reported() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a"])).await.unwrap();
+#[test]
+fn test_a_coded_failure_is_recorded_as_it_was_reported() {
+    let mut core = run_harness();
+    core.command(&plan(&["a"])).unwrap();
     let failed = PreparationFailed {
         why: Some(why()),
         program: Some("calc-1".to_string()),
         reason: String::new(),
     };
-    core.report(run_cover(&run), &failed, "preparation failed")
-        .await
-        .unwrap();
-    let events = run_events(&core, &run).await;
+    core.report(&failed, "preparation failed").unwrap();
+    let events = run_events(&core);
     let [.., RunEvent::ProgramFailed(program), _] = &events[..] else {
         panic!("{events:?}");
     };
@@ -613,22 +526,17 @@ async fn test_a_coded_failure_is_recorded_as_it_was_reported() {
     assert_eq!(program.reason, "");
 }
 
-#[tokio::test]
-async fn test_a_coded_selection_reason_is_kept_in_the_prepared_program() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan_for(&["a"], 1))
-        .await
-        .unwrap();
+#[test]
+fn test_a_coded_selection_reason_is_kept_in_the_prepared_program() {
+    let mut core = run_harness();
+    core.command(&plan_for(&["a"], 1)).unwrap();
     let prepared = PreparationReported {
         selection_reason: None,
         selection_why: Some(why()),
         ..preparation_at(0, "calc-1")
     };
-    core.report(run_cover(&run), &prepared, "program 0")
-        .await
-        .unwrap();
-    let events = run_events(&core, &run).await;
+    core.report(&prepared, "program 0").unwrap();
+    let events = run_events(&core);
     let Some(RunEvent::ProgramPrepared(program)) = events
         .iter()
         .find(|e| matches!(e, RunEvent::ProgramPrepared(_)))
@@ -638,46 +546,34 @@ async fn test_a_coded_selection_reason_is_kept_in_the_prepared_program() {
     assert_eq!(program.selection_why, Some(why()));
 }
 
-#[tokio::test]
-async fn test_nothing_is_recorded_after_the_run_finishes() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a"])).await.unwrap();
-    core.report(run_cover(&run), &decision("a", Verdict::Killed), "a")
-        .await
-        .unwrap();
-    let after = run_events(&core, &run).await.len();
+#[test]
+fn test_nothing_is_recorded_after_the_run_finishes() {
+    let mut core = run_harness();
+    core.command(&plan(&["a"])).unwrap();
+    core.report(&decision("a", Verdict::Killed), "a").unwrap();
+    let after = run_events(&core).len();
     let failed = PreparationFailed {
         why: None,
         program: None,
         reason: "late".to_string(),
     };
-    core.report(run_cover(&run), &failed, "late").await.unwrap();
-    core.report(run_cover(&run), &preparation("calc-9"), "program 9")
-        .await
-        .unwrap();
-    assert_eq!(run_events(&core, &run).await.len(), after);
+    core.report(&failed, "late").unwrap();
+    core.report(&preparation("calc-9"), "program 9").unwrap();
+    assert_eq!(run_events(&core).len(), after);
 }
 
-#[tokio::test]
-async fn test_a_run_told_it_is_abandoned_records_why_and_finishes_abandoned_with_its_tallies() {
+#[test]
+fn test_a_run_told_it_is_abandoned_records_why_and_finishes_abandoned_with_its_tallies() {
     // A run a newer plan has superseded is over, and its stream says so.
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a", "b"]))
-        .await
-        .unwrap();
-    core.report(run_cover(&run), &decision("a", Verdict::Killed), "a")
-        .await
-        .unwrap();
+    let mut core = run_harness();
+    core.command(&plan(&["a", "b"])).unwrap();
+    core.report(&decision("a", Verdict::Killed), "a").unwrap();
     let abandoned = Abandoned {
         why: None,
         reason: "the plan changed".to_string(),
     };
-    core.report(run_cover(&run), &abandoned, "abandoned")
-        .await
-        .unwrap();
-    let events = run_events(&core, &run).await;
+    core.report(&abandoned, "abandoned").unwrap();
+    let events = run_events(&core);
     let [
         ..,
         RunEvent::RunAbandoned(why),
@@ -696,37 +592,29 @@ async fn test_a_run_told_it_is_abandoned_records_why_and_finishes_abandoned_with
     assert_eq!(counts, [(Verdict::Killed, 1)]);
 }
 
-#[tokio::test]
-async fn test_a_run_already_over_is_not_abandoned_and_one_told_twice_is_abandoned_once() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a"])).await.unwrap();
-    core.report(run_cover(&run), &decision("a", Verdict::Killed), "a")
-        .await
-        .unwrap();
-    let over = run_events(&core, &run).await.len();
+#[test]
+fn test_a_run_already_over_is_not_abandoned_and_one_told_twice_is_abandoned_once() {
+    let mut core = run_harness();
+    core.command(&plan(&["a"])).unwrap();
+    core.report(&decision("a", Verdict::Killed), "a").unwrap();
+    let over = run_events(&core).len();
     let abandoned = Abandoned {
         why: None,
         reason: "late".to_string(),
     };
-    core.report(run_cover(&run), &abandoned, "abandoned")
-        .await
-        .unwrap();
+    core.report(&abandoned, "abandoned").unwrap();
     assert_eq!(
-        run_events(&core, &run).await.len(),
+        run_events(&core).len(),
         over,
         "finished runs stay as they ended"
     );
 
-    let live = new_run();
-    core.command(run_cover(&live), &plan(&["a"])).await.unwrap();
+    let mut live = run_harness();
+    live.command(&plan(&["a"])).unwrap();
     for _ in 0..2 {
-        core.report(run_cover(&live), &abandoned, "abandoned")
-            .await
-            .unwrap();
+        live.report(&abandoned, "abandoned").unwrap();
     }
-    let abandonments = run_events(&core, &live)
-        .await
+    let abandonments = run_events(&live)
         .iter()
         .filter(|e| matches!(e, RunEvent::RunAbandoned(_)))
         .count();
@@ -790,23 +678,14 @@ fn reported(run: &Uuid, verdict: Verdict) -> ProgramRunReported {
     }
 }
 
-#[tokio::test]
-async fn test_a_mutant_is_planned_once_per_asking_run() {
-    let core = core();
-    let (first, second) = (new_run(), new_run());
-    core.command(mutant_cover("a"), &plan_mutant(&first, "a"))
-        .await
-        .unwrap();
-    assert!(
-        core.command(mutant_cover("a"), &plan_mutant(&first, "a"))
-            .await
-            .is_err()
-    );
-    core.command(mutant_cover("a"), &plan_mutant(&second, "a"))
-        .await
-        .unwrap();
-    let runs: Vec<Option<RunId>> = mutant_events(&core, "a")
-        .await
+#[test]
+fn test_a_mutant_is_planned_once_per_asking_run() {
+    let mut core = mutant_harness("a");
+    let (first, second) = (id(1), id(2));
+    core.command(&plan_mutant(&first, "a")).unwrap();
+    assert!(core.command(&plan_mutant(&first, "a")).is_err());
+    core.command(&plan_mutant(&second, "a")).unwrap();
+    let runs: Vec<Option<RunId>> = mutant_events(&core)
         .into_iter()
         .map(|e| match e {
             MutantEvent::MutantPlanned(p) => p.run,
@@ -816,24 +695,19 @@ async fn test_a_mutant_is_planned_once_per_asking_run() {
     assert_eq!(runs, [Some(RunId::from(first)), Some(RunId::from(second))]);
 }
 
-#[tokio::test]
-async fn test_a_mutant_is_decided_once_per_asking_run_as_planned_with_its_inputs() {
-    let core = core();
-    let (asked, other) = (new_run(), new_run());
-    core.command(mutant_cover("a"), &plan_mutant(&asked, "a"))
-        .await
-        .unwrap();
+#[test]
+fn test_a_mutant_is_decided_once_per_asking_run_as_planned_with_its_inputs() {
+    let mut core = mutant_harness("a");
+    let (asked, other) = (id(1), id(2));
+    core.command(&plan_mutant(&asked, "a")).unwrap();
     for (run, verdict, external) in [
         (&asked, Verdict::Killed, "1"),
         (&asked, Verdict::Survived, "2"),
         (&other, Verdict::Killed, "3"),
     ] {
-        core.report(mutant_cover("a"), &reported(run, verdict), external)
-            .await
-            .unwrap();
+        core.report(&reported(run, verdict), external).unwrap();
     }
-    let decided: Vec<MutantDecided> = mutant_events(&core, "a")
-        .await
+    let decided: Vec<MutantDecided> = mutant_events(&core)
         .into_iter()
         .filter_map(|e| match e {
             MutantEvent::MutantDecided(d) => Some(d),
@@ -938,91 +812,71 @@ fn mutant_restored(mutant: &Mutant) -> Result<Mutant, Report> {
 
 /// `core`'s run as it stands, restored from its snapshot, beside the same
 /// run replayed.
-async fn run_states(core: &Core, run: &Uuid) -> (Run, Run) {
-    let replayed = replay_run(run_events(core, run).await);
+fn run_states(core: &Harness<Run>) -> (Run, Run) {
+    let replayed = replay_run(run_events(core));
     let restored = run_restored(&replayed).unwrap();
     (restored, replayed)
 }
 
-#[tokio::test]
-async fn test_restoring_a_run_s_snapshot_at_each_point_equals_its_replay() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["c", "a", "b"]))
-        .await
-        .unwrap();
-    let (restored, replayed) = run_states(&core, &run).await;
+#[test]
+fn test_restoring_a_run_s_snapshot_at_each_point_equals_its_replay() {
+    let mut core = run_harness();
+    core.command(&plan(&["c", "a", "b"])).unwrap();
+    let (restored, replayed) = run_states(&core);
     assert!(replayed.live(), "just planned");
     assert_eq!(restored, replayed, "just planned");
-    core.report(run_cover(&run), &preparation("calc-1"), "prepared")
-        .await
-        .unwrap();
+    core.report(&preparation("calc-1"), "prepared").unwrap();
     for (id, v) in [("a", Verdict::Killed), ("c", Verdict::Survived)] {
-        core.report(run_cover(&run), &decision(id, v), id)
-            .await
-            .unwrap();
+        core.report(&decision(id, v), id).unwrap();
     }
-    let (restored, replayed) = run_states(&core, &run).await;
+    let (restored, replayed) = run_states(&core);
     assert!(replayed.live(), "partly decided");
     assert_eq!(restored, replayed, "partly decided");
-    core.report(run_cover(&run), &decision("b", Verdict::Killed), "b")
-        .await
-        .unwrap();
-    let (restored, replayed) = run_states(&core, &run).await;
+    core.report(&decision("b", Verdict::Killed), "b").unwrap();
+    let (restored, replayed) = run_states(&core);
     assert!(replayed.finished(), "finished");
     assert_eq!(restored, replayed, "finished");
 }
 
-#[tokio::test]
-async fn test_restoring_a_failed_run_s_snapshot_equals_its_replay_with_mutants_owed() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a", "b"]))
-        .await
-        .unwrap();
-    core.report(run_cover(&run), &decision("a", Verdict::Killed), "a")
-        .await
-        .unwrap();
+#[test]
+fn test_restoring_a_failed_run_s_snapshot_equals_its_replay_with_mutants_owed() {
+    let mut core = run_harness();
+    core.command(&plan(&["a", "b"])).unwrap();
+    core.report(&decision("a", Verdict::Killed), "a").unwrap();
     let failed = PreparationFailed {
         why: None,
         program: Some("calc-2".to_string()),
         reason: "did not build".to_string(),
     };
-    core.report(run_cover(&run), &failed, "failed")
-        .await
-        .unwrap();
-    let (restored, replayed) = run_states(&core, &run).await;
+    core.report(&failed, "failed").unwrap();
+    let (restored, replayed) = run_states(&core);
     assert!(replayed.finished());
     assert_eq!(restored, replayed);
 }
 
-#[tokio::test]
-async fn test_restoring_a_mutant_s_snapshot_at_each_point_equals_its_replay() {
-    let core = core();
-    let (first, second) = (new_run(), new_run());
+#[test]
+fn test_restoring_a_mutant_s_snapshot_at_each_point_equals_its_replay() {
+    let mut core = mutant_harness("a");
+    let (first, second) = (id(1), id(2));
     let states = |events| {
         let replayed = replay_mutant(events);
         (mutant_restored(&replayed).unwrap(), replayed)
     };
-    core.command(mutant_cover("a"), &plan_mutant(&first, "a"))
-        .await
-        .unwrap();
-    let (restored, replayed) = states(mutant_events(&core, "a").await);
+    core.command(&plan_mutant(&first, "a")).unwrap();
+    let (restored, replayed) = states(mutant_events(&core));
     assert_eq!(restored, replayed, "just planned");
     let mut other = plan_mutant(&second, "a");
     if let Some(m) = other.mutant.as_mut().and_then(|e| e.mutant.as_mut()) {
         m.line = 9;
     }
-    core.command(mutant_cover("a"), &other).await.unwrap();
-    core.report(mutant_cover("a"), &reported(&second, Verdict::Killed), "2")
-        .await
+    core.command(&other).unwrap();
+    core.report(&reported(&second, Verdict::Killed), "2")
         .unwrap();
-    let (restored, replayed) = states(mutant_events(&core, "a").await);
+    let (restored, replayed) = states(mutant_events(&core));
     assert_eq!(restored, replayed, "decided for one run of two");
-    core.report(mutant_cover("a"), &reported(&first, Verdict::Survived), "1")
-        .await
+    core.report(&reported(&first, Verdict::Survived), "1")
         .unwrap();
-    let (restored, replayed) = states(mutant_events(&core, "a").await);
+    let (restored, replayed) = states(mutant_events(&core));
     assert_eq!(restored, replayed, "decided for both");
 }
 
@@ -1148,47 +1002,38 @@ fn test_restoring_a_mutant_from_an_invalid_snapshot_is_refused_and_leaves_it_unc
 
 /// The snapshot `core`'s store holds for `cover`, and the sequence of the
 /// stream's last event.
-async fn stored_snapshot(core: &Core, cover: &Cover) -> (angzarr_embedded::v1::Snapshot, u64) {
-    let stream = StreamRef::try_from(cover).unwrap();
-    let snapshot = core.store.read_snapshot(stream).await.unwrap();
-    let last = u64::try_from(core.events(cover, 0).await.unwrap().len()).unwrap() - 1;
+fn stored_snapshot<D: Domain>(core: &Harness<D>) -> (angzarr_embedded::v1::Snapshot, u64) {
+    let stream = StreamRef::try_from(core.cover()).unwrap();
+    let snapshot = block_on_ready(core.store().read_snapshot(stream)).unwrap();
+    let last = u64::try_from(core.pages().len()).unwrap() - 1;
     (snapshot.expect("a snapshot"), last)
 }
 
-#[tokio::test]
-async fn test_handling_a_run_s_input_stores_its_snapshot_at_the_head() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a", "b"]))
-        .await
-        .unwrap();
-    core.report(run_cover(&run), &decision("a", Verdict::Killed), "a")
-        .await
-        .unwrap();
-    let (snapshot, last) = stored_snapshot(&core, &run_cover(&run)).await;
+#[test]
+fn test_handling_a_run_s_input_stores_its_snapshot_at_the_head() {
+    let mut core = run_harness();
+    core.command(&plan(&["a", "b"])).unwrap();
+    core.report(&decision("a", Verdict::Killed), "a").unwrap();
+    let (snapshot, last) = stored_snapshot(&core);
     assert_eq!(snapshot.sequence, last);
     let state: RunSnapshot = decode_message(&snapshot.state.unwrap()).unwrap().unwrap();
     let mut restored = Run::default();
     restored.restore(state).unwrap();
-    assert_eq!(restored, replay_run(run_events(&core, &run).await));
+    assert_eq!(restored, replay_run(run_events(&core)));
 }
 
-#[tokio::test]
-async fn test_handling_a_mutant_s_input_stores_its_snapshot_at_the_head() {
-    let core = core();
-    let run = new_run();
-    core.command(mutant_cover("a"), &plan_mutant(&run, "a"))
-        .await
-        .unwrap();
-    core.report(mutant_cover("a"), &reported(&run, Verdict::Killed), "1")
-        .await
-        .unwrap();
-    let (snapshot, last) = stored_snapshot(&core, &mutant_cover("a")).await;
+#[test]
+fn test_handling_a_mutant_s_input_stores_its_snapshot_at_the_head() {
+    let mut core = mutant_harness("a");
+    let run = run_id();
+    core.command(&plan_mutant(&run, "a")).unwrap();
+    core.report(&reported(&run, Verdict::Killed), "1").unwrap();
+    let (snapshot, last) = stored_snapshot(&core);
     assert_eq!(snapshot.sequence, last);
     let state: MutantSnapshot = decode_message(&snapshot.state.unwrap()).unwrap().unwrap();
     let mut restored = Mutant::default();
     restored.restore(state).unwrap();
-    assert_eq!(restored, replay_mutant(mutant_events(&core, "a").await));
+    assert_eq!(restored, replay_mutant(mutant_events(&core)));
 }
 
 /// `message`'s wire form: its full name and its encoding as hex.
@@ -1237,10 +1082,10 @@ fn test_every_refusal_encodes_to_the_bytes_it_always_has() {
     assert_eq!(lines, expected);
 }
 
-#[tokio::test]
-async fn test_a_plan_without_a_run_a_mutant_or_the_mutant_s_plan_is_refused_and_records_nothing() {
-    let core = core();
-    let run = new_run();
+#[test]
+fn test_a_plan_without_a_run_a_mutant_or_the_mutant_s_plan_is_refused_and_records_nothing() {
+    let mut core = mutant_harness("a");
+    let run = run_id();
     for (command, refusal) in [
         (
             PlanMutant {
@@ -1272,24 +1117,22 @@ async fn test_a_plan_without_a_run_a_mutant_or_the_mutant_s_plan_is_refused_and_
         ),
         (PlanMutant::default(), "cherenkov.mutant.v1.NoRun"),
     ] {
-        let error = core
-            .command(mutant_cover("a"), &command)
-            .await
-            .expect_err("refused");
+        let error = core.command(&command).expect_err("refused");
         assert!(
             error.ends_with(&format!("refusal_type={refusal}")),
             "{error}"
         );
     }
-    assert!(mutant_events(&core, "a").await.is_empty());
+    assert!(mutant_events(&core).is_empty());
 }
 
 #[test]
 fn test_a_snapshot_stored_under_the_rules_before_the_vocabulary_is_passed_over() {
     // The tallies of a snapshot became verdicts and counts, so the state
     // changed: only a snapshot of this minor version resumes a stream.
-    let core = core();
-    let catalog = core.registry.catalog();
+    let mut registry = Registry::new();
+    register(&mut registry).unwrap();
+    let catalog = registry.catalog();
     for (domain, state) in [
         (RUN_DOMAIN, pack_message(&RunSnapshot::default())),
         (MUTANT_DOMAIN, pack_message(&MutantSnapshot::default())),
@@ -1321,14 +1164,12 @@ fn registering_twice_is_refused() {
     assert!(register(&mut registry).is_err());
 }
 
-#[tokio::test]
-async fn test_a_decision_is_recorded_on_the_run_with_the_decision_whole() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a"])).await.unwrap();
-    core.report(run_cover(&run), &preparation("p"), "p")
-        .await
-        .unwrap();
+#[test]
+fn test_a_decision_is_recorded_on_the_run_with_the_decision_whole() {
+    let mut core = run_harness();
+    let run = run_id();
+    core.command(&plan(&["a"])).unwrap();
+    core.report(&preparation("p"), "p").unwrap();
     let decided = MutantDecided {
         mutant: Some(PlannedMutant {
             id: "a".to_string(),
@@ -1352,9 +1193,8 @@ async fn test_a_decision_is_recorded_on_the_run_with_the_decision_whole() {
         decision: Some(decided.clone()),
         ..decision("a", Verdict::Killed)
     };
-    core.report(run_cover(&run), &fact, "a").await.unwrap();
-    let recorded = run_events(&core, &run)
-        .await
+    core.report(&fact, "a").unwrap();
+    let recorded = run_events(&core)
         .into_iter()
         .find_map(|event| match event {
             RunEvent::DecisionRecorded(d) => Some(d),
@@ -1365,56 +1205,41 @@ async fn test_a_decision_is_recorded_on_the_run_with_the_decision_whole() {
 }
 
 /// The bytes of a ready run of `n` mutants' snapshot after its first decision.
-async fn snapshot_size_after_first_decision(n: usize) -> usize {
-    let core = core();
-    let run = new_run();
+fn snapshot_size_after_first_decision(n: usize) -> usize {
+    let mut core = run_harness();
     let ids: Vec<String> = (0..n).map(|i| format!("mutant-{i:05}")).collect();
     let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
-    core.command(run_cover(&run), &plan(&refs)).await.unwrap();
-    core.report(run_cover(&run), &preparation("calc-1"), "prepared")
-        .await
+    core.command(&plan(&refs)).unwrap();
+    core.report(&preparation("calc-1"), "prepared").unwrap();
+    core.report(&decision(&ids[0], Verdict::Killed), "first")
         .unwrap();
-    core.report(
-        run_cover(&run),
-        &decision(&ids[0], Verdict::Killed),
-        "first",
-    )
-    .await
-    .unwrap();
-    let replayed = replay_run(run_events(&core, &run).await);
+    let replayed = replay_run(run_events(&core));
     assert!(replayed.ready() && replayed.live());
     prost::Message::encode_to_vec(&replayed.snapshot().expect("it offers one").to_wire()).len()
 }
 
-#[tokio::test]
-async fn test_a_ready_run_s_snapshot_does_not_grow_with_the_mutants_planned() {
-    let small = snapshot_size_after_first_decision(200).await;
-    let large = snapshot_size_after_first_decision(400).await;
+#[test]
+fn test_a_ready_run_s_snapshot_does_not_grow_with_the_mutants_planned() {
+    let small = snapshot_size_after_first_decision(200);
+    let large = snapshot_size_after_first_decision(400);
     assert!(
         large <= small + 4,
         "200 mutants: {small} bytes, 400 mutants: {large} bytes"
     );
 }
 
-#[tokio::test]
-async fn test_a_decision_told_to_an_abandoned_run_with_a_mutant_owed_records_nothing() {
-    let core = core();
-    let run = new_run();
-    core.command(run_cover(&run), &plan(&["a", "b"]))
-        .await
-        .unwrap();
+#[test]
+fn test_a_decision_told_to_an_abandoned_run_with_a_mutant_owed_records_nothing() {
+    let mut core = run_harness();
+    core.command(&plan(&["a", "b"])).unwrap();
     let abandoned = Abandoned {
         why: None,
         reason: "the plan changed".to_string(),
     };
-    core.report(run_cover(&run), &abandoned, "abandoned")
-        .await
-        .unwrap();
-    let before = run_events(&core, &run).await.len();
-    core.report(run_cover(&run), &decision("a", Verdict::Killed), "a")
-        .await
-        .unwrap();
-    assert_eq!(run_events(&core, &run).await.len(), before);
+    core.report(&abandoned, "abandoned").unwrap();
+    let before = run_events(&core).len();
+    core.report(&decision("a", Verdict::Killed), "a").unwrap();
+    assert_eq!(run_events(&core).len(), before);
 }
 
 #[test]

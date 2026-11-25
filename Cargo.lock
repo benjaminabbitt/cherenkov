@@ -553,8 +553,6 @@ dependencies = [
  "coded-diagnostic",
  "prost",
  "prost-types",
- "tokio",
- "uuid",
 ]
 
 [[package]]

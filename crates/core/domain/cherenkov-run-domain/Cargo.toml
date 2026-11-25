@@ -26,8 +26,6 @@ angzarr-embedded = { workspace = true, features = ["test-support"] }
 cherenkov-run-ports.workspace = true
 cherenkov-fs.workspace = true
 cherenkov-syntax.workspace = true
-tokio.workspace = true
-uuid.workspace = true
 
 [lints]
 workspace = true
