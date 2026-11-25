@@ -57,6 +57,14 @@ tierp-harvest:
 test-determinism:
     cargo test -p cherenkov --test run -- --ignored test_run_twice_decides
 
+# Record the replay fixtures of cherenkov-run-domain's current rules version
+# (its major.minor), after a change to what the aggregates' state holds or how
+# their events fold bumped it. Writes crates/core/domain/cherenkov-run-domain/
+# tests/fixtures/<major.minor>/ and refuses a version whose directory exists:
+# a recorded version is added to, never rewritten.
+regen-replay-fixtures:
+    cargo test -p cherenkov-run-domain --test replay -- --ignored regenerate_the_fixtures_of_the_current_rules_version
+
 # List planned mutants for a directory, e.g. `just plan fixtures/go`.
 plan dir *args:
     cargo run -q -p cherenkov -- plan {{dir}} {{args}}
