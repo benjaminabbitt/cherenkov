@@ -70,11 +70,14 @@ impl Yielding {
     }
 
     /// What the store does at its next event write: counted, and, when it
-    /// is the armed one, died at.
+    /// is the armed one (or a store that has died is written to), died at.
     fn dying(&self) -> Option<Crash> {
         let armed = *self.crash.lock().unwrap_or_else(PoisonError::into_inner);
         armed?;
         let nth = self.writes.fetch_add(1, Ordering::SeqCst) + 1;
+        if self.crashed() {
+            return Some(Crash::Before(nth));
+        }
         armed.filter(|crash| matches!(crash, Crash::Before(n) | Crash::After(n) if *n == nth))
     }
 

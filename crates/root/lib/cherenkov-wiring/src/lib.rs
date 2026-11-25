@@ -66,6 +66,11 @@ impl Sampling {
         }
     }
 
+    /// A fresh run's id.
+    pub fn run(&self) -> Uuid {
+        (self.runs)()
+    }
+
     /// The system clock and fresh v7 ids: [`sample`] and [`new_run`].
     pub fn production() -> Sampling {
         Sampling::new(sample, new_run)
@@ -130,7 +135,7 @@ pub fn start_on<S: RunStore>(
         })?;
     runtime.block_on(async {
         let core = Arc::new(core(opening.await?, OnRetryable::default(), &sampling).await?);
-        layer::start(&core, (sampling.runs)(), plans, settings, workers, readers).await
+        layer::start(&core, sampling.run(), plans, settings, workers, readers).await
     })
 }
 
