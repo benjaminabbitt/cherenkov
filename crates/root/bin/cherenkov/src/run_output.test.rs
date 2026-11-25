@@ -92,6 +92,7 @@ fn run(
             Box::new(JsonLines(out)),
             Arc::new(crate::catalog().unwrap()),
         )),
+        cherenkov_wiring::testing::sampling(),
     )
 }
 
@@ -452,6 +453,7 @@ fn test_two_runs_of_a_project_write_the_same_verdict_file() {
             &settings(),
             Some(workers(&runs)),
             readers,
+            cherenkov_wiring::testing::sampling(),
         )
         .unwrap();
         assert_eq!(status, Some(RunStatus::Complete));

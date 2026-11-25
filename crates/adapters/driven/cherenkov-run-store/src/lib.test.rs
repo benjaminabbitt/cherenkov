@@ -1,29 +1,20 @@
-use std::path::PathBuf;
+use test_dir::TestDir;
 
 use super::*;
 
-/// A directory of this test's own, empty.
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("cherenkov-store-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
 #[tokio::test]
 async fn a_store_is_made_in_a_file_that_is_not_there() {
-    let dir = scratch("made");
+    let dir = TestDir::new("cherenkov-store-made");
     let file = dir.join("runs.sqlite");
     let store = open(&file).await.unwrap();
     store.close().await.unwrap();
     assert!(file.is_file());
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
 async fn a_store_reopened_is_the_one_that_was_closed() {
     use angzarr_ports::{EventStore, StreamRef};
-    let dir = scratch("reopened");
+    let dir = TestDir::new("cherenkov-store-reopened");
     let file = dir.join("runs.sqlite");
     let cover = angzarr_ports::angzarr_proto::v1::Cover {
         domain: "d".to_string(),
@@ -52,12 +43,11 @@ async fn a_store_reopened_is_the_one_that_was_closed() {
         .unwrap();
     assert_eq!(slice.pages.len(), 1);
     again.close().await.unwrap();
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[tokio::test]
 async fn a_file_that_is_not_a_store_is_refused_and_left_alone() {
-    let dir = scratch("refused");
+    let dir = TestDir::new("cherenkov-store-refused");
     let file = dir.join("runs.sqlite");
     std::fs::write(
         &file,
@@ -66,12 +56,11 @@ async fn a_file_that_is_not_a_store_is_refused_and_left_alone() {
     .unwrap();
     assert!(open(&file).await.is_err());
     assert!(std::fs::read(&file).unwrap().starts_with(b"this is not"));
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn a_projects_store_is_under_its_cherenkov_directory_and_git_ignores_itself() {
-    let dir = scratch("project");
+    let dir = TestDir::new("cherenkov-store-project");
     let file = in_project(&dir).unwrap();
     assert_eq!(file, dir.join(".cherenkov/store/runs.sqlite"));
     let ignore = std::fs::read_to_string(dir.join(".cherenkov/store/.gitignore")).unwrap();
@@ -84,16 +73,14 @@ fn a_projects_store_is_under_its_cherenkov_directory_and_git_ignores_itself() {
             .unwrap()
             .contains("mine")
     );
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn a_projects_store_is_under_its_cherenkov_directory_and_naming_it_makes_nothing() {
-    let dir = scratch("project-store");
+    let dir = TestDir::new("cherenkov-store-project-store");
     let path = project_store(&dir);
     assert_eq!(path, dir.join(".cherenkov/store/runs.sqlite"));
     assert!(!dir.join(".cherenkov").exists());
     assert_eq!(in_project(&dir).unwrap(), path);
     assert!(dir.join(".cherenkov/store/.gitignore").is_file());
-    std::fs::remove_dir_all(&dir).unwrap();
 }

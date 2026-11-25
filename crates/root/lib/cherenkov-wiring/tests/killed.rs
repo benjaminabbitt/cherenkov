@@ -3,6 +3,11 @@
 //! after it carries on the same run, runs no mutant that was decided again,
 //! and ends with the verdicts an uninterrupted run ends with.
 //!
+//! A child and the process that resumes its run are two processes, so each
+//! samples its own clock and ids (`Sampling::production`): a deterministic
+//! sampling restarts at its first command id in each, and a resumed process
+//! would repeat the child's command ids on streams the child wrote.
+//!
 //! The child is this test binary run again on its own `child` test, told by
 //! the environment what to do; the test is a no-op without it.
 
@@ -19,7 +24,9 @@ use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_application::layer::Workers;
 use cherenkov_run_domain::RunStatus;
 use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
-use common::{Kept, exited, plans_of, readers, scratch, settings};
+use cherenkov_wiring::Sampling;
+use common::{Kept, exited, plans_of, readers, settings};
+use test_dir::TestDir;
 
 const MUTANTS: usize = 6;
 
@@ -97,6 +104,7 @@ fn child() {
         &settings(),
         Some(workers(Path::new(&ledger), true)),
         readers(&kept),
+        Sampling::production(),
     );
 }
 
@@ -134,7 +142,7 @@ fn ledger_lines(ledger: &Path) -> Vec<String> {
 
 #[test]
 fn a_run_killed_with_sigkill_is_resumed_and_ends_as_an_uninterrupted_run_does() {
-    let dir = scratch("sigkill");
+    let dir = TestDir::new("cherenkov-killed-sigkill");
     let (store, ledger) = (dir.join("runs.sqlite"), dir.join("ledger"));
 
     let mut child = spawn_child(&store, &ledger);
@@ -155,6 +163,7 @@ fn a_run_killed_with_sigkill_is_resumed_and_ends_as_an_uninterrupted_run_does() 
         &settings(),
         Some(workers(&ledger, false)),
         readers(&resumed_file),
+        Sampling::production(),
     )
     .unwrap();
     assert!(resumed.resumed, "the run the child left was carried on");
@@ -182,6 +191,7 @@ fn a_run_killed_with_sigkill_is_resumed_and_ends_as_an_uninterrupted_run_does() 
         &settings(),
         Some(workers(&dir.join("whole-ledger"), false)),
         readers(&whole_file),
+        cherenkov_wiring::testing::sampling(),
     )
     .unwrap();
     assert!(!whole.resumed);
@@ -190,13 +200,13 @@ fn a_run_killed_with_sigkill_is_resumed_and_ends_as_an_uninterrupted_run_does() 
         *whole_file.0.lock().unwrap()
     );
     assert_eq!(resumed_file.0.lock().unwrap().len(), 1, "one file written");
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn a_run_after_one_that_finished_is_a_new_run_on_the_same_store() {
-    let dir = scratch("finished");
+    let dir = TestDir::new("cherenkov-killed-finished");
     let (store, ledger) = (dir.join("runs.sqlite"), dir.join("ledger"));
+    let sampling = cherenkov_wiring::testing::sampling();
     let ran = |hold| {
         cherenkov_wiring::start_in_file(
             &store,
@@ -204,6 +214,7 @@ fn a_run_after_one_that_finished_is_a_new_run_on_the_same_store() {
             &settings(),
             Some(workers(&ledger, hold)),
             readers(&Kept::default()),
+            sampling.clone(),
         )
         .unwrap()
     };
@@ -212,7 +223,6 @@ fn a_run_after_one_that_finished_is_a_new_run_on_the_same_store() {
     assert_ne!(first.run, second.run);
     assert_eq!(second.status, Some(RunStatus::Complete));
     assert_eq!(ledger_lines(&ledger).len(), 2 * MUTANTS);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 /// The run's and a mutant's streams, each with the snapshot of its state the
@@ -222,7 +232,7 @@ fn the_snapshots_of_a_run_are_kept_in_the_store_at_the_head_of_each_stream() {
     use angzarr_ports::{EventStore, SnapshotStore, StreamRef};
     use cherenkov_run_application::covers::{mutant_cover, run_cover};
 
-    let dir = scratch("snapshots");
+    let dir = TestDir::new("cherenkov-killed-snapshots");
     let (path, ledger) = (dir.join("runs.sqlite"), dir.join("ledger"));
     let started = cherenkov_wiring::start_in_file(
         &path,
@@ -230,6 +240,7 @@ fn the_snapshots_of_a_run_are_kept_in_the_store_at_the_head_of_each_stream() {
         &settings(),
         Some(workers(&ledger, false)),
         readers(&Kept::default()),
+        cherenkov_wiring::testing::sampling(),
     )
     .unwrap();
 
@@ -254,5 +265,4 @@ fn the_snapshots_of_a_run_are_kept_in_the_store_at_the_head_of_each_stream() {
         }
         store.close().await.unwrap();
     });
-    std::fs::remove_dir_all(&dir).unwrap();
 }

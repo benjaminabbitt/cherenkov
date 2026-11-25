@@ -273,6 +273,7 @@ fn populate(path: &Path, runs: usize) {
         }
     }
 
+    let sampling = cherenkov_wiring::testing::sampling();
     for _ in 0..runs {
         let settings = Settings {
             root: "/project".to_string(),
@@ -284,8 +285,15 @@ fn populate(path: &Path, runs: usize) {
             jobs: 1,
         };
         let readers = Readers::printing(Box::new(Silent));
-        let started =
-            cherenkov_wiring::start_in_file(path, &[], &settings, Some(workers), readers).unwrap();
+        let started = cherenkov_wiring::start_in_file(
+            path,
+            &[],
+            &settings,
+            Some(workers),
+            readers,
+            sampling.clone(),
+        )
+        .unwrap();
         assert!(started.status.is_some(), "the run finished");
     }
 }

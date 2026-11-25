@@ -64,9 +64,13 @@ fn each_run_has_an_id_of_its_own() {
 #[tokio::test]
 async fn the_core_stamps_what_it_records_at_the_clock() {
     let before = now_seconds();
-    let core = core(MemoryStore::new(), OnRetryable::default())
-        .await
-        .unwrap();
+    let core = core(
+        MemoryStore::new(),
+        OnRetryable::default(),
+        &Sampling::production(),
+    )
+    .await
+    .unwrap();
     let run = new_run();
     core.command(run_cover(&run), &PlanRun::default())
         .await
@@ -115,6 +119,7 @@ fn a_dry_run_plans_and_does_not_finish() {
         &settings,
         None,
         Readers::printing(Box::new(kept.clone())),
+        Sampling::production(),
     )
     .unwrap();
     assert_eq!(status, None);
@@ -123,5 +128,37 @@ fn a_dry_run_plans_and_does_not_finish() {
     assert!(
         matches!(events[1], RunEvent::MutantsPlanned(_)),
         "{events:?}"
+    );
+}
+
+#[test]
+fn a_run_on_an_injected_sampling_is_named_and_stamped_by_it() {
+    let settings = Settings {
+        root: ".".to_string(),
+        operators: vec![OperatorSet {
+            language: "rust".to_string(),
+            set: "default".to_string(),
+        }],
+        jobs: 1,
+    };
+    let kept = Kept::default();
+    let started = start(
+        MemoryStore::new(),
+        &plans(),
+        &settings,
+        None,
+        Readers::printing(Box::new(kept.clone())),
+        crate::testing::sampling(),
+    )
+    .unwrap();
+    assert_eq!(started.run, Uuid::from_bytes([1; 16]));
+    let events = kept.0.lock().unwrap();
+    let RunEvent::RunStarted(run) = &events[0] else {
+        panic!("{events:?}");
+    };
+    assert!(
+        run.started_at
+            .as_ref()
+            .is_some_and(|at| at.seconds > 1_000_000 && at.seconds < 2_000_000)
     );
 }

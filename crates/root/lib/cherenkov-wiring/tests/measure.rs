@@ -10,7 +10,8 @@ use cherenkov_mutation::execution::{Budget, Observed};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_application::layer::Workers;
 use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
-use common::{Kept, exited, plans_of, readers, scratch, settings};
+use common::{Kept, exited, plans_of, readers, settings};
+use test_dir::TestDir;
 
 /// Kills the mutants in `a`, at once.
 struct Instant8;
@@ -50,7 +51,7 @@ fn sizes() -> Option<Vec<usize>> {
 #[ignore = "measurement: prints what a whole run costs in memory and on the SQLite store"]
 fn measure_a_whole_run_in_memory_and_on_sqlite() {
     let Some(sizes) = sizes() else { return };
-    let dir = scratch("measure");
+    let dir = TestDir::new("cherenkov-measure");
     for n in sizes {
         let plans = plans_of(n);
         let memory = Instant::now();
@@ -60,11 +61,13 @@ fn measure_a_whole_run_in_memory_and_on_sqlite() {
             &settings(),
             Some(workers()),
             readers(&Kept::default()),
+            cherenkov_wiring::testing::sampling(),
         )
         .unwrap();
         let memory = memory.elapsed();
 
         let file = dir.join(format!("runs-{n}.sqlite"));
+        let sampling = cherenkov_wiring::testing::sampling();
         let sqlite = Instant::now();
         cherenkov_wiring::start_in_file(
             &file,
@@ -72,6 +75,7 @@ fn measure_a_whole_run_in_memory_and_on_sqlite() {
             &settings(),
             Some(workers()),
             readers(&Kept::default()),
+            sampling.clone(),
         )
         .unwrap();
         let sqlite = sqlite.elapsed();
@@ -87,6 +91,7 @@ fn measure_a_whole_run_in_memory_and_on_sqlite() {
                 &settings(),
                 Some(workers()),
                 readers(&Kept::default()),
+                sampling.clone(),
             )
             .unwrap();
             again = started.elapsed();
@@ -97,5 +102,4 @@ fn measure_a_whole_run_in_memory_and_on_sqlite() {
             size / 1024
         );
     }
-    std::fs::remove_dir_all(&dir).unwrap();
 }

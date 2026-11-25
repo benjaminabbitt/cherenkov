@@ -32,6 +32,8 @@ serde_json.workspace = true
 toml.workspace = true
 
 [dev-dependencies]
+# Deterministic clock and ids for the tests that run.
+cherenkov-wiring = { workspace = true, features = ["test-support"] }
 angzarr-ports.workspace = true
 tokio.workspace = true
 

@@ -436,16 +436,23 @@ fn on_run_layer(
         None => None,
     };
     let readers = run_readers(asked, log);
+    let sampling = cherenkov_wiring::Sampling::production();
     let started = match store_file(asked)? {
-        Some(path) => {
-            cherenkov_wiring::start_in_file(&path, plans, &settings, Some(workers), readers)
-        }
+        Some(path) => cherenkov_wiring::start_in_file(
+            &path,
+            plans,
+            &settings,
+            Some(workers),
+            readers,
+            sampling,
+        ),
         None => cherenkov_wiring::start(
             cherenkov_run_store::memory(),
             plans,
             &settings,
             Some(workers),
             readers,
+            sampling,
         ),
     }
     .map_err(|e| CliError::run(&e))?;

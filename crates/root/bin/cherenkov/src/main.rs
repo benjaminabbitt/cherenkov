@@ -672,6 +672,7 @@ fn plan(
         &settings,
         None,
         Readers::printing(cherenkov_cli::output::printing(sink, say.catalog())),
+        cherenkov_wiring::Sampling::production(),
     )
     .map_err(|e| CliError::run(&e))?;
     summarize(&project, say);

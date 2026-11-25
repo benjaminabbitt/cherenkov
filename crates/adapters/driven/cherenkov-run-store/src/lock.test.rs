@@ -3,6 +3,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::Instant;
 
 use super::*;
+use test_dir::TestDir;
 
 /// One test at a time: a test that starts a process hands it, for the
 /// instant between fork and exec, every file this process has open, the
@@ -11,14 +12,6 @@ fn serial() -> std::sync::MutexGuard<'static, ()> {
     static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
     ONE.lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
-/// A directory of this test's own, empty.
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("cherenkov-lock-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
 }
 
 fn held_by(error: LockError) -> Option<Holder> {
@@ -31,7 +24,7 @@ fn held_by(error: LockError) -> Option<Holder> {
 #[test]
 fn test_a_second_take_of_a_held_store_is_refused_at_once_naming_this_process() {
     let _serial = serial();
-    let dir = scratch("second");
+    let dir = TestDir::new("cherenkov-lock-second");
     let store = dir.join("runs.sqlite");
     let _first = acquire(&store).unwrap();
     let began = Instant::now();
@@ -39,39 +32,34 @@ fn test_a_second_take_of_a_held_store_is_refused_at_once_naming_this_process() {
     assert!(began.elapsed() < Duration::from_secs(2), "not waited for");
     assert_eq!(holder.pid, std::process::id());
     assert!(!holder.command.is_empty());
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn test_a_store_dropped_is_free_to_take_again_and_its_record_is_gone() {
     let _serial = serial();
-    let dir = scratch("drop");
+    let dir = TestDir::new("cherenkov-lock-drop");
     let store = dir.join("runs.sqlite");
     drop(acquire(&store).unwrap());
     assert!(!holder_file(&store).exists());
     drop(acquire(&store).unwrap());
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn test_the_lock_of_one_store_does_not_hold_another() {
     let _serial = serial();
-    let dir = scratch("two");
+    let dir = TestDir::new("cherenkov-lock-two");
     let _one = acquire(&dir.join("one.sqlite")).unwrap();
     let _two = acquire(&dir.join("two.sqlite")).unwrap();
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn test_a_relative_store_path_is_locked_as_the_file_it_names() {
     let _serial = serial();
-    let dir = scratch("relative");
     let relative = PathBuf::from("target-relative-lock-test.sqlite");
     let _first = acquire(&relative).unwrap();
     assert!(held_by(acquire(&std::path::absolute(&relative).unwrap()).unwrap_err()).is_some());
     drop(_first);
     let _ = std::fs::remove_file(lock_file(&std::path::absolute(&relative).unwrap()));
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 /// A process that holds the lock file with `flock(1)` for a while, and
@@ -108,18 +96,17 @@ fn stop(holder: &mut Child) {
 #[test]
 fn test_a_store_held_by_a_process_that_left_no_record_is_refused_without_a_holder() {
     let _serial = serial();
-    let dir = scratch("foreign");
+    let dir = TestDir::new("cherenkov-lock-foreign");
     let store = dir.join("runs.sqlite");
     let mut other = foreign_holder(&lock_file(&store));
     assert_eq!(held_by(acquire(&store).unwrap_err()), None);
     stop(&mut other);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn test_a_lock_does_not_outlive_its_holder_killed() {
     let _serial = serial();
-    let dir = scratch("killed");
+    let dir = TestDir::new("cherenkov-lock-killed");
     let store = dir.join("runs.sqlite");
     let mut other = foreign_holder(&lock_file(&store));
     assert!(acquire(&store).is_err());
@@ -135,7 +122,6 @@ fn test_a_lock_does_not_outlive_its_holder_killed() {
         }
     };
     drop(taken.expect("the operating system gave the lock up with the process"));
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 /// A record of a holder that was killed: its process is long gone.
@@ -152,19 +138,18 @@ fn leave_record(store: &Path) -> Holder {
 #[test]
 fn test_a_record_a_killed_holder_left_does_not_refuse_the_next_taker_and_is_replaced() {
     let _serial = serial();
-    let dir = scratch("stale");
+    let dir = TestDir::new("cherenkov-lock-stale");
     let store = dir.join("runs.sqlite");
     leave_record(&store);
     let lock = acquire(&store).unwrap();
     assert_eq!(read_holder(&store).unwrap().pid, std::process::id());
     drop(lock);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn test_unlock_of_a_held_store_is_refused_and_leaves_the_holder_holding() {
     let _serial = serial();
-    let dir = scratch("unlock-held");
+    let dir = TestDir::new("cherenkov-lock-unlock-held");
     let store = dir.join("runs.sqlite");
     let lock = acquire(&store).unwrap();
     let holder = held_by(unlock(&store).unwrap_err()).unwrap();
@@ -172,40 +157,36 @@ fn test_unlock_of_a_held_store_is_refused_and_leaves_the_holder_holding() {
     assert!(acquire(&store).is_err(), "still held");
     assert!(holder_file(&store).exists(), "its record is not touched");
     drop(lock);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn test_unlock_of_a_free_store_clears_what_a_killed_holder_left() {
     let _serial = serial();
-    let dir = scratch("unlock-left");
+    let dir = TestDir::new("cherenkov-lock-unlock-left");
     let store = dir.join("runs.sqlite");
     drop(acquire(&store).unwrap());
     let left = leave_record(&store);
     assert_eq!(unlock(&store).unwrap(), Unlocked::Cleared(Some(left)));
     assert!(!holder_file(&store).exists());
     drop(acquire(&store).unwrap());
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn test_unlock_of_a_free_store_with_nothing_left_says_it_was_free() {
     let _serial = serial();
-    let dir = scratch("unlock-free");
+    let dir = TestDir::new("cherenkov-lock-unlock-free");
     let store = dir.join("runs.sqlite");
     drop(acquire(&store).unwrap());
     assert_eq!(unlock(&store).unwrap(), Unlocked::Free);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
 fn test_unlock_of_a_store_never_locked_makes_no_file() {
     let _serial = serial();
-    let dir = scratch("unlock-never");
+    let dir = TestDir::new("cherenkov-lock-unlock-never");
     let store = dir.join("sub").join("runs.sqlite");
     assert_eq!(unlock(&store).unwrap(), Unlocked::Free);
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -233,10 +214,9 @@ fn test_a_refusal_says_which_lock_is_held() {
 #[test]
 fn test_unlock_of_a_store_a_process_holds_that_left_no_record_is_refused() {
     let _serial = serial();
-    let dir = scratch("unlock-foreign");
+    let dir = TestDir::new("cherenkov-lock-unlock-foreign");
     let store = dir.join("runs.sqlite");
     let mut other = foreign_holder(&lock_file(&store));
     assert_eq!(held_by(unlock(&store).unwrap_err()), None);
     stop(&mut other);
-    std::fs::remove_dir_all(&dir).unwrap();
 }

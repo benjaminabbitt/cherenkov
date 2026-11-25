@@ -1,9 +1,8 @@
 //! What the tests of the durable store share: plans, settings, a verdict
-//! file that keeps what it is written, a scratch directory.
+//! file that keeps what it is written, the sampling of the clock and the ids.
 
 #![allow(dead_code)]
 
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -98,11 +97,4 @@ impl VerdictFile for Kept {
 
 pub fn readers(kept: &Kept) -> Readers {
     Readers::new(Box::new(Silent), Some(Arc::new(kept.clone())))
-}
-
-pub fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("cherenkov-killed-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
 }

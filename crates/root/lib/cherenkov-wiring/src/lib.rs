@@ -45,17 +45,47 @@ fn fresh_id() -> Uuid {
     Uuid::from_bytes(*uuid::Uuid::now_v7().as_bytes())
 }
 
+/// Where the instants, command ids and run ids a run is handled with come
+/// from: the clock and the id source, which a test replaces with
+/// deterministic ones and production fills with [`Sampling::production`].
+#[derive(Clone)]
+pub struct Sampling {
+    clock: Arc<dyn Fn() -> Sampled + Send + Sync>,
+    runs: Arc<dyn Fn() -> Uuid + Send + Sync>,
+}
+
+impl Sampling {
+    /// Calls stamped by `clock`, and each run's id from `runs`.
+    pub fn new(
+        clock: impl Fn() -> Sampled + Send + Sync + 'static,
+        runs: impl Fn() -> Uuid + Send + Sync + 'static,
+    ) -> Sampling {
+        Sampling {
+            clock: Arc::new(clock),
+            runs: Arc::new(runs),
+        }
+    }
+
+    /// The system clock and fresh v7 ids: [`sample`] and [`new_run`].
+    pub fn production() -> Sampling {
+        Sampling::new(sample, new_run)
+    }
+}
+
 /// The core over `store`: the run and mutant aggregates registered, the
-/// kernel retrying as `retry` says, every call sampled at the clock.
+/// kernel retrying as `retry` says, every call sampled by `sampling`'s
+/// clock.
 pub async fn core<S: RunStore>(
     store: S,
     retry: OnRetryable,
+    sampling: &Sampling,
 ) -> Result<EmbeddedEdge<S>, RunLayerError> {
     let mut registry = Registry::new();
     cherenkov_run_domain::register(&mut registry).map_err(|e| RunLayerError::Misconfigured {
         cause: angzarr_embedded::coded_diagnostic::Report::of(&e),
     })?;
-    Ok(EmbeddedEdge::start(store, registry, retry, sample, Arc::new(TokioWait)).await)
+    let clock = Arc::clone(&sampling.clock);
+    Ok(EmbeddedEdge::start(store, registry, retry, move || clock(), Arc::new(TokioWait)).await)
 }
 
 /// Run `plans` with `settings` on `store` and, given `workers`, run them;
@@ -70,8 +100,16 @@ pub fn start<S: RunStore>(
     settings: &Settings,
     workers: Option<Workers>,
     readers: Readers,
+    sampling: Sampling,
 ) -> Result<Started, RunLayerError> {
-    start_on(async { Ok(store) }, plans, settings, workers, readers)
+    start_on(
+        async { Ok(store) },
+        plans,
+        settings,
+        workers,
+        readers,
+        sampling,
+    )
 }
 
 /// [`start`] on the store `opening` opens, which is opened on the runtime
@@ -82,6 +120,7 @@ pub fn start_on<S: RunStore>(
     settings: &Settings,
     workers: Option<Workers>,
     readers: Readers,
+    sampling: Sampling,
 ) -> Result<Started, RunLayerError> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_time()
@@ -90,8 +129,8 @@ pub fn start_on<S: RunStore>(
             detail: e.to_string(),
         })?;
     runtime.block_on(async {
-        let core = Arc::new(core(opening.await?, OnRetryable::default()).await?);
-        layer::start(&core, new_run(), plans, settings, workers, readers).await
+        let core = Arc::new(core(opening.await?, OnRetryable::default(), &sampling).await?);
+        layer::start(&core, (sampling.runs)(), plans, settings, workers, readers).await
     })
 }
 
@@ -103,6 +142,7 @@ pub fn start_in_file(
     settings: &Settings,
     workers: Option<Workers>,
     readers: Readers,
+    sampling: Sampling,
 ) -> Result<Started, RunLayerError> {
     let opening = async {
         cherenkov_run_store::open(path)
@@ -111,7 +151,7 @@ pub fn start_in_file(
                 cause: Report::of(&cause),
             })
     };
-    start_on(opening, plans, settings, workers, readers)
+    start_on(opening, plans, settings, workers, readers, sampling)
 }
 
 /// Prune the durable store in the file at `path` to its last `keep`
@@ -132,7 +172,7 @@ pub fn prune_in_file(path: &Path, keep: usize, dry_run: bool) -> Result<Pruned, 
                 .map_err(|cause| RunLayerError::Store {
                     cause: Report::of(&cause),
                 })?;
-        let core = core(store, OnRetryable::default()).await?;
+        let core = core(store, OnRetryable::default(), &Sampling::production()).await?;
         prune::prune(&core, keep, dry_run).await
     })
 }
@@ -145,9 +185,13 @@ pub fn run<S: RunStore>(
     settings: &Settings,
     workers: Option<Workers>,
     readers: Readers,
+    sampling: Sampling,
 ) -> Result<Option<RunStatus>, RunLayerError> {
-    start(store, plans, settings, workers, readers).map(|started| started.status)
+    start(store, plans, settings, workers, readers, sampling).map(|started| started.status)
 }
+
+#[cfg(feature = "test-support")]
+pub mod testing;
 
 #[cfg(test)]
 #[path = "lib.test.rs"]
