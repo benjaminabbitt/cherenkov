@@ -39,8 +39,11 @@ the `encodings.txt` beside `cherenkov-run-wire`'s and `cherenkov-run-domain`'s
 tests holds every message's and refusal's bytes, and those tests fail on any
 change to them.
 
-The angzarr pins are one full commit, `8dc7da9` of github.com/angzarr-io/angzarr
+The angzarr pins are one full commit, `69dc4a9` of github.com/angzarr-io/angzarr
 (core, embedded, router, build and platform are crates of that one workspace).
+angzarr's spec (angzarr-project's `proto/` and `features/`) reaches it as the
+`angzarr-project` cargo package, at the rev angzarr pins: the lock holds it,
+and no repository in the chain carries a submodule.
 The generic substrate is rust-support's (github.com/benjaminabbitt/rust-support),
 every crate of it at one full commit, `dcb930d`, the one angzarr pins:
 `coded-diagnostic` (imported as `coded_diagnostic`), `presentation`,
