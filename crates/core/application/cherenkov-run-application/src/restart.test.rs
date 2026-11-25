@@ -4,7 +4,10 @@
 //! adds the store; the code is the same): nothing a runner finished is run
 //! again, nothing a policy owed is lost, and the run ends as it would have.
 
-use crate::testing::{Core, new_core, new_run};
+use crate::testing::{new_core, new_core_on, new_run};
+use crate::yielding::{Crash, Yielding};
+use angzarr_embedded::{OnRetryable, SnapshotStore, StreamRef};
+use cherenkov_embedded_edge::{EmbeddedEdge, RunStore};
 use cherenkov_run_ports::Edge;
 
 use std::collections::BTreeMap;
@@ -92,12 +95,12 @@ impl MutantExecutor for Executor {
 
 /// A runner of one worker over `core`, whose executor holds on its `hold`th
 /// run of the test.
-fn runner(
-    core: &Arc<Core>,
+fn runner<S: RunStore>(
+    core: &Arc<EmbeddedEdge<S>>,
     ledger: &Arc<Ledger>,
     hold: usize,
     gate: &Arc<Mutex<Receiver<()>>>,
-) -> Runner<Core> {
+) -> Runner<EmbeddedEdge<S>> {
     let executor: Box<dyn MutantExecutor + Send> = Box::new(Executor {
         ledger: ledger.clone(),
         hold,
@@ -108,8 +111,16 @@ fn runner(
 
 /// A run of `MUTANTS` mutants, planned and ready: its one program prepared,
 /// and nothing served yet.
-async fn ready_run(core: &Core) -> (Uuid, Vec<MutantPlan>) {
-    let plans = many(MUTANTS);
+async fn ready_run<S: RunStore>(core: &EmbeddedEdge<S>) -> (Uuid, Vec<MutantPlan>) {
+    ready_run_of(core, MUTANTS).await
+}
+
+/// A run of `mutants` mutants, planned and ready.
+async fn ready_run_of<S: RunStore>(
+    core: &EmbeddedEdge<S>,
+    mutants: usize,
+) -> (Uuid, Vec<MutantPlan>) {
+    let plans = many(mutants);
     let run = new_run();
     let plan = PlanRun {
         programs: 1,
@@ -124,7 +135,10 @@ async fn ready_run(core: &Core) -> (Uuid, Vec<MutantPlan>) {
 }
 
 /// The mutants of `plans` with a decision on their streams, by id.
-async fn decided(core: &Core, plans: &[MutantPlan]) -> BTreeMap<String, usize> {
+async fn decided<S: RunStore>(
+    core: &EmbeddedEdge<S>,
+    plans: &[MutantPlan],
+) -> BTreeMap<String, usize> {
     let mut decided = BTreeMap::new();
     for plan in plans {
         let pages = core
@@ -243,6 +257,156 @@ async fn test_a_serve_stopped_half_way_is_finished_by_a_new_bus_with_no_mutant_r
     assert_eq!((recorded, finished), (MUTANTS, 1));
 }
 
+/// What an uninterrupted run of `SWEPT` mutants came to, and how many event
+/// writes the serve made: the sweep's reference.
+struct Reference {
+    run_events: Vec<&'static str>,
+    writes: u64,
+}
+
+const SWEPT: usize = 3;
+
+fn names_of_run(pages: &[angzarr_embedded::v1::EventPage]) -> Vec<&'static str> {
+    pages
+        .iter()
+        .filter_map(run_event)
+        .map(|event| crate::testing::event_name(&event))
+        .collect()
+}
+
+/// A run of `SWEPT` mutants on a store that crashes the serve as `crash`
+/// says, served (never released) until the store crashes or the run ends,
+/// then served again, clean, on the same store, until the run ends.
+/// Returns the ledger of what ran, the core and the run.
+async fn crash_and_reserve(
+    crash: Crash,
+) -> (
+    Arc<EmbeddedEdge<Yielding>>,
+    Uuid,
+    Vec<MutantPlan>,
+    Arc<Ledger>,
+    BTreeMap<String, usize>,
+) {
+    let store = Yielding::default();
+    let core = Arc::new(new_core_on(store.clone(), OnRetryable::default()).await);
+    let (run, plans) = ready_run_of(&core, SWEPT).await;
+    let ledger = Arc::new(Ledger::default());
+    let (_release, gate): (Sender<()>, Receiver<()>) = channel();
+    let gate = Arc::new(Mutex::new(gate));
+    let instances = NonZeroUsize::MIN;
+
+    store.arm(crash);
+    let live = LiveRuns::default();
+    let ended = live.clone();
+    let first = serve(
+        core.as_ref(),
+        runner(&core, &ledger, usize::MAX, &gate),
+        instances,
+        &live,
+        |served| ended.status(&run).is_none() && !served.is_empty(),
+    );
+    tokio::select! {
+        served = first => panic!("{crash:?}: the serve ended before the store died: {served:?}"),
+        () = until(|| store.crashed()) => {}
+    }
+    let before = decided(&core, &plans).await;
+    store.disarm();
+
+    let live = LiveRuns::default();
+    let ended = live.clone();
+    serve(
+        core.as_ref(),
+        runner(&core, &ledger, usize::MAX, &gate),
+        instances,
+        &live,
+        |served| ended.status(&run).is_none() && !served.is_empty(),
+    )
+    .await
+    .unwrap();
+    (core, run, plans, ledger, before)
+}
+
+#[tokio::test]
+async fn test_a_serve_dropped_at_any_write_is_finished_by_a_new_serve_that_loses_and_repeats_nothing()
+ {
+    let reference = {
+        let store = Yielding::default();
+        let core = Arc::new(new_core_on(store.clone(), OnRetryable::default()).await);
+        let (run, _) = ready_run_of(&core, SWEPT).await;
+        let ledger = Arc::new(Ledger::default());
+        let (_release, gate): (Sender<()>, Receiver<()>) = channel();
+        let gate = Arc::new(Mutex::new(gate));
+        store.arm(Crash::Never);
+        let live = LiveRuns::default();
+        let ended = live.clone();
+        serve(
+            core.as_ref(),
+            runner(&core, &ledger, usize::MAX, &gate),
+            NonZeroUsize::MIN,
+            &live,
+            |served| ended.status(&run).is_none() && !served.is_empty(),
+        )
+        .await
+        .unwrap();
+        let pages = core.events(&run_cover(&run), 0).await.unwrap();
+        Reference {
+            run_events: names_of_run(&pages),
+            writes: store.writes(),
+        }
+    };
+    assert!(
+        reference.writes > SWEPT as u64,
+        "the sweep has writes to cut"
+    );
+
+    for write in 1..=reference.writes {
+        for crash in [Crash::Before(write), Crash::After(write)] {
+            let (core, run, plans, ledger, before) = crash_and_reserve(crash).await;
+            let context = format!("{crash:?}");
+            // Every mutant is decided once, on its own stream.
+            let after = decided(&core, &plans).await;
+            assert!(after.values().all(|n| *n == 1), "{context}: {after:?}");
+            // The run holds what an uninterrupted run held: each decision
+            // once and one finish.
+            let pages = core.events(&run_cover(&run), 0).await.unwrap();
+            assert_eq!(names_of_run(&pages), reference.run_events, "{context}");
+            // A snapshot is never ahead of its stream, and only the stream
+            // the crash fell in (between its event write and its snapshot
+            // write, with no later write to catch it up) is behind.
+            let mut covers = vec![run_cover(&run)];
+            covers.extend(plans.iter().map(|p| mutant_cover(&p.id.0).unwrap()));
+            let mut behind = 0;
+            for cover in &covers {
+                let stream = StreamRef::try_from(cover).unwrap();
+                let head = core.events(cover, 0).await.unwrap().len() as u64 - 1;
+                let snapshot = core.store().read_snapshot(stream).await.unwrap();
+                let at = snapshot.map(|s| s.sequence);
+                assert!(at <= Some(head), "{context}: {cover:?} {at:?} of {head}");
+                behind += usize::from(at < Some(head));
+            }
+            assert!(behind <= 1, "{context}: {behind} snapshots behind");
+            // A mutant decided before the crash was not run again; at
+            // most the one the crash caught ran twice, and none thrice.
+            for (id, decisions) in &before {
+                if *decisions == 1 {
+                    assert_eq!(ledger.runs_of(id), 1, "{context}: {id} was decided");
+                }
+            }
+            let twice = plans
+                .iter()
+                .filter(|p| ledger.runs_of(&p.id.0) == 2)
+                .count();
+            assert!(twice <= 1, "{context}: {twice} mutants ran twice");
+            assert!(
+                plans
+                    .iter()
+                    .all(|p| (1..=2).contains(&ledger.runs_of(&p.id.0))),
+                "{context}"
+            );
+        }
+    }
+}
+
 /// The bus follows a store through its change feed, so a run's store must
 /// have one: this does not compile for a `RunStore` without it.
 fn change_feed_of<S: cherenkov_embedded_edge::RunStore>(
@@ -276,9 +440,9 @@ async fn test_a_run_on_the_bus_completes_following_the_stores_change_feed() {
 
 /// The runner, both policies and the live runs on the bus `core` hosts,
 /// served until `more` says no.
-async fn serve(
-    core: &Core,
-    runner: Runner<Core>,
+async fn serve<S: RunStore>(
+    core: &EmbeddedEdge<S>,
+    runner: Runner<EmbeddedEdge<S>>,
     instances: NonZeroUsize,
     live: &LiveRuns,
     more: impl FnMut(&angzarr_embedded::angzarr_bus::Served) -> bool + Send,
