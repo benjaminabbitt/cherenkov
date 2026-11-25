@@ -877,6 +877,12 @@ cannot be recovered from English any more.
 `Samples` and `FaultyStore`; replay fixtures pinning snapshots and folds
 across rules versions; crash and re-serve tests on the durable store. Exit:
 no test builds its own kernel, clock or ids.
+Accepted exception (ruled 2026-11-25): `cherenkov-wiring`'s `killed` test
+(a real SIGKILL and a second process resuming the run) keeps
+`Sampling::production`, since a deterministic sampling restarts its command
+ids in each process. It moves onto `Samples` once angzarr's `Samples` takes
+a starting command id, when that crate is next changed (step 7 changes
+angzarr's `FaultyStore`).
 
 6. **Incremental runs.** The outcome facts already carry what a verdict
    depends on (the plan, each program run, the tests selected); add the
