@@ -297,7 +297,9 @@ mod built {
     use std::path::{Path, PathBuf};
 
     use cherenkov_exec_dap::layouts::{Layouts, Refusal};
-    use cherenkov_exec_dap::support_lib::{Request, public_type, request_in, resolve};
+    use cherenkov_exec_dap::support_lib::{
+        Request, ScratchLease, public_type, request_in, resolve,
+    };
     use cherenkov_exec_dap::toolchain::{build_rust_test_binaries, rustup_toolchain};
 
     fn fixture() -> PathBuf {
@@ -335,6 +337,7 @@ mod built {
     #[test]
     #[ignore = "slow: needs cargo"]
     fn test_a_std_type_is_laid_out_alike_in_the_library_and_the_program() {
+        let _lease = ScratchLease::acquire();
         let (binary, entry) = ops("tags");
         let layouts = Layouts::read(&binary).unwrap();
         let ty = public_type(&layouts.result_type_name(entry).unwrap()).unwrap();
@@ -355,6 +358,7 @@ mod built {
     #[test]
     #[ignore = "slow: needs cargo"]
     fn test_a_constructor_whose_type_is_laid_out_otherwise_is_refused() {
+        let _lease = ScratchLease::acquire();
         // The program's `Vec<u8>` against the library's `HashSet<u32>`.
         let (binary, entry) = ops("list");
         let layout = Layouts::read(&binary).unwrap().result_of(entry).unwrap();
@@ -377,6 +381,7 @@ mod built {
     #[test]
     #[ignore = "slow: needs cargo"]
     fn test_a_value_that_does_not_compile_as_its_type_is_unviable_and_the_rest_build() {
+        let _lease = ScratchLease::acquire();
         let (binary, entry) = ops("shared");
         let layout = Layouts::read(&binary).unwrap().result_of(entry).unwrap();
         let toolchain = rustup_toolchain(&fixture());
@@ -411,6 +416,7 @@ mod built {
     #[test]
     #[ignore = "slow: needs cargo"]
     fn test_private_structs_and_enums_are_mirrored_with_the_programs_layout() {
+        let _lease = ScratchLease::acquire();
         let toolchain = rustup_toolchain(&fixture());
         for (name, value) in [
             ("inventory", "Default::default()"),

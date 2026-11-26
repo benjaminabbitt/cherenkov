@@ -284,9 +284,7 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
         .jobs
         .unwrap_or_else(|| machine_jobs(asked.say, &programs));
     let sets = (0..jobs.max(1)).map(|_| set()).collect();
-    let result = on_run_layer(asked, "rust", &plans, workers_of(sets, jobs));
-    cherenkov_exec_dap::support_lib::remove_scratch();
-    result
+    on_run_layer(asked, "rust", &plans, workers_of(sets, jobs))
 }
 
 /// What one test program is given: the mutants it judges, those among them

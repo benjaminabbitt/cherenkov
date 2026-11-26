@@ -410,6 +410,9 @@ pub struct TierPExecutor<L: Launcher> {
     unresolved: Option<UnresolvedNames>,
     /// Shared with the sessions and the canceller: ends them from outside.
     watch: Arc<Watch>,
+    /// Keeps the support library's scratch directory for as long as this
+    /// executor may build in it.
+    _scratch: crate::support_lib::ScratchLease,
 }
 
 /// The syntax layer's check of a replacement value's names: the source, the
@@ -435,6 +438,7 @@ impl<L: Launcher> TierPExecutor<L> {
             scope_root: None,
             unresolved: None,
             watch: Arc::default(),
+            _scratch: crate::support_lib::ScratchLease::acquire(),
         }
     }
 

@@ -888,8 +888,38 @@ pub fn scratch_dir() -> PathBuf {
     std::env::temp_dir().join(format!("cherenkov-support-{}", std::process::id()))
 }
 
-/// Remove [`scratch_dir`] (at the end of a run).
-pub fn remove_scratch() {
+/// How many [`ScratchLease`]s are held.
+static LEASES: Mutex<usize> = Mutex::new(0);
+
+/// A use of [`scratch_dir`] and the libraries built in it. The directory
+/// (and every library the process cached from it) is removed when the last
+/// lease drops, on a panic as on a return, so the directory lives exactly as
+/// long as the run (or test) that uses it. Whoever builds or resolves a
+/// library holds a lease for as long as it may.
+#[must_use = "the scratch directory is removed when the last lease drops"]
+pub struct ScratchLease(());
+
+impl ScratchLease {
+    pub fn acquire() -> ScratchLease {
+        *LEASES.lock().unwrap_or_else(|e| e.into_inner()) += 1;
+        ScratchLease(())
+    }
+}
+
+impl Drop for ScratchLease {
+    fn drop(&mut self) {
+        let mut held = LEASES.lock().unwrap_or_else(|e| e.into_inner());
+        *held = held.saturating_sub(1);
+        if *held == 0 {
+            remove_scratch();
+        }
+    }
+}
+
+/// Forget the cached libraries and remove [`scratch_dir`]: nothing holds a
+/// lease, so no build is using either.
+fn remove_scratch() {
+    LIBRARIES.lock().unwrap_or_else(|e| e.into_inner()).clear();
     let _ = std::fs::remove_dir_all(scratch_dir());
 }
 
