@@ -28,6 +28,7 @@ pub fn report(preparation: Preparation, plans: &[MutantPlan]) -> PreparationRepo
         describe,
         baseline,
         baseline_failures,
+        baseline_output_tail,
         took,
         recording,
     } = preparation;
@@ -42,6 +43,7 @@ pub fn report(preparation: Preparation, plans: &[MutantPlan]) -> PreparationRepo
         index: u32::try_from(program).unwrap_or(u32::MAX),
         baseline: Some(observation::encode(&baseline)),
         baseline_failures,
+        baseline_output_tail,
         drives: None,
     };
     if let Some(recording) = recording {

@@ -197,6 +197,7 @@ impl Run {
         &self,
         program: Option<String>,
         (reason, why): (String, Option<angzarr::Diagnostic>),
+        output_tail: Option<String>,
         ctx: &Context,
     ) -> FactEmit<Self> {
         FactEmit::of([
@@ -204,6 +205,7 @@ impl Run {
                 program,
                 reason,
                 why,
+                output_tail,
             }),
             pack_message(&self.finish(&self.counts, &ctx.recorded_at(), RunStatus::Failed)),
         ])
@@ -386,7 +388,7 @@ impl Run {
             Err(failure) => {
                 let why = why::encode(&coded_diagnostic::Report::of(&failure));
                 let coded = (String::new(), Some(why));
-                return Ok(self.failed(Some(fact.program), coded, ctx));
+                return Ok(self.failed(Some(fact.program), coded, fact.baseline_output_tail, ctx));
             }
         };
         let last = self.programs > 0 && self.prepared.len() + 1 == self.programs as usize;
@@ -410,7 +412,7 @@ impl Run {
         ctx: &Context,
     ) -> Result<FactEmit<Self>, Bug> {
         Ok(match self.live() {
-            true => self.failed(fact.program, (fact.reason, fact.why), ctx),
+            true => self.failed(fact.program, (fact.reason, fact.why), None, ctx),
             false => FactEmit::none(),
         })
     }

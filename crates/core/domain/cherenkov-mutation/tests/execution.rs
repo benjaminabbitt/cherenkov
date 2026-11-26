@@ -267,11 +267,13 @@ fn test_observation_with_a_failed_test_is_failed_and_one_that_only_passed_is_not
     let only_passes = Observed {
         outcome: exited(0),
         tests: vec![passed.clone(), ignored],
+        output_tail: None,
     };
     assert!(!only_passes.failed());
     let mixed = Observed {
         outcome: exited(1),
         tests: vec![passed, failed("c", None, "boom")],
+        output_tail: None,
     };
     assert!(mixed.failed());
 }
@@ -287,6 +289,7 @@ fn test_failing_reports_are_only_the_failed_ones() {
             },
             failed("c", None, "boom"),
         ],
+        output_tail: None,
     };
     assert_eq!(observed.failures(), vec![failed("c", None, "boom")]);
 }

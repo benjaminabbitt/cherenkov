@@ -29,6 +29,7 @@ impl MutantExecutor for Program {
                 test: "t".to_string(),
                 result: TestResult::Passed,
             }],
+            output_tail: None,
         })
     }
     fn baseline(&mut self, budget: Budget) -> Result<Observed, ExecError> {

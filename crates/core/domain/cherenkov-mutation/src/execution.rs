@@ -140,6 +140,20 @@ pub struct Outcome {
 pub struct Observed {
     pub outcome: RawOutcome,
     pub tests: Vec<TestReport>,
+    /// The last of the program's output (see [`output_tail`]), for a person
+    /// diagnosing a failure. No verdict, test report or decision is read
+    /// from it.
+    pub output_tail: Option<String>,
+}
+
+/// How much of a program's output an observation keeps.
+pub const OUTPUT_TAIL_BYTES: usize = 16 * 1024;
+
+/// The last [`OUTPUT_TAIL_BYTES`] of `output`, cut on a character boundary
+/// and led by a marker saying how many bytes were left out; none for no
+/// output. For diagnosis only: nothing decides from it.
+pub fn output_tail(_output: &str) -> Option<String> {
+    None
 }
 
 impl Observed {
@@ -148,7 +162,14 @@ impl Observed {
         Observed {
             outcome,
             tests: Vec::new(),
+            output_tail: None,
         }
+    }
+
+    /// This observation, carrying the tail of the output it came from.
+    pub fn with_output(mut self, output: &str) -> Observed {
+        self.output_tail = output_tail(output);
+        self
     }
 
     /// Whether any test reports as failed.

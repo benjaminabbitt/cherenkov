@@ -200,12 +200,14 @@ impl MutantExecutor for Fixed {
         Ok(Observed {
             outcome: self.0.clone(),
             tests: reported(),
+            output_tail: None,
         })
     }
     fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
         Ok(Observed {
             outcome: self.0.clone(),
             tests: reported(),
+            output_tail: None,
         })
     }
 }
@@ -266,7 +268,8 @@ fn test_what_rustc_rejects_is_unviable_and_never_run_and_the_rest_is_left_alone(
         executor.run(&plan_of("fine"), budget).unwrap(),
         Observed {
             outcome: killed.clone(),
-            tests: reported()
+            tests: reported(),
+            output_tail: None,
         },
         "what the inner executor reported is forwarded whole"
     );

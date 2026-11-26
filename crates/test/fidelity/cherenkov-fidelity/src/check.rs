@@ -112,7 +112,7 @@ impl Debugger {
     pub fn new(executors: Vec<Box<dyn MutantExecutor>>) -> Result<Debugger, String> {
         let mut out = Vec::new();
         for mut ex in executors {
-            let Reported { outcome, tests } = ex
+            let Reported { outcome, tests, .. } = ex
                 .baseline(Budget::from_baseline(FIRST_RUN))
                 .map_err(|e| e.to_string())?;
             let RawOutcome::Exited { code: 0, wall, .. } = outcome else {
@@ -186,6 +186,7 @@ impl Debugger {
             let Reported {
                 outcome,
                 tests: reported,
+                ..
             } = ex
                 .run(plan, *budget)
                 .map_err(|e| format!("{} {}: {e}", plan.id, plan.site()))?;
@@ -398,6 +399,7 @@ mod tests {
             Ok(Reported {
                 outcome: self.raw.clone(),
                 tests: cherenkov_exec_dap::libtest::reports(self.output),
+                output_tail: None,
             })
         }
 
@@ -405,6 +407,7 @@ mod tests {
             Ok(Reported {
                 outcome: exited(0),
                 tests: cherenkov_exec_dap::libtest::reports(BASELINE_OUTPUT),
+                output_tail: None,
             })
         }
 

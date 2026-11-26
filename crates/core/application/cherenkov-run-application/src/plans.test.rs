@@ -113,5 +113,6 @@ pub fn prepared() -> cherenkov_run_domain::PreparationReported {
         )),
         baseline_failures: Vec::new(),
         drives: None,
+        baseline_output_tail: None,
     }
 }

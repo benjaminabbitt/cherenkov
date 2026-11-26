@@ -312,6 +312,7 @@ fn test_a_prepared_program_and_the_run_s_finish_are_documents_of_their_own() {
         program: Some("calc-1".to_string()),
         reason: "unmutated tests do not pass".to_string(),
         why: None,
+        output_tail: None,
     }));
     assert_eq!(failed["event"], "program.failed");
     assert_eq!(failed["program"], "calc-1");
@@ -323,6 +324,7 @@ fn test_a_prepared_program_and_the_run_s_finish_are_documents_of_their_own() {
             &coded_diagnostic::Report::new("cherenkov-run-application-no-program")
                 .arg("program", "3"),
         )),
+        output_tail: None,
     }));
     assert_eq!(coded["reason"], "the worker has no test program 3");
     let blind_coded = one(pack_message(&cherenkov_run_domain::ProgramPrepared {

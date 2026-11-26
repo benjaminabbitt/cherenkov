@@ -176,6 +176,9 @@ message PreparationReported {
   // `selection_reason`, coded. A fact recorded before it was added holds the
   // string only.
   optional io.angzarr.v1.Diagnostic selection_why = 12;
+  // When the baseline did not pass, the tail of the program's output, for
+  // diagnosis only: no verdict is read from it.
+  optional string baseline_output_tail = 13;
 }
 
 // A test program did not prepare: the run cannot go on. Recorded while the
@@ -287,6 +290,9 @@ message ProgramFailed {
   // As text; empty in an event recorded with `why`.
   string reason = 2;
   optional io.angzarr.v1.Diagnostic why = 3;
+  // The tail of the failing program's output, for diagnosis only; absent
+  // when none was captured.
+  optional string output_tail = 4;
 }
 
 // The run was superseded, and why.

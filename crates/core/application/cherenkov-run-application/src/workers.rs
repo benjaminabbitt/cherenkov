@@ -39,6 +39,9 @@ pub struct Preparation {
     pub baseline: RawOutcome,
     /// When the baseline did not pass, the failing tests its output names.
     pub baseline_failures: Vec<String>,
+    /// When the baseline did not pass, the tail of its output, for
+    /// diagnosis only.
+    pub baseline_output_tail: Option<String>,
     pub took: Duration,
     /// What recording found; none for a baseline that did not pass, which
     /// the run will refuse.
@@ -456,6 +459,7 @@ fn prepare_one(
     let Observed {
         outcome: baseline,
         tests,
+        output_tail,
     } = executor
         .baseline(Budget::from_baseline(FIRST_RUN))
         .map_err(|e| Report::of(&e))?;
@@ -472,6 +476,7 @@ fn prepare_one(
                 .map(TestReport::line)
                 .collect(),
             baseline,
+            baseline_output_tail: output_tail,
             took: started.elapsed(),
             recording: None,
         });
@@ -489,6 +494,7 @@ fn prepare_one(
         describe,
         baseline,
         baseline_failures: Vec::new(),
+        baseline_output_tail: None,
         took: started.elapsed(),
         recording: Some(recording),
     })

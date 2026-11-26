@@ -221,6 +221,7 @@ fn run_scenario() -> Recorded {
         baseline: Some(observation::encode(&exited(0))),
         baseline_failures: Vec::new(),
         drives: None,
+        baseline_output_tail: None,
     };
     let decided = |id: &str, verdict| DecisionReported {
         mutant: id.to_string(),

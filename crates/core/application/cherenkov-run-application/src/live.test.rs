@@ -37,6 +37,7 @@ fn prepared() -> PreparationReported {
         })),
         baseline_failures: Vec::new(),
         drives: None,
+        baseline_output_tail: None,
     }
 }
 

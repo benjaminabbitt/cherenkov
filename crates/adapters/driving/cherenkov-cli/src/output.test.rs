@@ -354,6 +354,7 @@ mod printing {
             program: None,
             reason: "no debugger".to_string(),
             why: None,
+            output_tail: None,
         })
     }
 

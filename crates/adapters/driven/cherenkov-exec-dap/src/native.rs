@@ -1311,6 +1311,7 @@ impl<L: Launcher> TierPExecutor<L> {
         Observed {
             outcome,
             tests: self.launcher.tests_of(output),
+            output_tail: None,
         }
     }
 

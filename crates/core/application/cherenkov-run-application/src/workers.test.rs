@@ -30,6 +30,7 @@ impl MutantExecutor for Fake {
             "a" => Observed {
                 outcome: exited(101),
                 tests: vec![killer("test_a")],
+                output_tail: None,
             },
             _ => exited(0).into(),
         })
@@ -247,6 +248,7 @@ impl MutantExecutor for Broken {
         Ok(Observed {
             outcome: exited(101),
             tests: vec![killer("test_a")],
+            output_tail: None,
         })
     }
 }
@@ -354,6 +356,7 @@ impl MutantExecutor for FailsWithoutReport {
                 test: "a".to_string(),
                 result: TestResult::Passed,
             }],
+            output_tail: None,
         })
     }
 
@@ -391,6 +394,7 @@ impl MutantExecutor for PassesWithAFailure {
         Ok(Observed {
             outcome: exited(0),
             tests: vec![killer("test_a")],
+            output_tail: None,
         })
     }
 
@@ -429,6 +433,7 @@ impl MutantExecutor for EndsWithAFailure {
         Ok(Observed {
             outcome: self.0.clone(),
             tests: vec![killer("test_a")],
+            output_tail: None,
         })
     }
 

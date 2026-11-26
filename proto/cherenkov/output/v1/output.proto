@@ -118,6 +118,8 @@ message Failed {
   google.protobuf.Timestamp at = 2;
   optional string program = 3 [(io.angzarr.codegen.v1.field) = {json_null: true}];
   string reason = 4;
+  // The tail of the program's output, for diagnosis only.
+  optional string output_tail = 5 [(io.angzarr.codegen.v1.field) = {json_null: true}];
 }
 
 // A mutant, decided: self-contained.

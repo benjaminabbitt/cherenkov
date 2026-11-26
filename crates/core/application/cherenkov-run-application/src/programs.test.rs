@@ -20,6 +20,7 @@ fn preparation(recording: Option<Recording>) -> Preparation {
         baseline_failures: Vec::new(),
         took: Duration::from_millis(900),
         recording,
+        baseline_output_tail: None,
     }
 }
 

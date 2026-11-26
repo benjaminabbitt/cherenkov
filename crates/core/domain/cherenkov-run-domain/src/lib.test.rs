@@ -156,6 +156,7 @@ fn preparation_at(index: u32, program: &str) -> PreparationReported {
         baseline: Some(passed()),
         baseline_failures: Vec::new(),
         drives: None,
+        baseline_output_tail: None,
     }
 }
 
@@ -1066,16 +1067,19 @@ fn test_every_refusal_encodes_to_the_bytes_it_always_has() {
             program: Some("calc-1".to_string()),
             reason: String::new(),
             why: Some(why()),
+            output_tail: None,
         }),
         refusal_line(&ProgramFailed {
             program: None,
             reason: String::new(),
             why: Some(why_many()),
+            output_tail: None,
         }),
         refusal_line(&ProgramFailed {
             program: None,
             reason: String::new(),
             why: Some(why_bare()),
+            output_tail: None,
         }),
     ];
     let expected: Vec<&str> = include_str!("encodings.txt").lines().collect();

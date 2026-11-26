@@ -66,6 +66,7 @@ pub fn documents(run: &Uuid, page: &EventPage, catalog: &Catalog) -> Vec<Documen
             at: Some(at),
             program: f.program,
             reason: said(catalog, &why::decode(f.why.as_ref(), &f.reason)),
+            output_tail: f.output_tail,
         }))],
         RunEvent::DecisionRecorded(record) => record
             .decision
