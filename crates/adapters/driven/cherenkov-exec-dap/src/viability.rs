@@ -198,6 +198,18 @@ pub fn blame(diags: &[Diag], regions: &[(PathBuf, Range<usize>)]) -> Blamed {
     blamed
 }
 
+/// `blamed`, whose mutants are positions in `subset`, as the subset's members.
+pub fn in_members(blamed: Blamed, subset: &[usize]) -> Blamed {
+    Blamed {
+        by_mutant: blamed
+            .by_mutant
+            .into_iter()
+            .map(|(position, why)| (subset[position], why))
+            .collect(),
+        elsewhere: blamed.elsewhere,
+    }
+}
+
 /// Which of `n` mutants do not compile, and why, by `check`ing subsets: a
 /// subset's blamed mutants are set aside and the rest checked again; errors
 /// that are nobody's split the subset, and a mutant that breaks the crate
@@ -241,6 +253,10 @@ fn settle_one(
             }
             return Ok(());
         }
+        debug_assert!(
+            blamed.by_mutant.iter().all(|(m, _)| subset.contains(m)),
+            "blamed a mutant outside the subset checked"
+        );
         subset.retain(|i| !blamed.by_mutant.iter().any(|(m, _)| m == i));
         rejected.extend(blamed.by_mutant);
     }
@@ -574,7 +590,9 @@ pub fn check(
         let members: Vec<&Candidate> = batch.iter().map(|&i| &candidates[i]).collect();
         let found = settle(members.len(), &mut |subset| {
             let chosen: Vec<&Candidate> = subset.iter().map(|&i| members[i]).collect();
-            rustc.blame(&chosen)
+            rustc
+                .blame(&chosen)
+                .map(|blamed| in_members(blamed, subset))
         })?;
         for (i, why) in found {
             rejected.insert(members[i].id.clone(), why);

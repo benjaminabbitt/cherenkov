@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use test_dir::TestDir;
 
 use cherenkov_exec_dap::viability::{
-    Blamed, Candidate, Diag, apply_edits, batches, blame, diagnostics, settle,
+    Blamed, Candidate, Diag, apply_edits, batches, blame, diagnostics, in_members, settle,
 };
 use cherenkov_mutation::execution::RawOutcome;
 use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
@@ -130,6 +130,54 @@ fn settled(n: usize, bad: &[usize], calls: &mut Vec<Vec<usize>>) -> Vec<(usize, 
         })
     })
     .unwrap()
+}
+
+#[test]
+fn test_blame_over_chosen_positions_is_translated_to_the_subset_s_members() {
+    let by_position = Blamed {
+        by_mutant: vec![(0, "a".into()), (2, "b".into())],
+        elsewhere: Some("e".into()),
+    };
+    let got = in_members(by_position, &[4, 7, 9]);
+    assert_eq!(
+        got,
+        Blamed {
+            by_mutant: vec![(4, "a".into()), (9, "b".into())],
+            elsewhere: Some("e".into()),
+        }
+    );
+}
+
+/// Member 0 breaks the crate only together with another (an error nobody
+/// owns, hiding the rest, so the batch bisects) and member 3 does not compile; blame is
+/// answered the way `Rustc::blame` answers, by position in the subset it was
+/// handed, then translated by `in_members` as `check` does. After the
+/// bisection the subset is [2, 3]: member 3 is position 1.
+#[test]
+fn test_settling_with_blame_answered_in_positions_rejects_exactly_the_bad_member_after_a_bisection()
+{
+    let mut calls = 0;
+    let got = settle(4, &mut |subset: &[usize]| {
+        calls += 1;
+        assert!(calls <= 20, "settle did not terminate: {subset:?}");
+        let poisoned = subset.len() > 1 && subset.contains(&0);
+        let by_position: Vec<(usize, String)> = subset
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| **m == 3 && !poisoned)
+            .map(|(pos, m)| (pos, format!("bad {m}")))
+            .collect();
+        let elsewhere = poisoned.then(|| "poison".to_string());
+        Ok(in_members(
+            Blamed {
+                by_mutant: by_position,
+                elsewhere,
+            },
+            subset,
+        ))
+    })
+    .unwrap();
+    assert_eq!(got, vec![(3, "bad 3".to_string())]);
 }
 
 #[test]
