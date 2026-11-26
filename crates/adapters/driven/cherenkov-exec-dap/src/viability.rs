@@ -297,6 +297,17 @@ struct Applied {
     written: Vec<(PathBuf, String)>,
 }
 
+/// Where the check is, said before each `cargo check` it runs: the run's
+/// number (the baseline's included) and the batch of candidates it serves.
+/// How many runs there will be is not known in advance (a failing batch is
+/// bisected); the batches are.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Progress {
+    pub compile: usize,
+    pub batch: usize,
+    pub batches: usize,
+}
+
 /// A scratch workspace to compile mutants in.
 struct Rustc<'a> {
     cargo: &'a Path,
@@ -309,11 +320,19 @@ struct Rustc<'a> {
     args: &'a [String],
     baseline_passes: bool,
     compiles: usize,
+    /// The batch being settled, from one, and how many there are.
+    batch: (usize, usize),
+    progress: &'a mut dyn FnMut(Progress),
 }
 
 impl Rustc<'_> {
     fn cargo_check(&mut self) -> Result<(bool, String, String), ExecError> {
         self.compiles += 1;
+        (self.progress)(Progress {
+            compile: self.compiles,
+            batch: self.batch.0,
+            batches: self.batch.1,
+        });
         let flags = std::env::var("RUSTFLAGS").unwrap_or_default();
         let out = Command::new(self.cargo)
             .args([
@@ -426,13 +445,15 @@ fn last_line(text: &str) -> String {
 
 /// Which of `candidates` rustc rejects, checking them in a scratch copy of
 /// `workspace` (the project's `root` is inside it) with `cargo check` and
-/// `cargo_args`. An error for a project that cannot be checked at all.
+/// `cargo_args`, telling `progress` before each `cargo check`. An error for
+/// a project that cannot be checked at all.
 pub fn check(
     cargo: &Path,
     workspace: &Path,
     root: &Path,
     cargo_args: &[String],
     candidates: &[Candidate],
+    progress: &mut dyn FnMut(Progress),
 ) -> Result<Checked, ExecError> {
     let started = Instant::now();
     let scratch = scratch_dir(workspace);
@@ -448,9 +469,13 @@ pub fn check(
         args: cargo_args,
         baseline_passes: false,
         compiles: 0,
+        batch: (0, 0),
+        progress,
     };
     let mut rejected = HashMap::new();
-    for batch in batches(candidates) {
+    let all = batches(candidates);
+    for (at, batch) in all.iter().enumerate() {
+        rustc.batch = (at + 1, all.len());
         let members: Vec<&Candidate> = batch.iter().map(|&i| &candidates[i]).collect();
         let found = settle(members.len(), &mut |subset| {
             let chosen: Vec<&Candidate> = subset.iter().map(|&i| members[i]).collect();

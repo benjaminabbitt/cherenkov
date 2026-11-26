@@ -109,6 +109,9 @@ pub enum Notice {
     /// How many mutants each of several operator sets produced, and how
     /// many more than one did.
     Provenance { each: String, shared: u64 },
+    /// A phase before the run began, said when it starts so that a long
+    /// one shows the run alive.
+    PhaseStarted { phase: String },
     /// How long a phase before the run took.
     Phase { phase: String, tenths: u64 },
     /// How a run's time split between preparation and the mutants.
@@ -124,6 +127,13 @@ pub enum Notice {
         checked: u64,
         compiles: u64,
         tenths: u64,
+    },
+    /// The viability check is about to run its `compile`th `cargo check`,
+    /// while checking batch `batch` of `batches`.
+    ViabilityProgress {
+        compile: u64,
+        batch: u64,
+        batches: u64,
     },
     /// The viability check could not run: `cause` is what stopped it.
     ViabilitySkipped { cause: Report },
@@ -168,10 +178,12 @@ impl Diagnostic for Notice {
             Notice::Planned(_) => code!("notice-planned"),
             Notice::FileProblem { .. } => code!("notice-file-problem"),
             Notice::Provenance { .. } => code!("notice-provenance"),
+            Notice::PhaseStarted { .. } => code!("notice-phase-started"),
             Notice::Phase { .. } => code!("notice-phase"),
             Notice::Phases { .. } => code!("notice-phases"),
             Notice::ViabilityOff => code!("notice-viability-off"),
             Notice::Viability { .. } => code!("notice-viability"),
+            Notice::ViabilityProgress { .. } => code!("notice-viability-progress"),
             Notice::ViabilitySkipped { .. } => code!("notice-viability-skipped"),
             Notice::CarriedOn { .. } => code!("notice-carried-on"),
             Notice::Workers { .. } => code!("notice-workers"),
@@ -193,6 +205,7 @@ impl Diagnostic for Notice {
             Notice::Provenance { each, shared } => {
                 vec![("each", each.as_str().into()), ("shared", (*shared).into())]
             }
+            Notice::PhaseStarted { phase } => vec![("phase", phase.as_str().into())],
             Notice::Phase { phase, tenths } => {
                 let mut args = vec![("phase", phase.as_str().into())];
                 args.extend(seconds(*tenths));
@@ -222,6 +235,15 @@ impl Diagnostic for Notice {
                 args.extend(seconds(*tenths));
                 args
             }
+            Notice::ViabilityProgress {
+                compile,
+                batch,
+                batches,
+            } => vec![
+                ("compile", (*compile).into()),
+                ("batch", (*batch).into()),
+                ("batches", (*batches).into()),
+            ],
             Notice::ViabilitySkipped { cause } => vec![("cause", Arg::nested(cause))],
             Notice::CarriedOn { run } => vec![("run", run.as_str().into())],
             Notice::Workers { cpus } => vec![("cpus", (*cpus).into())],
@@ -328,9 +350,17 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             each: "a 1".into(),
             shared: 2,
         }),
+        Box::new(Notice::PhaseStarted {
+            phase: "build".into(),
+        }),
         Box::new(Notice::Phase {
             phase: "build".into(),
             tenths: 15,
+        }),
+        Box::new(Notice::ViabilityProgress {
+            compile: 2,
+            batch: 1,
+            batches: 3,
         }),
         Box::new(Notice::Phases {
             preparation_tenths: 25,
