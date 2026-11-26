@@ -492,3 +492,152 @@ fn test_a_crash_or_a_failing_exit_keeps_the_reports_that_name_the_killer() {
         );
     }
 }
+
+/// A gate only a canceller opens.
+#[derive(Default)]
+struct Gate {
+    open: std::sync::Mutex<bool>,
+    opened: std::sync::Condvar,
+    cancels: std::sync::atomic::AtomicUsize,
+    /// Set when a program using this gate has passed its baseline.
+    passed: std::sync::atomic::AtomicBool,
+}
+
+impl Gate {
+    fn cancels(&self) -> usize {
+        self.cancels.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+impl cherenkov_run_ports::executor::Cancel for Gate {
+    fn cancel(&self) {
+        self.cancels
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        *self.open.lock().unwrap() = true;
+        self.opened.notify_all();
+    }
+}
+
+/// Its baseline waits until its canceller is used, then fails; the
+/// sessions it closes are counted.
+struct HangsUntilCancelled {
+    gate: Arc<Gate>,
+    closed: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl MutantExecutor for HangsUntilCancelled {
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
+    }
+
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        let mut open = self.gate.open.lock().unwrap();
+        while !*open {
+            open = self.gate.opened.wait(open).unwrap();
+        }
+        Err(ExecError::of(&Report::new("test-cancelled")))
+    }
+
+    fn close_session(&mut self) {
+        self.closed
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn canceller(&self) -> Arc<dyn cherenkov_run_ports::executor::Cancel> {
+        self.gate.clone()
+    }
+}
+
+/// Passes at once; its canceller counts.
+struct PassesAtOnce(Arc<Gate>);
+
+impl MutantExecutor for PassesAtOnce {
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
+    }
+
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        self.0
+            .passed
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        Ok(exited(0).into())
+    }
+
+    fn canceller(&self) -> Arc<dyn cherenkov_run_ports::executor::Cancel> {
+        self.0.clone()
+    }
+}
+
+#[test]
+fn test_a_failed_run_cancels_the_program_still_preparing_and_it_closes_its_session() {
+    let gate = Arc::new(Gate::default());
+    let closed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (told, done) = std::sync::mpsc::channel();
+    let (g, c) = (gate.clone(), closed.clone());
+    std::thread::spawn(move || {
+        let set: Vec<Box<dyn MutantExecutor + Send>> = vec![
+            Box::new(Broken),
+            Box::new(HangsUntilCancelled { gate: g, closed: c }),
+        ];
+        let kept = prepare(&plans(), set, 2, &mut |_| {});
+        let _ = told.send(kept.len());
+    });
+    let kept = done
+        .recv_timeout(Duration::from_secs(5))
+        .expect("prepare returned while a program still hung");
+    assert_eq!(kept, 1, "only the failed program is handed back");
+    assert_eq!(gate.cancels(), 1);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while closed.load(std::sync::atomic::Ordering::SeqCst) == 0 && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(closed.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_a_run_that_prepares_every_program_cancels_none() {
+    let gates: Vec<Arc<Gate>> = (0..2).map(|_| Arc::new(Gate::default())).collect();
+    let set: Vec<Box<dyn MutantExecutor + Send>> = gates
+        .iter()
+        .map(|g| Box::new(PassesAtOnce(g.clone())) as Box<dyn MutantExecutor + Send>)
+        .collect();
+    prepare(&plans(), set, 2, &mut |_| {});
+    assert_eq!(gates.iter().map(|g| g.cancels()).sum::<usize>(), 0);
+}
+
+/// Fails its baseline only after the program of `after` has passed its own
+/// (and a while for that program to be told), so the failure is the last.
+struct BrokenAfter(Arc<Gate>);
+
+impl MutantExecutor for BrokenAfter {
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
+    }
+
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        while !self.0.passed.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        std::thread::sleep(Duration::from_millis(200));
+        Err(ExecError::of(&Report::new("test-broken")))
+    }
+}
+
+#[test]
+fn test_a_failed_run_does_not_cancel_a_program_that_already_finished() {
+    let done = Arc::new(Gate::default());
+    let hung = Arc::new(Gate::default());
+    let closed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let set: Vec<Box<dyn MutantExecutor + Send>> = vec![
+        Box::new(PassesAtOnce(done.clone())),
+        Box::new(BrokenAfter(done.clone())),
+        Box::new(HangsUntilCancelled {
+            gate: hung.clone(),
+            closed,
+        }),
+    ];
+    let mut told = Vec::new();
+    prepare(&plans(), set, 3, &mut |p| told.push(p.is_ok()));
+    assert_eq!(done.cancels(), 0);
+    assert_eq!(hung.cancels(), 1);
+}

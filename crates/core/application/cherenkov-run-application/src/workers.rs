@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, TestReport, classify};
 use cherenkov_mutation::plan::MutantPlan;
-use cherenkov_run_ports::executor::{Driven, MutantExecutor, Recording};
+use cherenkov_run_ports::executor::{Cancel, Driven, MutantExecutor, Recording};
 use coded_diagnostic::Report;
 
 use crate::reason::Reason;
@@ -146,8 +146,11 @@ struct Finished {
 /// telling `report` each program's preparation, or why it could not be
 /// prepared, the moment it is done; `jobs` programs are prepared at once.
 /// The first program that cannot be prepared, or whose baseline fails (the
-/// run refuses it), ends the batch: the others are not waited out. A program still preparing is abandoned to its own thread,
-/// which ends its session when its call returns, and its executor is not
+/// run refuses it), ends the batch: the others are not waited out. A
+/// program still preparing is cancelled (its debugger and the test process
+/// under it are killed before this returns) and abandoned to its own
+/// thread, which closes its executor's session when its call returns; its
+/// executor is not
 /// handed back. Each session is closed after: a worker opens again only what
 /// it uses. Returns the executors, in the programs' order, that were not
 /// abandoned.
@@ -207,6 +210,8 @@ fn prepare_batch(
     back: &mut [Option<Box<dyn MutantExecutor + Send>>],
     report: &mut dyn FnMut(Result<Preparation, Failed>),
 ) -> bool {
+    let cancels: Vec<(usize, Arc<dyn Cancel>)> =
+        batch.iter().map(|(p, e)| (*p, e.canceller())).collect();
     let (sender, done) = std::sync::mpsc::channel();
     for (program, executor) in batch {
         spawn_preparation(program, executor, plans.clone(), sender.clone());
@@ -220,12 +225,27 @@ fn prepare_batch(
         }
     }
     if failed {
-        // What has already finished is told; what has not is abandoned.
+        // What has already finished is told; what has not is cancelled and
+        // abandoned.
         for finished in done.try_iter() {
             settle(finished, back, report);
         }
+        cancel_unfinished(&cancels, back);
     }
     failed
+}
+
+/// End the session of every program of the batch whose executor is not back:
+/// it is still preparing, in a call only its canceller can interrupt.
+fn cancel_unfinished(
+    cancels: &[(usize, Arc<dyn Cancel>)],
+    back: &[Option<Box<dyn MutantExecutor + Send>>],
+) {
+    for (program, cancel) in cancels {
+        if back[*program].is_none() {
+            cancel.cancel();
+        }
+    }
 }
 
 /// Keep a finished program's executor and tell `report` what it found;
@@ -265,8 +285,9 @@ fn refused(prepared: &Result<Preparation, Report>) -> bool {
 }
 
 /// Prepare program `program` on a thread of its own, sending it back with
-/// its executor. When nobody waits any more (the run failed), the thread
-/// ends the executor's session itself, as soon as its call returns.
+/// its executor. When nobody waits any more (the run failed), the batch has
+/// cancelled the program (its call returns an error soon), and the thread
+/// closes the executor's session itself as soon as the call returns.
 fn spawn_preparation(
     program: usize,
     mut executor: Box<dyn MutantExecutor + Send>,
