@@ -260,10 +260,24 @@ pub struct Checked {
 /// Where the scratch copy of a workspace and its build live: in its target
 /// directory, so that a second run starts from the first's dependencies.
 fn scratch_dir(workspace: &Path) -> PathBuf {
-    let target = std::env::var_os("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| workspace.join("target"));
-    target.join("cherenkov-viability")
+    scratch_dir_in(
+        std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from),
+        workspace,
+    )
+}
+
+/// [`scratch_dir`] for a given `CARGO_TARGET_DIR`. A target directory the
+/// caller shares between projects is shared by their checks too, so each
+/// workspace's scratch copy is named for the workspace: a copy is only
+/// brought up to date, never emptied, and another project's files left in
+/// it would be compiled with this one's.
+pub fn scratch_dir_in(shared_target: Option<PathBuf>, workspace: &Path) -> PathBuf {
+    match shared_target {
+        Some(target) => target
+            .join("cherenkov-viability")
+            .join(workspace.to_string_lossy().replace(['/', '\\', ':'], "%")),
+        None => workspace.join("target").join("cherenkov-viability"),
+    }
 }
 
 /// Copy what differs of `from` into `to`, leaving out `.git` and `skip`.

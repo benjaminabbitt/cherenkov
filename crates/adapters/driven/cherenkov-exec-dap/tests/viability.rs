@@ -627,3 +627,21 @@ fn test_the_candidates_directory_of_a_test_that_panics_is_removed() {
     assert!(ended.is_err());
     assert!(!path.unwrap().exists(), "the directory outlived its test");
 }
+
+#[test]
+fn test_workspaces_sharing_a_target_directory_get_scratch_copies_of_their_own() {
+    use cherenkov_exec_dap::viability::scratch_dir_in;
+    let shared = Some(PathBuf::from("/shared/target"));
+    let a = scratch_dir_in(shared.clone(), Path::new("/work/a"));
+    let b = scratch_dir_in(shared.clone(), Path::new("/work/b"));
+    assert_ne!(a, b);
+    assert!(a.starts_with("/shared/target"), "{a:?}");
+    assert_eq!(a, scratch_dir_in(shared, Path::new("/work/a")));
+}
+
+#[test]
+fn test_without_a_shared_target_directory_the_scratch_copy_is_in_the_workspace_s() {
+    use cherenkov_exec_dap::viability::scratch_dir_in;
+    let got = scratch_dir_in(None, Path::new("/work/a"));
+    assert!(got.starts_with("/work/a/target"), "{got:?}");
+}
