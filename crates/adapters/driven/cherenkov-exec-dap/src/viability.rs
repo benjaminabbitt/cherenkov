@@ -284,7 +284,41 @@ pub fn scratch_dir_in(shared_target: Option<PathBuf>, workspace: &Path) -> PathB
 /// and remove what `from` no longer has (or never copies), so a file deleted
 /// or a module renamed in the project is not compiled from the scratch copy.
 /// Removal acts only under `to`, and removes a link, never what it points at.
+/// A `to` that is, or contains, `from` is refused before anything is touched:
+/// pruning it would delete the project's own `.git` and skipped paths.
 fn sync_tree(from: &Path, to: &Path, skip: &[PathBuf]) -> std::io::Result<()> {
+    if resolved(from).starts_with(resolved(to)) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("{} is, or contains, {}", to.display(), from.display()),
+        ));
+    }
+    sync_dir(from, to, skip)
+}
+
+/// `path` with links and `..` resolved as far as it exists, and the rest
+/// (not yet created) normalised lexically, so that every spelling of one
+/// directory compares equal.
+fn resolved(path: &Path) -> PathBuf {
+    let mut missing = Vec::new();
+    let mut at = path.to_path_buf();
+    let mut base = loop {
+        if let Ok(real) = at.canonicalize() {
+            break real;
+        }
+        match (at.file_name().map(|n| n.to_owned()), at.parent()) {
+            (Some(name), Some(parent)) => {
+                missing.push(name);
+                at = parent.to_path_buf();
+            }
+            _ => break at,
+        }
+    };
+    base.extend(missing.iter().rev());
+    base
+}
+
+fn sync_dir(from: &Path, to: &Path, skip: &[PathBuf]) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
     prune_extras(from, to, skip)?;
     for entry in std::fs::read_dir(from)? {
@@ -298,7 +332,7 @@ fn sync_tree(from: &Path, to: &Path, skip: &[PathBuf]) -> std::io::Result<()> {
         };
         let dest = to.join(entry.file_name());
         if meta.is_dir() {
-            sync_tree(&path, &dest, skip)?;
+            sync_dir(&path, &dest, skip)?;
         } else if std::fs::read(&dest).ok() != std::fs::read(&path).ok() {
             std::fs::copy(&path, &dest)?;
         }
@@ -707,5 +741,67 @@ mod sync_tests {
         assert!(other.join("src/lib.rs").exists());
         remove_within(&root, &root.join("x")).unwrap();
         assert!(!root.join("x").exists());
+    }
+
+    fn project_with_git_and_target(dir: &TestDir) -> std::path::PathBuf {
+        let from = dir.join("project");
+        write(&from.join("src/lib.rs"), "");
+        write(&from.join(".git/HEAD"), "ref");
+        write(&from.join("target/out"), "built");
+        from
+    }
+
+    fn assert_project_intact(from: &Path) {
+        assert!(from.join(".git/HEAD").exists());
+        assert!(from.join("target/out").exists());
+        assert!(from.join("src/lib.rs").exists());
+    }
+
+    #[test]
+    fn test_a_sync_into_the_project_itself_is_refused_and_removes_nothing() {
+        let dir = TestDir::new("cherenkov-sync-self");
+        let from = project_with_git_and_target(&dir);
+        let skip = [from.join("target")];
+        assert!(sync_tree(&from, &from, &skip).is_err());
+        assert!(sync_tree(&from, &from.join("."), &skip).is_err());
+        assert_project_intact(&from);
+    }
+
+    #[test]
+    fn test_a_sync_into_a_parent_of_the_project_is_refused_and_removes_nothing() {
+        let dir = TestDir::new("cherenkov-sync-parent");
+        let from = project_with_git_and_target(&dir);
+        write(&dir.join("sibling/file"), "");
+        let skip = [from.join("target")];
+        assert!(sync_tree(&from, &dir, &skip).is_err());
+        assert!(sync_tree(&from, &from.join("src/.."), &skip).is_err());
+        assert_project_intact(&from);
+        assert!(dir.join("sibling/file").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_a_sync_into_a_symlinked_alias_of_the_project_is_refused() {
+        let dir = TestDir::new("cherenkov-sync-alias");
+        let from = project_with_git_and_target(&dir);
+        let alias = dir.join("alias");
+        std::os::unix::fs::symlink(&from, &alias).unwrap();
+        let skip = [from.join("target")];
+        assert!(sync_tree(&from, &alias, &skip).is_err());
+        assert!(sync_tree(&from, &alias.join("target/scratch"), &skip).is_ok());
+        assert_project_intact(&from);
+    }
+
+    #[test]
+    fn test_a_sync_into_a_directory_inside_the_project_s_skipped_target_still_works() {
+        let dir = TestDir::new("cherenkov-sync-nested");
+        let from = project_with_git_and_target(&dir);
+        let to = from.join("target/cherenkov-viability/tree");
+        let skip = [from.join("target")];
+        sync_tree(&from, &to, &skip).unwrap();
+        assert!(to.join("src/lib.rs").exists());
+        assert!(!to.join(".git").exists());
+        assert!(!to.join("target").exists());
+        assert_project_intact(&from);
     }
 }
