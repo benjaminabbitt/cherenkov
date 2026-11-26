@@ -4,6 +4,8 @@
 
 use cherenkov_mutation::execution::{Budget, Observed};
 use cherenkov_mutation::plan::MutantPlan;
+use std::sync::Arc;
+
 use coded_diagnostic::{Arg, Diagnostic, Report, code};
 
 /// An executor applies one plan, runs the tests, and reports facts.
@@ -51,6 +53,26 @@ pub trait MutantExecutor {
     /// End this executor's debugger session, if one is open: it frees the
     /// debugger's memory. The next run starts a fresh one.
     fn close_session(&mut self) {}
+    /// A handle that ends this executor's session from another thread
+    /// while a call is in flight. A backend with nothing to end hands back
+    /// [`NoCancel`].
+    fn canceller(&self) -> Arc<dyn Cancel> {
+        Arc::new(NoCancel)
+    }
+}
+
+/// Ends an executor's session from another thread, at once.
+pub trait Cancel: Send + Sync {
+    /// Idempotent. The call the owner is blocked in returns an error soon after;
+    /// every later call on the executor fails without starting a session.
+    fn cancel(&self);
+}
+
+/// A [`Cancel`] that does nothing: for an executor with no session to end.
+pub struct NoCancel;
+
+impl Cancel for NoCancel {
+    fn cancel(&self) {}
 }
 
 /// Which tests call a plan's function, as one unmutated run saw it.

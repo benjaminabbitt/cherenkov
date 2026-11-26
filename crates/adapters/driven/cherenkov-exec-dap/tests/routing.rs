@@ -272,3 +272,34 @@ fn test_a_judged_program_s_runs_and_baseline_are_forwarded_with_their_tests() {
         RawOutcome::Exited { code: 0, .. }
     ));
 }
+
+/// An executor whose canceller counts its cancels.
+struct Counting(Arc<std::sync::atomic::AtomicUsize>);
+
+struct CountsCancels(Arc<std::sync::atomic::AtomicUsize>);
+
+impl cherenkov_run_ports::executor::Cancel for CountsCancels {
+    fn cancel(&self) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl MutantExecutor for Counting {
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        unreachable!("never run")
+    }
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        unreachable!("never run")
+    }
+    fn canceller(&self) -> Arc<dyn cherenkov_run_ports::executor::Cancel> {
+        Arc::new(CountsCancels(self.0.clone()))
+    }
+}
+
+#[test]
+fn test_a_program_judging_only_some_mutants_hands_back_the_inner_programs_canceller() {
+    let cancels = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let program = OnlyJudged::new(Counting(cancels.clone()), Arc::default());
+    program.canceller().cancel();
+    assert_eq!(cancels.load(std::sync::atomic::Ordering::SeqCst), 1);
+}

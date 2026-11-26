@@ -521,4 +521,7 @@ impl<E: MutantExecutor> MutantExecutor for RustcRejects<E> {
     fn close_session(&mut self) {
         self.inner.close_session();
     }
+    fn canceller(&self) -> std::sync::Arc<dyn cherenkov_run_ports::executor::Cancel> {
+        self.inner.canceller()
+    }
 }

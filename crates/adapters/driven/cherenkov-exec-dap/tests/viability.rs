@@ -527,3 +527,39 @@ fn test_everything_else_is_the_inner_executors() {
     assert_eq!(asked.selected, Some(vec!["t".to_string()]));
     assert!(asked.closed);
 }
+
+struct CountsCancels(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl cherenkov_run_ports::executor::Cancel for CountsCancels {
+    fn cancel(&self) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// An executor whose canceller counts its cancels.
+struct Counting(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl MutantExecutor for Counting {
+    fn run(
+        &mut self,
+        _: &cherenkov_mutation::plan::MutantPlan,
+        _: Budget,
+    ) -> Result<Observed, ExecError> {
+        unreachable!("never run")
+    }
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        unreachable!("never run")
+    }
+    fn canceller(&self) -> std::sync::Arc<dyn cherenkov_run_ports::executor::Cancel> {
+        std::sync::Arc::new(CountsCancels(self.0.clone()))
+    }
+}
+
+#[test]
+fn test_rustc_rejects_hands_back_the_inner_executors_canceller() {
+    use cherenkov_exec_dap::viability::RustcRejects;
+    let cancels = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let executor = RustcRejects::new(Counting(cancels.clone()), Default::default());
+    executor.canceller().cancel();
+    assert_eq!(cancels.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
