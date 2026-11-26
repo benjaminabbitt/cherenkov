@@ -10,6 +10,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::cancel::Watch;
 use crate::error::{Cause, Session};
 use cherenkov_dap_types::{
     Capabilities, ExitedEventBody, InitializeRequestArguments, StoppedEventBody,
@@ -52,6 +53,7 @@ fn err<E: Cause>(step: &str) -> impl Fn(E) -> ExecError + '_ {
 /// A running headless Delve, stopped at entry until [`DelveSession::run_to_exit`].
 pub struct DelveSession {
     child: Child,
+    watch: Arc<Watch>,
     dap: DapClient,
     rpc: DelveRpc,
     debuggee: Option<u32>,
@@ -63,7 +65,16 @@ pub struct DelveSession {
 }
 
 impl DelveSession {
+    /// A session nobody cancels.
     pub fn start(config: &DelveConfig) -> Result<DelveSession, ExecError> {
+        Self::start_watched(config, &Arc::default())
+    }
+
+    /// A session whose debugger `watch` kills when it is cancelled.
+    pub fn start_watched(
+        config: &DelveConfig,
+        watch: &Arc<Watch>,
+    ) -> Result<DelveSession, ExecError> {
         let mut child = Command::new(&config.dlv)
             .arg("exec")
             .arg(&config.test_binary)
@@ -85,9 +96,11 @@ impl DelveSession {
                     detail: e.to_string(),
                 })
             })?;
+        watch.debugger(child.id());
         let (addr, printed) = match listening_address(&mut child) {
             Ok(found) => found,
             Err(e) => {
+                watch.released();
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(e);
@@ -108,6 +121,7 @@ impl DelveSession {
         let (dap_stream, rpc_stream) = match (dap_stream, rpc_stream) {
             (Ok(d), Ok(r)) => (d, r),
             (Err(e), _) | (_, Err(e)) => {
+                watch.released();
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(e);
@@ -119,6 +133,7 @@ impl DelveSession {
         let rpc = DelveRpc::new(rpc_stream).map_err(err("json-rpc"))?;
         let mut session = DelveSession {
             child,
+            watch: watch.clone(),
             dap: DapClient::new(dap_stream, REQUEST),
             rpc,
             debuggee: None,
@@ -623,6 +638,9 @@ fn listening_address(child: &mut Child) -> Result<(String, Arc<Printed>), ExecEr
 
 impl Drop for DelveSession {
     fn drop(&mut self) {
+        // The debugger is ours to end and reap from here: a cancel signals
+        // nothing after this.
+        self.watch.released();
         // Kill the debuggee through Delve first: killing only Delve would
         // detach ptrace and leave a looping mutant running. While DAP holds
         // the target in `continue` (a timed-out mutant), JSON-RPC calls,
@@ -639,8 +657,8 @@ impl Drop for DelveSession {
 impl Launcher for DelveConfig {
     type Session = DelveSession;
 
-    fn start(&self) -> Result<DelveSession, ExecError> {
-        DelveSession::start(self)
+    fn start(&self, watch: &Arc<Watch>) -> Result<DelveSession, ExecError> {
+        DelveSession::start_watched(self, watch)
     }
 
     fn abi(&self) -> &'static str {

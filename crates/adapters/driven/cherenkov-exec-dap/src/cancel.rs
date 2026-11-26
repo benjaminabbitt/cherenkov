@@ -60,7 +60,7 @@ impl Cancel for Watch {
             return;
         }
         state.cancelled = true;
-        if let Some(pid) = state.debugger {
+        if let Some(pid) = state.debugger.take() {
             kill_tree(pid);
         }
     }

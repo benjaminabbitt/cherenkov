@@ -5,8 +5,10 @@
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::cancel::Watch;
 use crate::error::{Cause, Session};
 use base64::Engine;
 use cherenkov_dap_types::{
@@ -63,6 +65,7 @@ fn err<E: Cause>(step: &str) -> impl Fn(E) -> ExecError + '_ {
 /// A program under GDB, stopped at the start of `main`.
 pub struct GdbSession {
     child: Child,
+    watch: Arc<Watch>,
     dap: DapClient,
     thread: i64,
     inferior: Option<u32>,
@@ -99,7 +102,13 @@ pub struct GdbSession {
 }
 
 impl GdbSession {
+    /// A session nobody cancels.
     pub fn start(config: &GdbConfig) -> Result<GdbSession, ExecError> {
+        Self::start_watched(config, &Arc::default())
+    }
+
+    /// A session whose debugger `watch` kills when it is cancelled.
+    pub fn start_watched(config: &GdbConfig, watch: &Arc<Watch>) -> Result<GdbSession, ExecError> {
         let mut child = Command::new(&config.gdb)
             .args(["-q", "-nx", "-i=dap"])
             .stdin(Stdio::piped())
@@ -112,7 +121,9 @@ impl GdbSession {
                     detail: e.to_string(),
                 })
             })?;
+        watch.debugger(child.id());
         let (Some(stdout), Some(stdin)) = (child.stdout.take(), child.stdin.take()) else {
+            watch.released();
             let _ = child.kill();
             let _ = child.wait();
             return Err(ExecError::of(&Session::NoPipe {
@@ -121,6 +132,7 @@ impl GdbSession {
         };
         let mut session = GdbSession {
             child,
+            watch: watch.clone(),
             dap: DapClient::over(stdout, stdin, REQUEST),
             thread: 1,
             inferior: None,
@@ -1191,6 +1203,9 @@ fn py_str(s: &str) -> Result<String, ExecError> {
 
 impl Drop for GdbSession {
     fn drop(&mut self) {
+        // The debugger is ours to end and reap from here: a cancel signals
+        // nothing after this.
+        self.watch.released();
         // Ask GDB to end the inferior, then make sure: GDB killed with SIGKILL
         // before handling the request would leave a running inferior behind.
         let _ = self
@@ -1205,8 +1220,8 @@ impl Drop for GdbSession {
 impl Launcher for GdbConfig {
     type Session = GdbSession;
 
-    fn start(&self) -> Result<GdbSession, ExecError> {
-        GdbSession::start(self)
+    fn start(&self, watch: &Arc<Watch>) -> Result<GdbSession, ExecError> {
+        GdbSession::start_watched(self, watch)
     }
 
     fn abi(&self) -> &'static str {

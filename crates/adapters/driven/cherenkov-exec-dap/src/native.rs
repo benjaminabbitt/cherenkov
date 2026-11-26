@@ -3,15 +3,19 @@
 //! start a session and implement these primitives.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::cancel::Watch;
 use crate::error::{NotRecorded, Session, Toolchain};
 use cherenkov_mutation::edit::Edit;
 use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, TestReport, Tier};
 use cherenkov_mutation::plan::{Action, MutantPlan};
 use cherenkov_mutation::syntax::Pos;
 use cherenkov_mutation::token::Token;
-use cherenkov_run_ports::executor::{Driven, ExecError, MutantExecutor, Recording, Selection};
+use cherenkov_run_ports::executor::{
+    Cancel, Driven, ExecError, MutantExecutor, Recording, Selection,
+};
 use coded_diagnostic::Report;
 
 use crate::isa::Isa;
@@ -261,7 +265,8 @@ pub(crate) fn kill_debuggee(pid: Option<u32>) {
 /// Starts a fresh session for each run.
 pub trait Launcher {
     type Session: NativeSession;
-    fn start(&self) -> Result<Self::Session, ExecError>;
+    /// `watch` is told the debugger's process, so that a cancel can end it.
+    fn start(&self, watch: &Arc<Watch>) -> Result<Self::Session, ExecError>;
     /// The calling convention of the programs it runs, a key of the ISA
     /// table's `return_stub`.
     fn abi(&self) -> &'static str;
@@ -403,6 +408,8 @@ pub struct TierPExecutor<L: Launcher> {
     scope_root: Option<PathBuf>,
     /// Which names of a value, at a byte of a source text, do not resolve.
     unresolved: Option<UnresolvedNames>,
+    /// Shared with the sessions and the canceller: ends them from outside.
+    watch: Arc<Watch>,
 }
 
 /// The syntax layer's check of a replacement value's names: the source, the
@@ -427,6 +434,7 @@ impl<L: Launcher> TierPExecutor<L> {
             toolchain: None,
             scope_root: None,
             unresolved: None,
+            watch: Arc::default(),
         }
     }
 
@@ -1139,6 +1147,7 @@ impl<L: Launcher> TierPExecutor<L> {
     }
 
     fn acquire(&mut self) -> Result<L::Session, ExecError> {
+        self.cancelled_or(())?;
         if let Some(mut s) = self.session.take()
             && s.select_tests(self.selected.as_deref()).is_ok()
             && s.restart().unwrap_or(false)
@@ -1154,13 +1163,24 @@ impl<L: Launcher> TierPExecutor<L> {
                 binary: binary.display().to_string(),
             }));
         }
-        let mut s = self.launcher.start()?;
+        let mut s = self.launcher.start(&self.watch)?;
         // A fresh launch runs the configured tests: narrow it, then start
         // over with the narrowed ones.
         if self.selected.is_some() && s.select_tests(self.selected.as_deref())? && !s.restart()? {
             return Err(ExecError::of(&Session::NoRestart));
         }
         Ok(s)
+    }
+
+    /// `answer`, unless the executor was cancelled meanwhile: then its
+    /// session is dropped and the answer is the cancellation, whatever the
+    /// call produced (a debugger killed under a baseline reads as a crash).
+    fn cancelled_or<T>(&mut self, answer: T) -> Result<T, ExecError> {
+        if self.watch.cancelled() {
+            self.session = None;
+            return Err(ExecError::of(&Session::Cancelled));
+        }
+        Ok(answer)
     }
 
     /// What tier B needs of the program: its ISA, layouts and load offset.
@@ -1307,26 +1327,9 @@ impl<L: Launcher> TierPExecutor<L> {
     }
 }
 
-impl<L: Launcher> MutantExecutor for TierPExecutor<L> {
-    fn run(&mut self, plan: &MutantPlan, budget: Budget) -> Result<Observed, ExecError> {
-        let (outcome, output) = self.run_capturing(plan, budget)?;
-        Ok(self.observed(outcome, &output))
-    }
-
-    fn baseline(&mut self, budget: Budget) -> Result<Observed, ExecError> {
-        let (outcome, output) = self.baseline_capturing(budget)?;
-        Ok(self.observed(outcome, &output))
-    }
-
-    fn driven(
-        &mut self,
-        plans: &[MutantPlan],
-        budget: Budget,
-    ) -> Result<Option<Vec<Driven>>, ExecError> {
-        self.recording(plans, budget).map(|r| r.driven)
-    }
-
-    fn recording(&mut self, plans: &[MutantPlan], budget: Budget) -> Result<Recording, ExecError> {
+impl<L: Launcher> TierPExecutor<L> {
+    /// [`MutantExecutor::recording`], before a cancel is looked for.
+    fn record(&mut self, plans: &[MutantPlan], budget: Budget) -> Result<Recording, ExecError> {
         let every_test = |tests: Option<usize>, why: NotRecorded| Recording {
             tests,
             selection: Selection::EveryTest {
@@ -1428,6 +1431,33 @@ impl<L: Launcher> MutantExecutor for TierPExecutor<L> {
             driven: Some(selections(&entries, &unlocated, &reached, &calls, &[])),
         })
     }
+}
+
+impl<L: Launcher> MutantExecutor for TierPExecutor<L> {
+    fn run(&mut self, plan: &MutantPlan, budget: Budget) -> Result<Observed, ExecError> {
+        let ran = self.run_capturing(plan, budget);
+        let (outcome, output) = self.cancelled_or(ran)??;
+        Ok(self.observed(outcome, &output))
+    }
+
+    fn baseline(&mut self, budget: Budget) -> Result<Observed, ExecError> {
+        let ran = self.baseline_capturing(budget);
+        let (outcome, output) = self.cancelled_or(ran)??;
+        Ok(self.observed(outcome, &output))
+    }
+
+    fn driven(
+        &mut self,
+        plans: &[MutantPlan],
+        budget: Budget,
+    ) -> Result<Option<Vec<Driven>>, ExecError> {
+        self.recording(plans, budget).map(|r| r.driven)
+    }
+
+    fn recording(&mut self, plans: &[MutantPlan], budget: Budget) -> Result<Recording, ExecError> {
+        let recorded = self.record(plans, budget);
+        self.cancelled_or(recorded)?
+    }
 
     fn select_tests(&mut self, tests: Option<&[String]>) {
         self.selected = tests.map(<[String]>::to_vec);
@@ -1440,6 +1470,10 @@ impl<L: Launcher> MutantExecutor for TierPExecutor<L> {
     fn close_session(&mut self) {
         // Dropping the session ends GDB and the program under it.
         self.session = None;
+    }
+
+    fn canceller(&self) -> Arc<dyn Cancel> {
+        self.watch.clone()
     }
 }
 
@@ -1773,8 +1807,15 @@ mod tests {
         );
     }
 
-    /// A launcher that never starts: only its binary is asked about.
-    struct BinaryOnly(PathBuf);
+    /// A launcher that never starts a session: only its binary is asked
+    /// about, and the starts are counted.
+    struct BinaryOnly(PathBuf, std::sync::atomic::AtomicUsize);
+
+    impl BinaryOnly {
+        fn new(binary: PathBuf) -> BinaryOnly {
+            BinaryOnly(binary, std::sync::atomic::AtomicUsize::new(0))
+        }
+    }
 
     struct NoSession;
 
@@ -1795,8 +1836,9 @@ mod tests {
 
     impl Launcher for BinaryOnly {
         type Session = NoSession;
-        fn start(&self) -> Result<NoSession, ExecError> {
-            unreachable!()
+        fn start(&self, _: &Arc<Watch>) -> Result<NoSession, ExecError> {
+            self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(ExecError::of(&Session::NoRestart))
         }
         fn abi(&self) -> &'static str {
             "sysv"
@@ -1837,7 +1879,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("cherenkov-columns-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let binary = dir.join("program");
-        let executor = TierPExecutor::new(BinaryOnly(binary.clone()), Isa::amd64());
+        let executor = TierPExecutor::new(BinaryOnly::new(binary.clone()), Isa::amd64());
         // The first look finds no binary (a rebuild, a descriptor limit, a
         // busy disk): no columns now...
         assert!(
@@ -1904,9 +1946,64 @@ mod tests {
         }
     }
 
+    fn starts(executor: &TierPExecutor<BinaryOnly>) -> usize {
+        executor
+            .launcher
+            .1
+            .load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    const BUDGET: Budget = Budget {
+        timeout: Duration::from_secs(1),
+    };
+
+    #[test]
+    fn test_a_cancelled_executor_fails_its_baseline_without_starting_a_session() {
+        let mut executor = own_executor();
+        executor.canceller().cancel();
+        let error = executor.baseline(BUDGET).unwrap_err();
+        assert_eq!(error, ExecError::of(&Session::Cancelled));
+        assert_eq!(starts(&executor), 0);
+    }
+
+    #[test]
+    fn test_a_cancelled_executor_fails_its_recording_without_starting_a_session() {
+        let mut executor = own_executor();
+        executor.canceller().cancel();
+        let error = executor.recording(&[], BUDGET).unwrap_err();
+        assert_eq!(error, ExecError::of(&Session::Cancelled));
+        assert_eq!(starts(&executor), 0);
+    }
+
+    #[test]
+    fn test_a_cancelled_executor_fails_a_mutants_run_without_starting_a_session() {
+        let mut executor = own_executor();
+        executor.canceller().cancel();
+        let plan = return_plan("pub fn f(a: u32) -> u32 { a + 2 }\n", "1");
+        let error = executor.run(&plan, BUDGET).unwrap_err();
+        assert_eq!(error, ExecError::of(&Session::Cancelled));
+        assert_eq!(starts(&executor), 0);
+    }
+
+    /// The canceller of a executor is the one its sessions are watched by:
+    /// cancelling after a start is seen by the watch the launcher got.
+    #[test]
+    fn test_the_canceller_is_the_watch_the_launcher_starts_sessions_with() {
+        let mut executor = own_executor();
+        // The launcher's start fails: the call's own error is the answer
+        // when nothing was cancelled.
+        assert_eq!(
+            executor.baseline(BUDGET).unwrap_err(),
+            ExecError::of(&Session::NoRestart)
+        );
+        assert_eq!(starts(&executor), 1);
+        executor.canceller().cancel();
+        assert!(executor.watch.cancelled());
+    }
+
     fn own_executor() -> TierPExecutor<BinaryOnly> {
         let exe = std::env::current_exe().unwrap();
-        TierPExecutor::new(BinaryOnly(exe), Isa::amd64())
+        TierPExecutor::new(BinaryOnly::new(exe), Isa::amd64())
     }
 
     #[test]
