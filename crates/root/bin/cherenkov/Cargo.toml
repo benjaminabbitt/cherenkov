@@ -36,6 +36,7 @@ toml.workspace = true
 cherenkov-wiring = { workspace = true, features = ["test-support"] }
 angzarr-ports.workspace = true
 tokio.workspace = true
+test-dir.workspace = true
 
 [lints]
 workspace = true

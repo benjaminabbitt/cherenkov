@@ -587,10 +587,26 @@ fn test_a_json_in_diff_run_writes_no_note() {
     assert!(note.0.lock().unwrap().is_empty());
 }
 
+/// A directory of one test's verdict files.
+fn verdict_file_dir() -> test_dir::TestDir {
+    test_dir::TestDir::new("cherenkov-vf")
+}
+
+#[test]
+fn test_the_verdict_file_directory_of_a_test_that_panics_is_removed() {
+    let mut path = None;
+    let ended = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let dir = verdict_file_dir();
+        path = Some(dir.to_path_buf());
+        panic!("the test fails");
+    }));
+    assert!(ended.is_err());
+    assert!(!path.unwrap().exists(), "the directory outlived its test");
+}
+
 #[test]
 fn test_the_verdict_file_of_an_in_diff_run_has_no_not_called_line() {
-    let dir = std::env::temp_dir().join(format!("cherenkov-vf-{}", std::process::id()));
-    let _ = std::fs::create_dir_all(&dir);
+    let dir = verdict_file_dir();
     let line = |id: &str, verdict: Verdict| VerdictLine {
         id: id.to_string(),
         verdict: verdict.into(),
@@ -612,5 +628,4 @@ fn test_the_verdict_file_of_an_in_diff_run_has_no_not_called_line() {
     let text = std::fs::read_to_string(&some).unwrap();
     assert_eq!(text.lines().count(), 2, "{text}");
     assert!(!text.contains("\"b\""), "{text}");
-    let _ = std::fs::remove_dir_all(&dir);
 }

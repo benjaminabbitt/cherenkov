@@ -52,14 +52,35 @@ fn test_the_lock_of_one_store_does_not_hold_another() {
     let _two = acquire(&dir.join("two.sqlite")).unwrap();
 }
 
+/// The store of a test about relative paths: a name relative to the working
+/// directory, in a directory of its own that goes with the returned guard.
+fn relative_store() -> (TestDir, PathBuf) {
+    let cwd = std::env::current_dir().unwrap();
+    let dir = TestDir::under(&cwd, "target-relative-lock-test", test_dir::OnPanic::Remove);
+    let relative = PathBuf::from(dir.file_name().unwrap()).join("runs.sqlite");
+    (dir, relative)
+}
+
 #[test]
 fn test_a_relative_store_path_is_locked_as_the_file_it_names() {
     let _serial = serial();
-    let relative = PathBuf::from("target-relative-lock-test.sqlite");
+    let (_dir, relative) = relative_store();
     let _first = acquire(&relative).unwrap();
     assert!(held_by(acquire(&std::path::absolute(&relative).unwrap()).unwrap_err()).is_some());
-    drop(_first);
-    let _ = std::fs::remove_file(lock_file(&std::path::absolute(&relative).unwrap()));
+}
+
+#[test]
+fn test_the_files_of_a_relative_store_test_that_panics_are_removed() {
+    let _serial = serial();
+    let mut store = None;
+    let ended = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let (dir, relative) = relative_store();
+        store = Some(dir.to_path_buf());
+        let _held = acquire(&relative).unwrap();
+        panic!("the test fails");
+    }));
+    assert!(ended.is_err());
+    assert!(!store.unwrap().exists(), "the store outlived its test");
 }
 
 /// A process that holds the lock file with `flock(1)` for a while, and

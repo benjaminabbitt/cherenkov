@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use cli_support::Exit;
+use test_dir::{TestDir, TestFile};
 
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../../fixtures")
@@ -381,7 +382,7 @@ fn test_plan_defaults_to_cargo_mutants_for_rust_and_breadth_for_go() {
 
 #[test]
 fn test_plan_of_a_project_with_two_languages_uses_each_languages_default() {
-    let dir = std::env::temp_dir().join(format!("cherenkov-twolang-{}", std::process::id()));
+    let dir = TestDir::new("cherenkov-twolang");
     std::fs::create_dir_all(dir.join("src")).unwrap();
     std::fs::write(
         dir.join("src/lib.rs"),
@@ -394,7 +395,6 @@ fn test_plan_of_a_project_with_two_languages_uses_each_languages_default() {
     )
     .unwrap();
     let out = plan(&dir, &[]);
-    std::fs::remove_dir_all(&dir).unwrap();
     let lines: Vec<String> = listing(&out).into_iter().map(|(_, d)| d).collect();
     let err = String::from_utf8(out.stderr).unwrap();
     assert!(
@@ -428,7 +428,7 @@ fn started_operators(dir: &Path, extra: &[&str]) -> (serde_json::Value, serde_js
 
 #[test]
 fn test_plan_json_of_two_languages_names_each_languages_set_in_run_started() {
-    let dir = std::env::temp_dir().join(format!("cherenkov-twoset-{}", std::process::id()));
+    let dir = TestDir::new("cherenkov-twoset");
     std::fs::create_dir_all(dir.join("src")).unwrap();
     std::fs::write(
         dir.join("src/lib.rs"),
@@ -441,7 +441,6 @@ fn test_plan_json_of_two_languages_names_each_languages_set_in_run_started() {
     )
     .unwrap();
     let (operators, doc) = started_operators(&dir, &[]);
-    std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(
         operators,
         serde_json::json!([
@@ -463,7 +462,7 @@ fn test_plan_json_of_one_language_has_one_operator_entry() {
 
 #[test]
 fn test_a_custom_set_naming_an_alias_fails_naming_the_canonical_names() {
-    let dir = std::env::temp_dir().join(format!("cherenkov-alias-{}", std::process::id()));
+    let dir = TestDir::new("cherenkov-alias");
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("s.toml");
     std::fs::write(&file, "name = \"mine\"\nmutations = [\"Mothra ROR\"]\n").unwrap();
@@ -473,7 +472,6 @@ fn test_a_custom_set_naming_an_alias_fails_naming_the_canonical_names() {
         "--operators",
         file.to_str().unwrap(),
     ]);
-    std::fs::remove_dir_all(&dir).unwrap();
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -557,7 +555,7 @@ fn test_mutations_lists_each_mutation_with_where_it_came_from_and_its_peers() {
 
 #[test]
 fn test_plan_summary_counts_skipped_regions_by_kind() {
-    let dir = std::env::temp_dir().join(format!("cherenkov-skip-{}", std::process::id()));
+    let dir = TestDir::new("cherenkov-skip");
     std::fs::create_dir_all(dir.join("src")).unwrap();
     std::fs::write(
         dir.join("src/lib.rs"),
@@ -565,7 +563,6 @@ fn test_plan_summary_counts_skipped_regions_by_kind() {
     )
     .unwrap();
     let out = plan(&dir, &["--operators", "cargo-mutants"]);
-    std::fs::remove_dir_all(&dir).unwrap();
     let stderr = String::from_utf8(out.stderr).unwrap();
     assert!(stderr.contains("skipped regions: test "), "{stderr}");
     assert!(!stderr.contains("no action for context"), "{stderr}");
@@ -573,7 +570,7 @@ fn test_plan_summary_counts_skipped_regions_by_kind() {
 
 #[test]
 fn test_plan_in_diff_keeps_only_the_mutants_touching_an_added_line() {
-    let dir = std::env::temp_dir().join(format!("cherenkov-indiff-{}", std::process::id()));
+    let dir = TestDir::new("cherenkov-indiff");
     std::fs::create_dir_all(dir.join("src")).unwrap();
     std::fs::write(
         dir.join("src/lib.rs"),
@@ -597,7 +594,6 @@ fn test_plan_in_diff_keeps_only_the_mutants_touching_an_added_line() {
             diff.to_str().unwrap(),
         ],
     );
-    std::fs::remove_dir_all(&dir).unwrap();
     let (all, kept) = (listing(&all), listing(&kept));
     assert!(all.iter().any(|(_, d)| d.contains(" f ")), "{all:?}");
     assert!(!kept.is_empty());
@@ -643,13 +639,12 @@ fn test_plan_with_two_sets_lists_their_union_once_and_records_provenance() {
 #[test]
 fn test_plan_with_a_custom_set_file_adds_its_mutations() {
     let dir = fixtures().join("rust");
-    let file = std::env::temp_dir().join(format!("cherenkov-set-{}.toml", std::process::id()));
+    let file = TestFile::new("cherenkov-set", "set.toml");
     std::fs::write(&file, "name = \"mine\"\nmutations = [\"ror/lt->le\"]\n").unwrap();
     let out = plan(
         &dir,
         &["--operators", &format!("breadth,{}", file.display())],
     );
-    std::fs::remove_file(&file).unwrap();
     let err = stderr_of(&out);
     assert!(err.contains("provenance: breadth"), "{err}");
     assert!(err.contains("mine "), "{err}");
@@ -658,7 +653,7 @@ fn test_plan_with_a_custom_set_file_adds_its_mutations() {
 #[test]
 fn test_plan_with_a_bad_custom_set_is_declined_naming_the_problem() {
     let dir = fixtures().join("rust");
-    let file = std::env::temp_dir().join(format!("cherenkov-bad-{}.toml", std::process::id()));
+    let file = TestFile::new("cherenkov-bad", "set.toml");
     std::fs::write(&file, "name = \"mine\"\nmutations = [\"ror/zzz\"]\n").unwrap();
     let out = cherenkov(&[
         "plan",
@@ -668,7 +663,6 @@ fn test_plan_with_a_bad_custom_set_is_declined_naming_the_problem() {
         "--format",
         "json",
     ]);
-    std::fs::remove_file(&file).unwrap();
     assert_eq!(
         out.status.code(),
         Some(i32::from(Exit::REFUSED.code(false)))

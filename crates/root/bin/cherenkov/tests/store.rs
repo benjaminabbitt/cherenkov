@@ -20,12 +20,8 @@ fn cherenkov(args: &[&str]) -> Output {
         .unwrap()
 }
 
-fn scratch(name: &str) -> PathBuf {
-    let dir =
-        std::env::temp_dir().join(format!("cherenkov-store-cli-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn scratch(name: &str) -> test_dir::TestDir {
+    test_dir::TestDir::new(&format!("cherenkov-store-cli-{name}"))
 }
 
 fn stderr(out: &Output) -> String {
@@ -62,7 +58,6 @@ fn test_a_second_run_on_a_held_store_is_refused_at_once_naming_the_holder() {
     );
     assert!(said.contains("in use"), "{said}");
     assert!(stdout(&out).is_empty(), "no run began");
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -75,7 +70,6 @@ fn test_the_refusal_is_a_coded_document_under_json() {
     let document: serde_json::Value = serde_json::from_str(stderr(&out).trim()).unwrap();
     assert_eq!(document["code"], "cherenkov-cli-store-locked");
     assert!(document["args"]["holder"].as_str().unwrap().contains("pid"));
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -100,7 +94,6 @@ fn test_a_run_on_another_store_or_on_none_is_not_held_up_by_the_lock() {
         !holder_file(&dir.join("other.sqlite")).exists(),
         "the lock a run took is let go of"
     );
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -116,7 +109,6 @@ fn test_unlock_of_a_held_store_is_refused_and_names_the_holder() {
         "{said}"
     );
     assert!(said.contains("still running"), "{said}");
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -134,7 +126,6 @@ fn test_unlock_clears_what_a_killed_holder_left_and_a_run_may_follow() {
     assert!(stdout(&out).contains("pid 4000000"), "{}", stdout(&out));
     assert!(!holder_file(&store).exists());
     drop(acquire(&store).unwrap());
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -145,7 +136,6 @@ fn test_unlock_of_a_store_nobody_holds_says_so_and_makes_nothing() {
     assert_eq!(out.status.code(), Some(0), "{}", stderr(&out));
     assert!(stdout(&out).contains("not locked"), "{}", stdout(&out));
     assert!(!lock_file(&store).exists() && !dir.join("sub").exists());
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -179,7 +169,6 @@ fn test_prune_refuses_while_a_run_holds_the_store() {
         "{}",
         stdout(&kept)
     );
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -197,7 +186,6 @@ fn test_prune_of_a_path_with_no_store_is_refused_and_makes_none() {
     assert_eq!(out.status.code(), Some(REFUSED), "{}", stderr(&out));
     assert!(stderr(&out).contains("no store there"), "{}", stderr(&out));
     assert!(!store.exists());
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -243,7 +231,6 @@ fn test_prune_says_what_it_would_remove_and_a_dry_run_removes_nothing() {
         stdout(&after)
     );
     assert!(!holder_file(&store).exists(), "the lock was let go of");
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]

@@ -24,6 +24,7 @@ toml.workspace = true
 
 [dev-dependencies]
 cherenkov-syntax.workspace = true
+test-dir.workspace = true
 
 [lints]
 workspace = true

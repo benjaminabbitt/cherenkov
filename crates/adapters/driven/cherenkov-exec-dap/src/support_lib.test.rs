@@ -1,10 +1,7 @@
 use super::*;
 
-fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("cherenkov-sweep-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
+fn scratch(name: &str) -> test_dir::TestDir {
+    test_dir::TestDir::new(&format!("cherenkov-sweep-{name}"))
 }
 
 #[test]
@@ -36,7 +33,6 @@ fn test_the_scratch_of_a_process_that_is_gone_is_swept_and_a_living_one_is_not()
         ]
     );
     assert_eq!(swept, 2);
-    std::fs::remove_dir_all(&temp).unwrap();
 }
 
 #[test]

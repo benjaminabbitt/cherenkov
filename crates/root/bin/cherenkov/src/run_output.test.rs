@@ -431,7 +431,7 @@ fn test_each_event_is_written_as_it_happens_while_later_work_is_still_running() 
 
 #[test]
 fn test_two_runs_of_a_project_write_the_same_verdict_file() {
-    let dir = std::env::temp_dir().join(format!("cherenkov-verdicts-e2e-{}", std::process::id()));
+    let dir = test_dir::TestDir::new("cherenkov-verdicts-e2e");
     let (first, second) = (
         dir.join("one/verdicts.jsonl"),
         dir.join("two/verdicts.jsonl"),
@@ -486,5 +486,4 @@ fn test_two_runs_of_a_project_write_the_same_verdict_file() {
         .collect();
     verdicts.sort();
     assert_eq!(verdicts, [("a", "killed"), ("b", "survived")]);
-    let _ = std::fs::remove_dir_all(&dir);
 }
