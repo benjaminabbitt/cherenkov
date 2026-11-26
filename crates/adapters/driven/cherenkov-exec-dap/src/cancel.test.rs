@@ -61,6 +61,9 @@ fn test_cancelling_after_the_session_released_its_debugger_kills_nothing() {
     watch.debugger(child.id());
     watch.released();
     watch.cancel();
+    // A kill is delivered a moment after it is sent: give a wrongly sent one
+    // the time to end the child before asserting that it did not.
+    std::thread::sleep(Duration::from_millis(500));
     assert!(child.try_wait().unwrap().is_none());
     let _ = child.kill();
     let _ = child.wait();
