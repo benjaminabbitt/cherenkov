@@ -120,7 +120,8 @@ fn run(
     told: &mut Told,
 ) -> Result<(), Failed> {
     let mut failed = None;
-    prepare(plans, &mut sets[0], jobs, &mut |p| match p {
+    let first = std::mem::take(&mut sets[0]);
+    sets[0] = prepare(plans, first, jobs, &mut |p| match p {
         Ok(preparation) => told.prepared.push(preparation),
         Err(f) => failed = Some(f),
     });

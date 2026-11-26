@@ -664,3 +664,71 @@ fn test_a_run_whose_handler_fails_for_good_is_given_up_on_and_reported() {
         "the mutant it failed on was not run"
     );
 }
+
+/// Fails its baseline at once (program `broken`), or waits at it until
+/// `release` opens (program `slow`), the way a program still recording
+/// under a debugger does.
+struct FailsOrWaits {
+    broken: bool,
+    release: Gate,
+    stopped: Arc<AtomicUsize>,
+    closed: Gate,
+}
+
+impl MutantExecutor for FailsOrWaits {
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
+    }
+
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        if self.broken {
+            return Ok(exited(101).into());
+        }
+        self.release.wait();
+        Ok(exited(0).into())
+    }
+
+    fn close_session(&mut self) {
+        if !self.broken {
+            self.stopped.fetch_add(1, Ordering::SeqCst);
+            self.closed.open();
+        }
+    }
+}
+
+#[test]
+fn test_a_run_that_has_failed_ends_while_another_program_is_still_preparing() {
+    let release = Gate::default();
+    let (stopped, closed) = (Arc::new(AtomicUsize::new(0)), Gate::default());
+    let set = |broken| -> Box<dyn MutantExecutor + Send> {
+        Box::new(FailsOrWaits {
+            broken,
+            release: release.clone(),
+            stopped: stopped.clone(),
+            closed: closed.clone(),
+        })
+    };
+    let workers = Workers {
+        sets: vec![vec![set(true), set(false)], vec![set(true), set(false)]],
+        jobs: 2,
+    };
+    let (ended, result) = std::sync::mpsc::channel();
+    let running = std::thread::spawn(move || {
+        let ran = run(&plans(), Some(workers));
+        let _ = ended.send(());
+        ran
+    });
+    // The program that is still preparing is not released: a failed run
+    // does not wait for it.
+    let ended_alone = result.recv_timeout(Duration::from_secs(5)).is_ok();
+    release.open();
+    let ran = running.join().unwrap();
+    // The abandoned program ends its own session once its call returns.
+    closed.wait_for(Duration::from_secs(10));
+    assert_eq!(stopped.load(Ordering::SeqCst), 1);
+    assert!(
+        ended_alone,
+        "the failed run waited for the program still preparing"
+    );
+    assert!(matches!(ran.status, Err(RunLayerError::Workers { .. })));
+}

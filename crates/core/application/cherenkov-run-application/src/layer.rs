@@ -241,16 +241,15 @@ async fn prepare_programs<E: Edge>(
     core: &E,
     run: &Uuid,
     plans: &[MutantPlan],
-    mut first: Vec<Box<dyn MutantExecutor + Send>>,
+    first: Vec<Box<dyn MutantExecutor + Send>>,
     jobs: usize,
 ) -> Result<Vec<Box<dyn MutantExecutor + Send>>, RunLayerError> {
     let planned = plans.to_vec();
     let (to, mut told) = unbounded_channel();
     let preparing = tokio::task::spawn_blocking(move || {
-        workers::prepare(&planned, &mut first, jobs, &mut |p| {
+        workers::prepare(&planned, first, jobs, &mut |p| {
             let _ = to.send(p);
-        });
-        first
+        })
     });
     while let Some(prepared) = told.recv().await {
         match prepared {

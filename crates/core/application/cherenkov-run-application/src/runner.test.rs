@@ -70,11 +70,11 @@ async fn projector(runs: &Arc<AtomicUsize>, programs: usize) -> (Arc<Core>, Uuid
         ..PlanRun::default()
     };
     core.command(run_cover(&run), &plan).await.unwrap();
-    let mut set: Vec<Box<dyn MutantExecutor + Send>> = (0..programs)
+    let set: Vec<Box<dyn MutantExecutor + Send>> = (0..programs)
         .map(|_| Box::new(Fake { runs: runs.clone() }) as Box<dyn MutantExecutor + Send>)
         .collect();
     let mut prepared = Vec::new();
-    workers::prepare(&plans, &mut set, 1, &mut |p| prepared.push(p.unwrap()));
+    let set = workers::prepare(&plans, set, 1, &mut |p| prepared.push(p.unwrap()));
     for preparation in prepared {
         let external_id = format!("program {}", preparation.program);
         let fact = crate::programs::report(preparation, &plans);
@@ -298,9 +298,9 @@ async fn test_a_ready_run_hands_its_mutants_on_with_their_plans_and_not_before()
         assert!(pages(&core, &p.id.0).await.is_empty(), "before it is ready");
     }
     let runs = Arc::new(AtomicUsize::new(0));
-    let mut set: Vec<Box<dyn MutantExecutor + Send>> = vec![Box::new(Fake { runs })];
+    let set: Vec<Box<dyn MutantExecutor + Send>> = vec![Box::new(Fake { runs })];
     let mut prepared = Vec::new();
-    workers::prepare(&plans(), &mut set, 1, &mut |p| prepared.push(p.unwrap()));
+    let _set = workers::prepare(&plans(), set, 1, &mut |p| prepared.push(p.unwrap()));
     let fact = crate::programs::report(prepared.remove(0), &plans());
     core.report(run_cover(&run), &fact, "program 0")
         .await

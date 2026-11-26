@@ -8,6 +8,7 @@
 //! bus.
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, TestReport, classify};
@@ -130,64 +131,164 @@ impl Programs {
     }
 }
 
+/// The executors of a worker: one for each test program.
+type Executors = Vec<Box<dyn MutantExecutor + Send>>;
+
+/// A program's preparation, with the executor that did it handed back.
+struct Finished {
+    program: usize,
+    describe: Option<String>,
+    prepared: Result<Preparation, Report>,
+    executor: Box<dyn MutantExecutor + Send>,
+}
+
 /// Baseline every test program of `set` and record what its tests call,
 /// telling `report` each program's preparation, or why it could not be
 /// prepared, the moment it is done; `jobs` programs are prepared at once.
-/// The first program that cannot be prepared ends the batch. Each program's
-/// session is closed after: a worker opens again only what it uses.
+/// The first program that cannot be prepared, or whose baseline fails (the
+/// run refuses it), ends the batch: the others are not waited out. A program still preparing is abandoned to its own thread,
+/// which ends its session when its call returns, and its executor is not
+/// handed back. Each session is closed after: a worker opens again only what
+/// it uses. Returns the executors, in the programs' order, that were not
+/// abandoned.
 pub fn prepare(
     plans: &[MutantPlan],
-    set: &mut [Box<dyn MutantExecutor + Send>],
+    set: Executors,
     jobs: usize,
     report: &mut dyn FnMut(Result<Preparation, Failed>),
-) {
+) -> Executors {
     if set.is_empty() {
         report(Err(Failed {
             program: None,
             why: Report::of(&Reason::NoExecutors),
         }));
-        return;
+        return set;
     }
-    // Each test program is baselined and its calls recorded on a thread of
-    // its own: they are independent sessions, and a workspace has dozens.
+    let plans: Arc<[MutantPlan]> = plans.into();
+    let mut back: Vec<Option<Box<dyn MutantExecutor + Send>>> = Vec::new();
+    back.resize_with(set.len(), || None);
+    let mut pending = set.into_iter().enumerate();
+    loop {
+        let batch: Vec<_> = pending.by_ref().take(jobs.max(1)).collect();
+        if batch.is_empty() {
+            break;
+        }
+        if prepare_batch(&plans, batch, &mut back, report) {
+            keep_unstarted(pending, &mut back);
+            break;
+        }
+    }
+    back.into_iter()
+        .flatten()
+        .map(|mut executor| {
+            executor.close_session();
+            executor
+        })
+        .collect()
+}
+
+/// The programs a failed run never started keep their executors.
+fn keep_unstarted(
+    pending: impl Iterator<Item = (usize, Box<dyn MutantExecutor + Send>)>,
+    back: &mut [Option<Box<dyn MutantExecutor + Send>>],
+) {
+    for (program, executor) in pending {
+        back[program] = Some(executor);
+    }
+}
+
+/// Prepare `batch` at once, each program on a thread of its own: they are
+/// independent sessions, and a workspace has dozens. Tells `report` each as
+/// it is done, and whether one failed; on the first failure, stops waiting
+/// for the others, keeping the programs already done.
+fn prepare_batch(
+    plans: &Arc<[MutantPlan]>,
+    batch: Vec<(usize, Box<dyn MutantExecutor + Send>)>,
+    back: &mut [Option<Box<dyn MutantExecutor + Send>>],
+    report: &mut dyn FnMut(Result<Preparation, Failed>),
+) -> bool {
+    let (sender, done) = std::sync::mpsc::channel();
+    for (program, executor) in batch {
+        spawn_preparation(program, executor, plans.clone(), sender.clone());
+    }
+    drop(sender);
     let mut failed = false;
-    for (b, batch) in set.chunks_mut(jobs.max(1)).enumerate() {
-        let offset = b * jobs.max(1);
-        std::thread::scope(|scope| {
-            let (sender, done) = std::sync::mpsc::channel();
-            for (i, executor) in batch.iter_mut().enumerate() {
-                let sender = sender.clone();
-                scope.spawn(move || {
-                    let describe = executor.describe();
-                    let prepared = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        prepare_one(executor.as_mut(), plans)
-                    }))
-                    .unwrap_or_else(|_| Err(Report::of(&Reason::PreparationPanicked)));
-                    let _ = sender.send((offset + i, describe, prepared));
-                });
-            }
-            drop(sender);
-            for (program, describe, prepared) in done {
-                failed |= prepared.is_err();
-                report(match prepared {
-                    Ok(preparation) => Ok(Preparation {
-                        program,
-                        ..preparation
-                    }),
-                    Err(why) => Err(Failed {
-                        program: describe,
-                        why,
-                    }),
-                });
-            }
-        });
+    for finished in done.iter() {
+        failed |= settle(finished, back, report);
         if failed {
             break;
         }
     }
-    for executor in set.iter_mut() {
-        executor.close_session();
+    if failed {
+        // What has already finished is told; what has not is abandoned.
+        for finished in done.try_iter() {
+            settle(finished, back, report);
+        }
     }
+    failed
+}
+
+/// Keep a finished program's executor and tell `report` what it found;
+/// whether it failed.
+fn settle(
+    finished: Finished,
+    back: &mut [Option<Box<dyn MutantExecutor + Send>>],
+    report: &mut dyn FnMut(Result<Preparation, Failed>),
+) -> bool {
+    let Finished {
+        program,
+        describe,
+        prepared,
+        executor,
+    } = finished;
+    back[program] = Some(executor);
+    let failed = refused(&prepared);
+    report(match prepared {
+        Ok(preparation) => Ok(Preparation {
+            program,
+            ..preparation
+        }),
+        Err(why) => Err(Failed {
+            program: describe,
+            why,
+        }),
+    });
+    failed
+}
+
+/// Whether the run is bound to refuse this program: it could not be
+/// prepared, or its unmutated tests did not pass (nothing was recorded).
+fn refused(prepared: &Result<Preparation, Report>) -> bool {
+    prepared
+        .as_ref()
+        .map_or(true, |preparation| preparation.recording.is_none())
+}
+
+/// Prepare program `program` on a thread of its own, sending it back with
+/// its executor. When nobody waits any more (the run failed), the thread
+/// ends the executor's session itself, as soon as its call returns.
+fn spawn_preparation(
+    program: usize,
+    mut executor: Box<dyn MutantExecutor + Send>,
+    plans: Arc<[MutantPlan]>,
+    sender: std::sync::mpsc::Sender<Finished>,
+) {
+    std::thread::spawn(move || {
+        let describe = executor.describe();
+        let prepared = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            prepare_one(executor.as_mut(), &plans)
+        }))
+        .unwrap_or_else(|_| Err(Report::of(&Reason::PreparationPanicked)));
+        let finished = Finished {
+            program,
+            describe,
+            prepared,
+            executor,
+        };
+        if let Err(std::sync::mpsc::SendError(mut abandoned)) = sender.send(finished) {
+            abandoned.executor.close_session();
+        }
+    });
 }
 
 /// Why a test program could not be prepared at all: named, when the
