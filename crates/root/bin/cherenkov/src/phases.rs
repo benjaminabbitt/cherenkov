@@ -3,40 +3,33 @@
 //! Said on stderr when the run finishes; the build and the viability
 //! check, which precede the run, are timed where they happen.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use angzarr_embedded::Timestamp;
 use cherenkov_run_wire::output::{Document, document::Event};
 
 use cherenkov_cli::notice::{Notice, Say, tenths};
 use cherenkov_cli::output::Sink;
 
 /// A sink that passes every document on and, at the run's end, says how
-/// long its phases took.
+/// long its phases took, by the times the documents record (`at` of
+/// `run.started`, of the last `program.prepared` and of `run.finished`),
+/// never the clock of the process that prints them: a resumed run reprints
+/// its earlier documents at once.
 pub struct Phases {
     inner: Box<dyn Sink>,
     say: Say,
-    /// Time since the run layer started.
-    clock: Box<dyn FnMut() -> Duration + Send>,
-    last_prepared: Option<Duration>,
+    started: Option<Timestamp>,
+    last_prepared: Option<Timestamp>,
 }
 
 impl Phases {
-    /// Time from now; the phases are said through `say`.
+    /// The phases are said through `say`.
     pub fn new(inner: Box<dyn Sink>, say: Say) -> Self {
-        let started = Instant::now();
-        Self::with_clock(inner, say, Box::new(move || started.elapsed()))
-    }
-
-    /// [`Phases::new`], timed by `clock`.
-    pub fn with_clock(
-        inner: Box<dyn Sink>,
-        say: Say,
-        clock: Box<dyn FnMut() -> Duration + Send>,
-    ) -> Self {
         Phases {
             inner,
             say,
-            clock,
+            started: None,
             last_prepared: None,
         }
     }
@@ -46,14 +39,36 @@ impl Sink for Phases {
     fn document(&mut self, doc: &Document) {
         self.inner.document(doc);
         match &doc.event {
-            Some(Event::Prepared(_)) => self.last_prepared = Some((self.clock)()),
-            Some(Event::Finished(_)) => {
-                let notice = summary(self.last_prepared, (self.clock)());
+            Some(Event::Started(started)) => self.started = started.at,
+            Some(Event::Prepared(prepared)) => self.last_prepared = prepared.at,
+            Some(Event::Finished(finished)) => {
+                let notice = self.notice(finished.at);
                 self.say.say(&notice);
             }
             _ => {}
         }
     }
+}
+
+impl Phases {
+    /// The phases of a run recorded as finished at `finished`.
+    fn notice(&self, finished: Option<Timestamp>) -> Notice {
+        let started = self.started;
+        let prepared = elapsed(started, self.last_prepared.or(started));
+        let total = elapsed(started, finished);
+        summary(Some(prepared), total)
+    }
+}
+
+/// Time from `from` to `to`; nothing when either is not recorded or `to`
+/// is the earlier.
+fn elapsed(from: Option<Timestamp>, to: Option<Timestamp>) -> Duration {
+    let (Some(from), Some(to)) = (from, to) else {
+        return Duration::ZERO;
+    };
+    let nanos = |t: Timestamp| i128::from(t.seconds) * 1_000_000_000 + i128::from(t.nanos);
+    let diff = nanos(to).saturating_sub(nanos(from));
+    Duration::from_nanos(u64::try_from(diff).unwrap_or(0))
 }
 
 /// The phases of a run layer's `total` time, the preparation having ended
