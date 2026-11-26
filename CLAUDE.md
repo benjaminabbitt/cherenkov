@@ -24,7 +24,10 @@ domain types too; the planner's own types in `cherenkov-mutation` convert to
 and from them in `cherenkov-run-domain`'s `plan::encode` and `plan::decode`,
 `observation::encode` and `observation::decode`. An executor returns
 `cherenkov_mutation::execution::Observed` (the outcome and the tests the
-program reported: no part of the run layer reads a test program's output),
+program reported, and `output_tail`: the last 16 KiB of a program's output,
+which a failed baseline carries into `program.failed` for diagnosis only. No
+part of the run layer reads a test program's output for a verdict, and nothing
+decides from the tail),
 and `observation::killed_by` makes the failed tests the `KilledBy` of a fact. The generated JSON covers the output package only
 (the generated readers of the plan's messages pass the complexity gate's
 line limit).

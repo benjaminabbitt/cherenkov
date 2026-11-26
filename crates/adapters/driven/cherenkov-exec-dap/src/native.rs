@@ -1328,11 +1328,26 @@ impl<L: Launcher> TierPExecutor<L> {
         &mut self,
         budget: Budget,
     ) -> Result<(RawOutcome, String), ExecError> {
+        self.baseline_printing(budget)
+            .map(|(raw, output, _)| (raw, output))
+    }
+
+    /// [`Self::baseline_capturing`], also returning what the program printed
+    /// as a person reads it (the session's diagnostic output, else the
+    /// output itself): for the tail only, never for a verdict.
+    fn baseline_printing(
+        &mut self,
+        budget: Budget,
+    ) -> Result<(RawOutcome, String, String), ExecError> {
         let mut session = self.acquire()?;
         let raw = Self::timed_run(&mut session, budget)?;
         let output = session.take_output();
+        let diagnostic = match session.take_diagnostic_output() {
+            more if more.is_empty() => output.clone(),
+            more => more,
+        };
         self.session = Some(session);
-        Ok((raw, output))
+        Ok((raw, output, diagnostic))
     }
 }
 
@@ -1450,9 +1465,9 @@ impl<L: Launcher> MutantExecutor for TierPExecutor<L> {
     }
 
     fn baseline(&mut self, budget: Budget) -> Result<Observed, ExecError> {
-        let ran = self.baseline_capturing(budget);
-        let (outcome, output) = self.cancelled_or(ran)??;
-        Ok(self.observed(outcome, &output))
+        let ran = self.baseline_printing(budget);
+        let (outcome, output, diagnostic) = self.cancelled_or(ran)??;
+        Ok(self.observed(outcome, &output).with_output(&diagnostic))
     }
 
     fn driven(
@@ -1895,9 +1910,14 @@ mod tests {
         );
         assert_eq!(read_with, ["out\n"], "parsing sees what it always saw");
         assert_eq!(read_with, read_without);
+        let code = |o: &Observed| match o.outcome {
+            RawOutcome::Exited { code, .. } => Some(code),
+            _ => None,
+        };
+        assert_eq!(code(&with), Some(101));
         assert_eq!(
-            (&with.outcome, &with.tests),
-            (&without.outcome, &without.tests),
+            (code(&with), &with.tests),
+            (code(&without), &without.tests),
             "verdict facts are identical with and without the tail"
         );
     }

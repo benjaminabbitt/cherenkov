@@ -152,8 +152,18 @@ pub const OUTPUT_TAIL_BYTES: usize = 16 * 1024;
 /// The last [`OUTPUT_TAIL_BYTES`] of `output`, cut on a character boundary
 /// and led by a marker saying how many bytes were left out; none for no
 /// output. For diagnosis only: nothing decides from it.
-pub fn output_tail(_output: &str) -> Option<String> {
-    None
+pub fn output_tail(output: &str) -> Option<String> {
+    if output.is_empty() {
+        return None;
+    }
+    if output.len() <= OUTPUT_TAIL_BYTES {
+        return Some(output.to_string());
+    }
+    let mut cut = output.len() - OUTPUT_TAIL_BYTES;
+    while !output.is_char_boundary(cut) {
+        cut += 1;
+    }
+    Some(format!("[... {cut} bytes omitted]\n{}", &output[cut..]))
 }
 
 impl Observed {

@@ -72,7 +72,12 @@ are.
 ### `program.failed`
 A test program that could not be prepared (its tests fail unmutated, the
 debugger cannot run it): `program` (when known) and `reason`, in words as
-for `program.prepared`. The run stops; `run.finished` follows with `status` `"failed"`.
+for `program.prepared`, and `output_tail`: when the program's unmutated run
+failed, the last 16 KiB of what it printed (stdout and, where the debugger
+forwards it, stderr, in arrival order), cut on a character boundary and led by
+`[... N bytes omitted]` when cut; `null` when none was captured. It is for
+diagnosis only: no verdict, test report or decision is read from it. The run
+stops; `run.finished` follows with `status` `"failed"`.
 
 ### `mutant.decided`
 One per mutant, in completion order. Self-contained:

@@ -73,6 +73,9 @@ pub struct GdbSession {
     running: bool,
     /// What the last run lost to waiting for a CPU, in its wall time.
     lost: Duration,
+    /// What the last [`NativeSession::take_output`] read, stderr too, in
+    /// arrival order: for a person diagnosing a failure, never parsed.
+    diagnostic: String,
     /// GDB is inside a call into the program that did not return (an
     /// evaluation waiting on a thread it stopped): it cannot be reused.
     stuck: bool,
@@ -137,6 +140,7 @@ impl GdbSession {
             thread: 1,
             inferior: None,
             lost: Duration::ZERO,
+            diagnostic: String::new(),
             running: false,
             stuck: false,
             test_args: config.test_args.clone(),
@@ -676,6 +680,11 @@ const EVALUATION: Duration = Duration::from_secs(5);
 /// Hits of one function's entry before it counts as called by every test.
 const RECORD_HITS: u32 = 64;
 
+/// The text of an `output` event.
+fn printed(event: &serde_json::Value) -> Option<&str> {
+    event["body"]["output"].as_str()
+}
+
 impl NativeSession for GdbSession {
     /// A fresh process of the same program in this session: GDB, the
     /// program's symbols and the helpers stay loaded.
@@ -737,12 +746,17 @@ impl NativeSession for GdbSession {
     }
 
     fn take_output(&mut self) -> String {
-        self.dap
-            .take_events("output")
+        let events = self.dap.take_events("output");
+        self.diagnostic = events.iter().filter_map(printed).collect();
+        events
             .iter()
             .filter(|e| e["body"]["category"].as_str().is_none_or(|c| c == "stdout"))
-            .filter_map(|e| e["body"]["output"].as_str())
+            .filter_map(printed)
             .collect()
+    }
+
+    fn take_diagnostic_output(&mut self) -> String {
+        std::mem::take(&mut self.diagnostic)
     }
 
     fn function_code(&mut self, file: &Path, line: u32) -> Result<Option<FunctionCode>, ExecError> {

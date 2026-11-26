@@ -436,7 +436,32 @@ fn lines() -> Vec<String> {
         .chain(documents().iter().map(line))
         .chain(verdict_lines().iter().map(line))
         .chain(nested_lines())
+        .chain(output_tail_lines())
         .collect()
+}
+
+/// The messages that carry a failing program's output tail.
+fn output_tail_lines() -> Vec<String> {
+    let tail = Some("thread 'a' panicked\n".to_string());
+    vec![
+        line(&PreparationReported {
+            baseline_output_tail: tail.clone(),
+            ..preparation()
+        }),
+        line(&ProgramFailed {
+            program: Some("calc-1".to_string()),
+            reason: String::new(),
+            why: None,
+            output_tail: tail.clone(),
+        }),
+        line(&output::Failed {
+            run: Some(uuid()),
+            at: recorded(),
+            program: None,
+            reason: "build failed".to_string(),
+            output_tail: tail,
+        }),
+    ]
 }
 
 /// The lines of the plan, the run's start and the preparation messages.
