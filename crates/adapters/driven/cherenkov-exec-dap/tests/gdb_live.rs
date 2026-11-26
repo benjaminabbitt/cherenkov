@@ -10,7 +10,7 @@ use cherenkov_exec_dap::isa::Isa;
 use cherenkov_exec_dap::native::{NativeSession, RunEnd};
 use cherenkov_exec_dap::reason::Reason;
 use cherenkov_exec_dap::tierp::derive;
-use cherenkov_exec_dap::toolchain::build_rust_test_binaries;
+use cherenkov_exec_dap::toolchain::{build_rust_test_binaries, build_rust_test_programs_with};
 use cherenkov_mutation::execution::{Budget, RawOutcome, Tier};
 use cherenkov_mutation::operator::catalog;
 use cherenkov_mutation::plan::{MutantPlan, plan_file};
@@ -366,7 +366,21 @@ fn test_live_gdb_finds_code_in_a_binary_built_at_another_path() {
     for f in ["Cargo.toml", "src/lib.rs", "tests/calc.rs"] {
         std::fs::copy(fixture().join(f), elsewhere.join(f)).unwrap();
     }
-    let bins = build_rust_test_binaries(Path::new("cargo"), elsewhere).unwrap();
+    // The copy has the fixture's package and relative path, so cargo gives
+    // its artifacts the fixture's file names: under a `CARGO_TARGET_DIR` the
+    // outer build exports, its build would overwrite the fixture's binaries
+    // (and leave their debug info naming this directory). Its own target
+    // directory, named on the command line, keeps them apart.
+    let target = elsewhere.join("target").display().to_string();
+    let bins: Vec<PathBuf> = build_rust_test_programs_with(
+        Path::new("cargo"),
+        elsewhere,
+        &["--target-dir".to_string(), target],
+    )
+    .unwrap()
+    .into_iter()
+    .map(|p| p.binary)
+    .collect();
     let mut exec = GdbExecutor::new(
         GdbConfig {
             gdb: PathBuf::from("gdb"),
