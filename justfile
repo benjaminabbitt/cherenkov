@@ -35,9 +35,10 @@ lint-arch:
 test:
     cargo test --workspace
 
-# Tests against real debuggers and toolchains (dlv, go). Slow.
+# Tests against real debuggers and toolchains (dlv, go). Slow. Skips the
+# fixture regenerator, which only `just regen-replay-fixtures` runs.
 test-slow:
-    cargo test --workspace -- --ignored
+    cargo test --workspace -- --ignored --skip regenerate_the_fixtures_of_the_current_rules_version
 
 # The tier P gate (runs in `just test`): every arithmetic patch against the
 # mutant rustc compiles from the same source, natively, over edge values and
