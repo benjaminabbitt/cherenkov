@@ -184,10 +184,10 @@ fn run_go(asked: &Asked) -> Result<(), CliError> {
     let go = find_tool(tools.go.as_deref(), "go")?;
     // The toolchain writes the test binary into a scratch directory outside
     // the project; nothing in the working tree is written.
-    let scratch = std::env::temp_dir().join(format!("cherenkov-run-{}", std::process::id()));
-    std::fs::create_dir_all(&scratch).map_err(|e| unreadable(&scratch, &e))?;
-    let binary = scratch.join("pkg.test");
-    let result = build_go_test_binary(&go, root, &binary)
+    let path = std::env::temp_dir().join(format!("cherenkov-run-{}", std::process::id()));
+    let scratch = GoScratch::create(path.clone()).map_err(|e| unreadable(&path, &e))?;
+    let binary = scratch.0.join("pkg.test");
+    build_go_test_binary(&go, root, &binary)
         .map_err(toolchain)
         .and_then(|()| {
             let config = DelveConfig {
@@ -199,9 +199,25 @@ fn run_go(asked: &Asked) -> Result<(), CliError> {
                 Box::new(DelveExecutor::new(config, Isa::amd64()));
             // One Delve session: its server's port is fixed per run.
             on_run_layer(asked, "go", &plans, workers_of(vec![vec![executor]], jobs))
-        });
-    let _ = std::fs::remove_dir_all(&scratch);
-    result
+        })
+}
+
+/// The Go run's scratch directory. Removed when the run ends, however it
+/// ends (a panic included); a killed run's is swept by the next run
+/// (`support_lib::sweep_stale_scratch`).
+struct GoScratch(PathBuf);
+
+impl GoScratch {
+    fn create(path: PathBuf) -> std::io::Result<GoScratch> {
+        std::fs::create_dir_all(&path)?;
+        Ok(GoScratch(path))
+    }
+}
+
+impl Drop for GoScratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 fn run_rust(asked: &Asked) -> Result<(), CliError> {
@@ -631,13 +647,11 @@ mod tests {
 
     /// A stand-in for cargo: logs its arguments, answers `test` with one
     /// test program.
-    fn fake_cargo(tag: &str) -> (PathBuf, PathBuf) {
+    fn fake_cargo(tag: &str) -> (test_dir::TestDir, PathBuf, PathBuf) {
         use std::os::unix::fs::PermissionsExt;
         static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
         let _one = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
-        let dir =
-            std::env::temp_dir().join(format!("cherenkov-run-fake-{tag}-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = test_dir::TestDir::new(&format!("cherenkov-run-fake-{tag}"));
         let log = dir.join("log");
         let test = r#"{"reason":"compiler-artifact","manifest_path":"/w/a/Cargo.toml","profile":{"test":true},"executable":"/t/a-1"}"#;
         let script = format!(
@@ -647,7 +661,7 @@ mod tests {
         let cargo = dir.join("cargo");
         std::fs::write(&cargo, script).unwrap();
         std::fs::set_permissions(&cargo, std::fs::Permissions::from_mode(0o755)).unwrap();
-        (cargo, log)
+        (dir, cargo, log)
     }
 
     fn tools() -> Tools {
@@ -677,8 +691,21 @@ mod tests {
     }
 
     #[test]
+    fn test_the_go_scratch_directory_of_a_run_that_panics_is_removed() {
+        let base = test_dir::TestDir::new("cherenkov-go-scratch");
+        let path = base.join("cherenkov-run-1");
+        let ended = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _scratch = GoScratch::create(path.clone()).unwrap();
+            assert!(path.exists());
+            panic!("the run fails");
+        }));
+        assert!(ended.is_err());
+        assert!(!path.exists(), "the scratch outlived its run");
+    }
+
+    #[test]
     fn test_the_build_is_of_the_packages_that_judge_and_of_nothing_when_none_does() {
-        let (cargo, log) = fake_cargo("build");
+        let (_dir, cargo, log) = fake_cargo("build");
         let packages = [package("a"), package("b")];
         let plans = [plan_in("m1", "a/src/lib.rs")];
         let root = Path::new("/w");
@@ -708,12 +735,11 @@ mod tests {
                 "test --no-run --message-format=json --locked"
             ]
         );
-        let _ = std::fs::remove_dir_all(cargo.parent().unwrap());
     }
 
     #[test]
     fn test_the_tests_a_diff_changes_are_found_in_the_project_s_files() {
-        let root = std::env::temp_dir().join(format!("cherenkov-diff-{}", std::process::id()));
+        let root = test_dir::TestDir::new("cherenkov-diff");
         std::fs::create_dir_all(root.join("src")).unwrap();
         std::fs::write(
             root.join("src/lib.rs"),
@@ -722,7 +748,6 @@ mod tests {
         .unwrap();
         let diff = "--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -5,1 +5,1 @@\n-    g();\n+    f();\n";
         let found = tests_changed_by(diff, &root);
-        let _ = std::fs::remove_dir_all(&root);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].path, "test_f");
         assert_eq!(found[0].file, Path::new("src/lib.rs"));

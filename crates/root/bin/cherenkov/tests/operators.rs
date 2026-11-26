@@ -118,7 +118,7 @@ fn test_every_name_in_the_dump_is_accepted_in_a_custom_set_file() {
             names.push(r["name"].as_str().unwrap().to_string());
         }
     }
-    let dir = std::env::temp_dir().join(format!("cherenkov-opnames-{}", std::process::id()));
+    let dir = test_dir::TestDir::new("cherenkov-opnames");
     std::fs::create_dir_all(dir.join("src")).unwrap();
     std::fs::write(
         dir.join("src/lib.rs"),
@@ -141,7 +141,6 @@ fn test_every_name_in_the_dump_is_accepted_in_a_custom_set_file() {
         "text",
     ]);
     let err = String::from_utf8_lossy(&out.stderr).to_string();
-    std::fs::remove_dir_all(&dir).unwrap();
     assert!(out.status.success(), "{err}");
 }
 
