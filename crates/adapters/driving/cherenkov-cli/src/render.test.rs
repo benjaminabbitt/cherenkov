@@ -384,3 +384,20 @@ fn test_a_document_reads_its_event_first() {
         "{doc}"
     );
 }
+
+#[test]
+fn test_a_failed_program_document_carries_the_output_tail_or_an_explicit_null() {
+    let failed = |output_tail: Option<&str>| {
+        one(pack_message(&ProgramFailed {
+            program: Some("calc-1".to_string()),
+            reason: "unmutated tests do not pass".to_string(),
+            why: None,
+            output_tail: output_tail.map(str::to_string),
+        }))
+    };
+    assert_eq!(failed(None)["output_tail"], Value::Null, "none captured");
+    assert_eq!(
+        failed(Some("thread 'a' panicked\n"))["output_tail"],
+        "thread 'a' panicked\n"
+    );
+}

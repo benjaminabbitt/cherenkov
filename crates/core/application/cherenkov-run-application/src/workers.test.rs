@@ -248,9 +248,24 @@ impl MutantExecutor for Broken {
         Ok(Observed {
             outcome: exited(101),
             tests: vec![killer("test_a")],
-            output_tail: None,
+            output_tail: Some("thread 'a' panicked\n".to_string()),
         })
     }
+}
+
+#[test]
+fn test_a_failed_baselines_output_tail_is_reported_for_diagnosis() {
+    let plans = plans();
+    let set: Vec<Box<dyn MutantExecutor + Send>> = vec![Box::new(Broken)];
+    let mut told = Told::default();
+    run(&plans, vec![set], 1, &mut told).unwrap();
+    let [broken] = &told.prepared[..] else {
+        panic!("{:?}", told.prepared);
+    };
+    assert_eq!(
+        broken.baseline_output_tail.as_deref(),
+        Some("thread 'a' panicked\n")
+    );
 }
 
 #[test]

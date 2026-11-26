@@ -435,3 +435,37 @@ fn test_cancelling_while_the_debugger_launches_fails_the_start_and_ends_the_debu
     assert!(gdb_gone, "gdb {gdb} outlived the cancel");
     assert!(child_gone, "gdb's child {child} outlived the cancel");
 }
+
+fn stderr(text: &str) -> String {
+    format!(
+        r#"(0, "output", {{"category": "stderr", "output": {}}})"#,
+        serde_json::to_string(text).unwrap()
+    )
+}
+
+/// The output a person reads to diagnose a failure has stderr in it,
+/// interleaved as it arrived; the output the verdict is read from is what
+/// it was, stdout alone.
+#[test]
+fn test_diagnostic_output_has_stderr_in_arrival_order_and_the_verdict_output_does_not() {
+    let play = format!(
+        r#"[{}, {}, {}, (0, "exited", {{"exitCode": 101}}), (0, "terminated", {{}})]"#,
+        output("test b ... FAILED\n"),
+        stderr("thread 'b' panicked at src/lib.rs:5\n"),
+        output("test result: FAILED\n"),
+    );
+    let (mut session, dir) = session("stderr", &play);
+    let (end, _) = session.run_reaching(&[], Duration::from_secs(30)).unwrap();
+    let verdict = session.take_output();
+    let diagnostic = session.take_diagnostic_output();
+    let _ = std::fs::remove_dir_all(dir);
+    assert_eq!(end, RunEnd::Exited(101));
+    assert_eq!(
+        verdict, "test b ... FAILED\ntest result: FAILED\n",
+        "what verdicts are read from does not change"
+    );
+    assert_eq!(
+        diagnostic,
+        "test b ... FAILED\nthread 'b' panicked at src/lib.rs:5\ntest result: FAILED\n"
+    );
+}

@@ -383,6 +383,36 @@ fn test_the_last_program_prepared_makes_the_run_ready_with_its_mutants_in_plan_o
 }
 
 #[test]
+fn test_a_failed_baselines_output_tail_is_on_the_program_failed_event() {
+    let mut core = run_harness();
+    core.command(&plan(&["a"])).unwrap();
+    let failing = PreparationReported {
+        selection_why: None,
+        baseline: Some(observation::encode(&RawOutcome::Exited {
+            code: 101,
+            tier: CoreTier::P,
+            wall: Duration::from_millis(40),
+        })),
+        baseline_output_tail: Some("thread 'a' panicked\n".to_string()),
+        ..preparation("calc-1")
+    };
+    core.report(&failing, "program 0").unwrap();
+    let events = run_events(&core);
+    let [
+        ..,
+        RunEvent::ProgramFailed(program),
+        RunEvent::RunFinished(_),
+    ] = &events[..]
+    else {
+        panic!("{events:?}");
+    };
+    assert_eq!(
+        program.output_tail.as_deref(),
+        Some("thread 'a' panicked\n")
+    );
+}
+
+#[test]
 fn test_a_baseline_that_fails_finishes_the_run_failed_and_it_is_never_ready() {
     let mut core = run_harness();
     core.command(&plan(&["a"])).unwrap();

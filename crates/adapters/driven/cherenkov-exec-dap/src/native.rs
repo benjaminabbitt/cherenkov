@@ -205,6 +205,14 @@ pub trait NativeSession {
         String::new()
     }
 
+    /// What the program printed since the last [`NativeSession::take_output`],
+    /// as a person reads it to diagnose a failure (every stream the
+    /// debugger forwards, in arrival order); empty when the session has
+    /// nothing beyond what `take_output` gave. Nothing decides from it.
+    fn take_diagnostic_output(&mut self) -> String {
+        String::new()
+    }
+
     /// Apply a patch. Fails, writing nothing, unless memory still holds
     /// every region's `original`.
     fn arm(&mut self, patch: &Patch) -> Result<(), ExecError> {
@@ -1805,6 +1813,92 @@ mod tests {
                 Driven::Tests(names(&["a", "slow"])),
                 Driven::Tests(names(&["slow"])),
             ]
+        );
+    }
+
+    /// A session that exits 101 having printed `stdout` and, for a
+    /// person, `diagnostic`.
+    struct Printing {
+        stdout: &'static str,
+        diagnostic: &'static str,
+    }
+
+    impl NativeSession for Printing {
+        fn function_code(&mut self, _: &Path, _: u32) -> Result<Option<FunctionCode>, ExecError> {
+            unreachable!()
+        }
+        fn read(&mut self, _: u64, _: usize) -> Result<Vec<u8>, ExecError> {
+            unreachable!()
+        }
+        fn write(&mut self, _: u64, _: &[u8]) -> Result<(), ExecError> {
+            unreachable!()
+        }
+        fn run_reaching(&mut self, _: &[u64], _: Duration) -> Result<(RunEnd, bool), ExecError> {
+            Ok((RunEnd::Exited(101), true))
+        }
+        fn take_output(&mut self) -> String {
+            self.stdout.to_string()
+        }
+        fn take_diagnostic_output(&mut self) -> String {
+            self.diagnostic.to_string()
+        }
+    }
+
+    /// Starts [`Printing`] sessions and keeps what `tests_of` was given.
+    struct Reading {
+        stdout: &'static str,
+        diagnostic: &'static str,
+        read: Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    impl Launcher for Reading {
+        type Session = Printing;
+        fn start(&self, _: &Arc<Watch>) -> Result<Printing, ExecError> {
+            Ok(Printing {
+                stdout: self.stdout,
+                diagnostic: self.diagnostic,
+            })
+        }
+        fn abi(&self) -> &'static str {
+            "sysv"
+        }
+        fn tests_of(&self, output: &str) -> Vec<TestReport> {
+            self.read.lock().unwrap().push(output.to_string());
+            Vec::new()
+        }
+    }
+
+    fn baseline_of(stdout: &'static str, diagnostic: &'static str) -> (Observed, Vec<String>) {
+        let read = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let launcher = Reading {
+            stdout,
+            diagnostic,
+            read: read.clone(),
+        };
+        let mut executor = TierPExecutor::new(launcher, Isa::amd64());
+        let observed = executor
+            .baseline(Budget::from_baseline(Duration::from_secs(1)))
+            .unwrap();
+        let seen = read.lock().unwrap().clone();
+        (observed, seen)
+    }
+
+    #[test]
+    fn test_a_baselines_output_tail_is_the_diagnostic_output_and_tests_are_read_from_stdout_only() {
+        let (with, read_with) = baseline_of("out\n", "out\nerr\n");
+        let (without, read_without) = baseline_of("out\n", "");
+        assert_eq!(with.output_tail.as_deref(), Some("out\nerr\n"));
+        assert_eq!(
+            without.output_tail.as_deref(),
+            Some("out\n"),
+            "a session with nothing more is tailed by its stdout"
+        );
+        assert_eq!(read_with, ["out\n"], "parsing sees what it always saw");
+        assert_eq!(read_with, read_without);
+        assert_eq!(
+            (&with.outcome, &with.tests),
+            (&without.outcome, &without.tests),
+            "verdict facts are identical with and without the tail"
         );
     }
 

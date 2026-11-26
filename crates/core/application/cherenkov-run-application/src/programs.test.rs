@@ -127,3 +127,24 @@ fn test_the_programs_a_runner_reads_come_back_in_index_order_with_their_budgets_
         "a program that cannot tell"
     );
 }
+
+#[test]
+fn test_a_failed_baselines_output_tail_is_in_the_fact_and_a_passed_ones_is_not() {
+    let failing = Preparation {
+        baseline: RawOutcome::Exited {
+            code: 101,
+            tier: Tier::P,
+            wall: Duration::from_millis(40),
+        },
+        baseline_output_tail: Some("boom\n".to_string()),
+        ..preparation(None)
+    };
+    assert_eq!(
+        report(failing, &plans()).baseline_output_tail.as_deref(),
+        Some("boom\n")
+    );
+    assert_eq!(
+        report(preparation(None), &plans()).baseline_output_tail,
+        None
+    );
+}

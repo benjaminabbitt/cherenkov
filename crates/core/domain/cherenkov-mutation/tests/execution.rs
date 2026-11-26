@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use cherenkov_mutation::execution::{
-    Budget, Failure, Observed, Outcome, RawOutcome, TestReport, TestResult, Tier, Unreached,
-    classify, combine,
+    Budget, Failure, OUTPUT_TAIL_BYTES, Observed, Outcome, RawOutcome, TestReport, TestResult,
+    Tier, Unreached, classify, combine, output_tail,
 };
 use cherenkov_mutation::verdict::Verdict;
 use coded_diagnostic::Report;
@@ -329,4 +329,52 @@ fn test_report_line_of_a_test_that_did_not_fail_is_its_name_and_result() {
 #[test]
 fn test_an_outcome_converts_to_an_observation_with_no_tests() {
     assert_eq!(Observed::from(exited(0)), Observed::bare(exited(0)));
+}
+
+#[test]
+fn test_output_tail_of_no_output_is_none_and_of_short_output_is_the_whole() {
+    assert_eq!(output_tail(""), None);
+    assert_eq!(output_tail("boom\n").as_deref(), Some("boom\n"));
+}
+
+#[test]
+fn test_output_tail_of_long_output_is_its_last_bytes_after_a_marker_saying_what_was_left_out() {
+    let head = "x".repeat(100);
+    let tail = "y".repeat(OUTPUT_TAIL_BYTES);
+    let got = output_tail(&format!("{head}{tail}")).unwrap();
+    assert!(got.ends_with(&tail), "the last bytes are kept");
+    assert!(!got.contains('x'), "what came before is cut");
+    assert!(
+        got.starts_with("[... 100 bytes omitted]\n"),
+        "the marker counts the omitted bytes: {:?}",
+        &got[..40]
+    );
+    assert_eq!(
+        got.len(),
+        "[... 100 bytes omitted]\n".len() + OUTPUT_TAIL_BYTES
+    );
+}
+
+#[test]
+fn test_output_tail_cuts_on_a_character_boundary() {
+    // Three-byte characters, so the byte bound falls inside one.
+    let text = "\u{20ac}".repeat(OUTPUT_TAIL_BYTES);
+    let got = output_tail(&text).unwrap();
+    let (marker, kept) = got.split_once('\n').unwrap();
+    assert!(marker.starts_with("[... "), "{marker}");
+    assert!(kept.chars().all(|c| c == '\u{20ac}'), "no broken character");
+    assert!(kept.len() <= OUTPUT_TAIL_BYTES);
+    assert!(
+        kept.len() > OUTPUT_TAIL_BYTES - 3,
+        "as much as fits is kept"
+    );
+}
+
+#[test]
+fn test_an_observation_with_output_keeps_its_tail_and_its_verdict_facts_are_unchanged() {
+    let bare = Observed::bare(exited(101));
+    let with = Observed::bare(exited(101)).with_output("thread panicked\n");
+    assert_eq!(with.output_tail.as_deref(), Some("thread panicked\n"));
+    assert_eq!((&with.outcome, &with.tests), (&bare.outcome, &bare.tests));
+    assert_eq!(with.failed(), bare.failed());
 }
