@@ -91,10 +91,8 @@ while True:
 
 /// A session over a fake GDB that plays `play` (a Python list literal of
 /// `(delay seconds, event name, body)`) when the program continues.
-fn session(name: &str, play: &str) -> (GdbSession, PathBuf) {
-    let dir =
-        std::env::temp_dir().join(format!("cherenkov-gdb-fake-{}-{name}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+fn session(name: &str, play: &str) -> (GdbSession, TestDir) {
+    let dir = TestDir::new(&format!("cherenkov-gdb-fake-{name}"));
     let gdb = dir.join("gdb");
     std::fs::write(&gdb, FAKE_GDB.replace("__PLAY__", play)).unwrap();
     std::fs::set_permissions(&gdb, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -142,10 +140,9 @@ fn test_last_output_arriving_after_the_exit_wait_is_still_in_the_run_output() {
         r#"[{}, (0, "exited", {{"exitCode": 101}}), (3, "output", {{"category": "stdout", "output": "failures:\n\ntest result: FAILED. 1 passed; 1 failed\n"}}), (0, "terminated", {{}})]"#,
         output("running 2 tests\ntest a ... ok\ntest b ... FAILED\n"),
     );
-    let (mut session, dir) = session("late", &play);
+    let (mut session, _dir) = session("late", &play);
     let (end, _) = session.run_reaching(&[], Duration::from_secs(30)).unwrap();
     let seen = session.take_output();
-    let _ = std::fs::remove_dir_all(dir);
     assert_eq!(end, RunEnd::Exited(101));
     assert!(
         seen.contains("test result: FAILED"),
@@ -161,12 +158,11 @@ fn test_a_run_whose_output_never_ends_is_an_error_naming_the_output() {
         r#"[{}, (0, "exited", {{"exitCode": 0}})]"#,
         output("running 1 test\ntest a ... ok\n"),
     );
-    let (mut session, dir) = session("never", &play);
+    let (mut session, _dir) = session("never", &play);
     session.set_last_output_wait(Duration::from_millis(500));
     let started = std::time::Instant::now();
     let ended = session.run_reaching(&[], Duration::from_secs(30));
     let waited = started.elapsed();
-    let _ = std::fs::remove_dir_all(dir);
     let why = ended
         .expect_err("an exit with incomplete output must not be a verdict")
         .to_string();
@@ -188,10 +184,9 @@ fn test_summary_arriving_after_the_caught_exit_settles_is_still_in_the_run_outpu
         r#"[{}, {SYSCALL_EXIT}, (0.5, "output", {{"category": "stdout", "output": "\ntest result: FAILED. 1 passed; 1 failed\n"}})]"#,
         output("running 2 tests\ntest a ... ok\ntest b ... FAILED\n"),
     );
-    let (mut session, dir) = session("syscall-late", &play);
+    let (mut session, _dir) = session("syscall-late", &play);
     let (end, _) = session.run_reaching(&[], Duration::from_secs(30)).unwrap();
     let seen = session.take_output();
-    let _ = std::fs::remove_dir_all(dir);
     assert_eq!(end, RunEnd::Exited(101));
     assert!(
         seen.contains("test result: FAILED"),
@@ -207,12 +202,11 @@ fn test_a_caught_exit_whose_summary_never_comes_is_an_error_naming_the_output() 
         r#"[{}, {SYSCALL_EXIT}]"#,
         output("running 2 tests\ntest a ... ok\n"),
     );
-    let (mut session, dir) = session("syscall-never", &play);
+    let (mut session, _dir) = session("syscall-never", &play);
     session.set_last_output_wait(Duration::from_millis(500));
     let started = std::time::Instant::now();
     let ended = session.run_reaching(&[], Duration::from_secs(30));
     let waited = started.elapsed();
-    let _ = std::fs::remove_dir_all(dir);
     assert!(
         waited < Duration::from_secs(10),
         "the bound that was set is not the one waited: {waited:?}"
@@ -228,10 +222,9 @@ fn test_a_caught_exit_whose_summary_never_comes_is_an_error_naming_the_output() 
 #[test]
 fn test_a_caught_exit_of_a_program_without_libtest_output_is_an_exit() {
     let play = format!(r#"[{}, {SYSCALL_EXIT}]"#, output("hello\n"));
-    let (mut session, dir) = session("syscall-plain", &play);
+    let (mut session, _dir) = session("syscall-plain", &play);
     session.set_last_output_wait(Duration::from_millis(300));
     let (end, _) = session.run_reaching(&[], Duration::from_secs(30)).unwrap();
-    let _ = std::fs::remove_dir_all(dir);
     assert_eq!(end, RunEnd::Exited(101));
 }
 
@@ -244,10 +237,9 @@ fn test_a_caught_exit_whose_output_only_half_resembles_libtests_is_an_exit() {
         ("half-tests", "all tests\n"),
     ] {
         let play = format!(r#"[{}, {SYSCALL_EXIT}]"#, output(text));
-        let (mut session, dir) = session(name, &play);
+        let (mut session, _dir) = session(name, &play);
         session.set_last_output_wait(Duration::from_millis(300));
         let (end, _) = session.run_reaching(&[], Duration::from_secs(30)).unwrap();
-        let _ = std::fs::remove_dir_all(dir);
         assert_eq!(end, RunEnd::Exited(101), "{text:?}");
     }
 }
@@ -260,11 +252,10 @@ fn test_a_caught_exit_with_libtests_summary_already_in_is_an_exit_with_its_outpu
         r#"[{}, {SYSCALL_EXIT}]"#,
         output("running 1 test\ntest a ... ok\n\ntest result: ok. 1 passed\n"),
     );
-    let (mut session, dir) = session("syscall-complete", &play);
+    let (mut session, _dir) = session("syscall-complete", &play);
     session.set_last_output_wait(Duration::from_millis(300));
     let (end, _) = session.run_reaching(&[], Duration::from_secs(30)).unwrap();
     let seen = session.take_output();
-    let _ = std::fs::remove_dir_all(dir);
     assert_eq!(end, RunEnd::Exited(101));
     assert!(seen.contains("test result: ok"), "{seen:?}");
 }
@@ -275,6 +266,7 @@ use std::sync::Arc;
 
 use cherenkov_exec_dap::cancel::Watch;
 use cherenkov_run_ports::executor::Cancel;
+use test_dir::TestDir;
 
 /// Where a hung fake GDB stops answering.
 enum Hangs {
@@ -307,12 +299,8 @@ fn hung_gdb(hangs: &Hangs, pids: &Path) -> String {
     script
 }
 
-fn hung_config(name: &str, hangs: &Hangs) -> (GdbConfig, PathBuf, PathBuf) {
-    let dir = std::env::temp_dir().join(format!(
-        "cherenkov-gdb-cancel-{}-{name}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
+fn hung_config(name: &str, hangs: &Hangs) -> (GdbConfig, PathBuf, TestDir) {
+    let dir = TestDir::new(&format!("cherenkov-gdb-cancel-{name}"));
     let (gdb, pids) = (dir.join("gdb"), dir.join("pids"));
     std::fs::write(&gdb, hung_gdb(hangs, &pids)).unwrap();
     std::fs::set_permissions(&gdb, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -368,7 +356,7 @@ fn wait_for<T>(rx: &std::sync::mpsc::Receiver<T>) -> Option<T> {
 
 #[test]
 fn test_cancelling_a_run_in_flight_ends_the_debugger_and_its_child_and_the_run_errors() {
-    let (config, pids, dir) = hung_config("run", &Hangs::OnContinue);
+    let (config, pids, _dir) = hung_config("run", &Hangs::OnContinue);
     let watch = Arc::new(Watch::default());
     let (done, result) = std::sync::mpsc::channel();
     let owner = watch.clone();
@@ -393,7 +381,6 @@ fn test_cancelling_a_run_in_flight_ends_the_debugger_and_its_child_and_the_run_e
     let (gdb_gone, child_gone) = (gone(gdb), gone(child));
     let session = runner.join().unwrap();
     drop(session);
-    let _ = std::fs::remove_dir_all(dir);
     assert_eq!(
         errored,
         Some(true),
@@ -405,7 +392,7 @@ fn test_cancelling_a_run_in_flight_ends_the_debugger_and_its_child_and_the_run_e
 
 #[test]
 fn test_cancelling_while_the_debugger_launches_fails_the_start_and_ends_the_debugger() {
-    let (config, pids, dir) = hung_config("launch", &Hangs::OnLaunch);
+    let (config, pids, _dir) = hung_config("launch", &Hangs::OnLaunch);
     let watch = Arc::new(Watch::default());
     let (done, result) = std::sync::mpsc::channel();
     let owner = watch.clone();
@@ -426,7 +413,6 @@ fn test_cancelling_while_the_debugger_launches_fails_the_start_and_ends_the_debu
     let errored = wait_for(&result);
     let (gdb_gone, child_gone) = (gone(gdb), gone(child));
     starter.join().unwrap();
-    let _ = std::fs::remove_dir_all(dir);
     assert_eq!(
         errored,
         Some(true),

@@ -679,7 +679,7 @@ fn test_live_a_test_binary_without_debug_info_is_an_error_not_every_mutant_skipp
     // A project whose test profile has `debug = 0` (angzarr's) gives no
     // line table: nothing can be located, and every mutant would quietly
     // count as never called.
-    let target = std::env::temp_dir().join(format!("cherenkov-no-debug-{}", std::process::id()));
+    let target = test_dir::TestDir::new("cherenkov-no-debug");
     let out = std::process::Command::new("cargo")
         .args(["test", "--no-run", "--message-format=json"])
         .current_dir(fixture())
@@ -704,7 +704,6 @@ fn test_live_a_test_binary_without_debug_info_is_an_error_not_every_mutant_skipp
     .unwrap();
     let mut exec = GdbExecutor::new(config(binary), Isa::amd64());
     let got = exec.driven(&[plan("aor", 4)], budget());
-    let _ = std::fs::remove_dir_all(&target);
     let err = got.expect_err("no debug info must be an error").to_string();
     assert!(err.contains("debug"), "{err}");
 }

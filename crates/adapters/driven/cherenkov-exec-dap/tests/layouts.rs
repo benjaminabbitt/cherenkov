@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use cherenkov_exec_dap::layouts::{Layouts, build};
 use cherenkov_exec_dap::toolchain::build_rust_test_binaries;
+use test_dir::TestDir;
 
 fn ops_binary() -> PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -65,8 +66,7 @@ fn legacy(symbol: &str) -> String {
 /// not a constant copied from one version of it. The third word is padding
 /// in `Ok`, left uninitialised, so it is not returned.
 fn compiled_ok_five() -> [u64; 2] {
-    let dir = std::env::temp_dir().join(format!("cherenkov-niche-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = TestDir::new("cherenkov-niche");
     let source = dir.join("niche.rs");
     std::fs::write(
         &source,
@@ -86,7 +86,6 @@ fn compiled_ok_five() -> [u64; 2] {
         .unwrap();
     assert!(built.success(), "rustc failed on {}", source.display());
     let out = std::process::Command::new(&program).output().unwrap();
-    let _ = std::fs::remove_dir_all(&dir);
     let words: Vec<u64> = String::from_utf8_lossy(&out.stdout)
         .split_whitespace()
         .map(|w| w.parse().unwrap())
