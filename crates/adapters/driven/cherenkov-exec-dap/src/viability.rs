@@ -269,7 +269,7 @@ fn scratch_dir(workspace: &Path) -> PathBuf {
 /// [`scratch_dir`] for a given `CARGO_TARGET_DIR`. A target directory the
 /// caller shares between projects is shared by their checks too, so each
 /// workspace's scratch copy is named for the workspace: a copy is only
-/// brought up to date, never emptied, and another project's files left in
+/// kept in step with the project, and another project's files left in
 /// it would be compiled with this one's.
 pub fn scratch_dir_in(shared_target: Option<PathBuf>, workspace: &Path) -> PathBuf {
     match shared_target {
@@ -280,13 +280,17 @@ pub fn scratch_dir_in(shared_target: Option<PathBuf>, workspace: &Path) -> PathB
     }
 }
 
-/// Copy what differs of `from` into `to`, leaving out `.git` and `skip`.
+/// Make `to` match `from`, leaving out `.git` and `skip`: copy what differs
+/// and remove what `from` no longer has (or never copies), so a file deleted
+/// or a module renamed in the project is not compiled from the scratch copy.
+/// Removal acts only under `to`, and removes a link, never what it points at.
 fn sync_tree(from: &Path, to: &Path, skip: &[PathBuf]) -> std::io::Result<()> {
     std::fs::create_dir_all(to)?;
+    prune_extras(from, to, skip)?;
     for entry in std::fs::read_dir(from)? {
         let entry = entry?;
         let path = entry.path();
-        if entry.file_name() == ".git" || skip.contains(&path) {
+        if is_left_out(&path, skip) {
             continue;
         }
         let Ok(meta) = std::fs::metadata(&path) else {
@@ -300,6 +304,49 @@ fn sync_tree(from: &Path, to: &Path, skip: &[PathBuf]) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+fn is_left_out(path: &Path, skip: &[PathBuf]) -> bool {
+    path.file_name().is_some_and(|n| n == ".git") || skip.contains(&path.to_path_buf())
+}
+
+/// Remove from the directory `to` every entry that `from` does not provide
+/// as the same kind (a copied file or a synced directory).
+fn prune_extras(from: &Path, to: &Path, skip: &[PathBuf]) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(to)? {
+        let entry = entry?;
+        let source = from.join(entry.file_name());
+        let provided = if is_left_out(&source, skip) {
+            None
+        } else {
+            std::fs::metadata(&source).ok()
+        };
+        let is_dir = entry.file_type()?.is_dir();
+        if provided.is_none_or(|m| m.is_dir() != is_dir) {
+            remove_within(to, &entry.path())?;
+        }
+    }
+    Ok(())
+}
+
+/// Remove `path`, a link as itself, only when it is strictly inside `root`.
+fn remove_within(root: &Path, path: &Path) -> std::io::Result<()> {
+    let inside = path.starts_with(root)
+        && path != root
+        && !path
+            .components()
+            .any(|c| c == std::path::Component::ParentDir);
+    if !inside {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("{} is not inside {}", path.display(), root.display()),
+        ));
+    }
+    if std::fs::symlink_metadata(path)?.is_dir() {
+        std::fs::remove_dir_all(path)
+    } else {
+        std::fs::remove_file(path)
+    }
 }
 
 /// Mutants written into the scratch workspace.
@@ -562,5 +609,103 @@ impl<E: MutantExecutor> MutantExecutor for RustcRejects<E> {
     }
     fn canceller(&self) -> std::sync::Arc<dyn cherenkov_run_ports::executor::Cancel> {
         self.inner.canceller()
+    }
+}
+
+#[cfg(test)]
+mod sync_tests {
+    use super::{remove_within, sync_tree};
+    use std::path::Path;
+    use test_dir::TestDir;
+
+    fn write(path: &Path, text: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+
+    #[test]
+    fn test_a_file_deleted_from_the_project_is_gone_from_the_scratch_copy_after_the_next_sync() {
+        let dir = TestDir::new("cherenkov-sync-prune");
+        let (from, to) = (dir.join("project"), dir.join("scratch/tree"));
+        write(&from.join("src/lib.rs"), "mod gone;");
+        write(&from.join("src/gone.rs"), "pub fn f() {}");
+        sync_tree(&from, &to, &[]).unwrap();
+        assert!(to.join("src/gone.rs").exists());
+        std::fs::remove_file(from.join("src/gone.rs")).unwrap();
+        write(&from.join("src/lib.rs"), "");
+        sync_tree(&from, &to, &[]).unwrap();
+        assert!(!to.join("src/gone.rs").exists());
+        assert_eq!(std::fs::read_to_string(to.join("src/lib.rs")).unwrap(), "");
+    }
+
+    #[test]
+    fn test_a_directory_removed_or_renamed_in_the_project_is_gone_from_the_scratch_copy() {
+        let dir = TestDir::new("cherenkov-sync-prune-dir");
+        let (from, to) = (dir.join("project"), dir.join("scratch/tree"));
+        write(&from.join("old/mod.rs"), "");
+        sync_tree(&from, &to, &[]).unwrap();
+        std::fs::rename(from.join("old"), from.join("new")).unwrap();
+        sync_tree(&from, &to, &[]).unwrap();
+        assert!(!to.join("old").exists());
+        assert!(to.join("new/mod.rs").exists());
+    }
+
+    #[test]
+    fn test_a_path_that_changed_between_file_and_directory_is_synced() {
+        let dir = TestDir::new("cherenkov-sync-prune-kind");
+        let (from, to) = (dir.join("project"), dir.join("scratch/tree"));
+        write(&from.join("a"), "file");
+        write(&from.join("b/x"), "");
+        sync_tree(&from, &to, &[]).unwrap();
+        std::fs::remove_file(from.join("a")).unwrap();
+        write(&from.join("a/y"), "");
+        std::fs::remove_dir_all(from.join("b")).unwrap();
+        write(&from.join("b"), "file");
+        sync_tree(&from, &to, &[]).unwrap();
+        assert!(to.join("a/y").is_file());
+        assert!(to.join("b").is_file());
+    }
+
+    #[test]
+    fn test_skipped_paths_and_git_never_reach_the_scratch_copy_and_stale_ones_are_removed() {
+        let dir = TestDir::new("cherenkov-sync-prune-skip");
+        let (from, to) = (dir.join("project"), dir.join("scratch/tree"));
+        write(&from.join("src/lib.rs"), "");
+        write(&from.join("target/out"), "");
+        write(&to.join("target/stale"), "");
+        write(&to.join(".git/stale"), "");
+        sync_tree(&from, &to, &[from.join("target")]).unwrap();
+        assert!(!to.join("target").exists());
+        assert!(!to.join(".git").exists());
+        assert!(to.join("src/lib.rs").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_pruning_a_link_removes_the_link_and_never_what_it_points_at() {
+        let dir = TestDir::new("cherenkov-sync-prune-link");
+        let (from, to) = (dir.join("project"), dir.join("scratch/tree"));
+        write(&from.join("keep"), "");
+        write(&dir.join("outside/precious"), "x");
+        write(&to.join("keep"), "");
+        std::fs::create_dir_all(&to).unwrap();
+        std::os::unix::fs::symlink(dir.join("outside"), to.join("link")).unwrap();
+        sync_tree(&from, &to, &[]).unwrap();
+        assert!(std::fs::symlink_metadata(to.join("link")).is_err());
+        assert!(dir.join("outside/precious").exists());
+    }
+
+    #[test]
+    fn test_removal_refuses_a_path_outside_the_scratch_root() {
+        let dir = TestDir::new("cherenkov-sync-prune-guard");
+        let (root, other) = (dir.join("scratch/tree"), dir.join("project"));
+        write(&other.join("src/lib.rs"), "");
+        write(&root.join("x"), "");
+        assert!(remove_within(&root, &other.join("src/lib.rs")).is_err());
+        assert!(remove_within(&root, &root.join("../../project/src/lib.rs")).is_err());
+        assert!(remove_within(&root, &root).is_err());
+        assert!(other.join("src/lib.rs").exists());
+        remove_within(&root, &root.join("x")).unwrap();
+        assert!(!root.join("x").exists());
     }
 }
