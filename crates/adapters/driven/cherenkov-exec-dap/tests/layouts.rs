@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use cherenkov_exec_dap::layouts::{Layouts, build};
 use cherenkov_exec_dap::toolchain::build_rust_test_binaries;
+use coded_diagnostic::Diagnostic;
 
 fn ops_binary() -> PathBuf {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -226,10 +227,11 @@ fn test_unit_and_default_are_refused_where_they_do_not_fit() {
     assert!(build(&of("maybe"), "()").is_err());
     // A struct's default needs the program's own `Default`, and says so
     // about the value it was asked for.
-    let err = build(&of("pair"), "Default::default()")
-        .unwrap_err()
-        .to_string();
-    assert!(err.starts_with("Default::default() for"), "{err}");
+    let err = build(&of("pair"), "Default::default()").unwrap_err();
+    assert_eq!(err.report().code(), "cherenkov-exec-dap-needs-program-code");
+    let shown = err.to_string();
+    assert!(shown.contains("value=Default::default()"), "{shown}");
+    assert!(shown.contains("name=Pair"), "{shown}");
 }
 
 /// The file address of any symbol, local ones included (an `impl`'s
