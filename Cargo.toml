@@ -31,15 +31,15 @@ cherenkov-wiring = { path = "crates/root/lib/cherenkov-wiring" }
 # in-memory store, and its `Recovery`),
 # angzarr-proto and angzarr-build (with angzarr-codegen: the wire and
 # domain crates' build dependency, generating from proto/ into OUT_DIR).
-angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr", rev = "69dc4a9eeae84c5bb235249e0312f6db4653895a" }
+angzarr-embedded = { git = "https://github.com/angzarr-io/angzarr", rev = "0189c8aff35d8f404e69c7c0372fb478d42389bc" }
 # The kernel's App: the application over a store, its registry and settings.
-angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr", rev = "69dc4a9eeae84c5bb235249e0312f6db4653895a" }
-angzarr-store-sqlite = { git = "https://github.com/angzarr-io/angzarr", rev = "69dc4a9eeae84c5bb235249e0312f6db4653895a" }
-angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr", rev = "69dc4a9eeae84c5bb235249e0312f6db4653895a" }
-angzarr-ports = { git = "https://github.com/angzarr-io/angzarr", rev = "69dc4a9eeae84c5bb235249e0312f6db4653895a", features = ["memory"] }
+angzarr-embedded-host = { git = "https://github.com/angzarr-io/angzarr", rev = "0189c8aff35d8f404e69c7c0372fb478d42389bc" }
+angzarr-store-sqlite = { git = "https://github.com/angzarr-io/angzarr", rev = "0189c8aff35d8f404e69c7c0372fb478d42389bc" }
+angzarr-embedded-macros = { git = "https://github.com/angzarr-io/angzarr", rev = "0189c8aff35d8f404e69c7c0372fb478d42389bc" }
+angzarr-ports = { git = "https://github.com/angzarr-io/angzarr", rev = "0189c8aff35d8f404e69c7c0372fb478d42389bc", features = ["memory"] }
 # angzarr's own messages, which the run layer's protos embed (its UUID).
-angzarr-proto = { git = "https://github.com/angzarr-io/angzarr", rev = "69dc4a9eeae84c5bb235249e0312f6db4653895a" }
-angzarr-build = { git = "https://github.com/angzarr-io/angzarr", rev = "69dc4a9eeae84c5bb235249e0312f6db4653895a" }
+angzarr-proto = { git = "https://github.com/angzarr-io/angzarr", rev = "0189c8aff35d8f404e69c7c0372fb478d42389bc" }
+angzarr-build = { git = "https://github.com/angzarr-io/angzarr", rev = "0189c8aff35d8f404e69c7c0372fb478d42389bc" }
 # rust-support (github.com/benjaminabbitt/rust-support), the generic substrate, at the
 # one commit angzarr pins: the coded errors and the presentation the CLI renders
 # through, cli-support (the CLI's failure, its reporter and the exit-code
