@@ -2,7 +2,7 @@
 //! `just test-slow`. Needs `dlv` and `go` on PATH or in `$HOME/go/bin`.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 
 use cherenkov_exec_dap::delve::{
@@ -20,6 +20,7 @@ use cherenkov_run_ports::executor::MutantExecutor;
 use cherenkov_run_ports::syntax::SyntaxPort;
 use cherenkov_syntax::TreeSitterSyntax;
 use coded_diagnostic::Report;
+use test_dir::TestDir;
 
 fn fixture() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -44,23 +45,32 @@ fn tool(name: &str) -> PathBuf {
         .unwrap_or_else(|| panic!("{name} not found"))
 }
 
-/// The fixture's test binary, built once per test process into a temp dir.
-fn test_binary() -> &'static Path {
-    static BIN: OnceLock<PathBuf> = OnceLock::new();
-    BIN.get_or_init(|| {
-        let dir = std::env::temp_dir().join(format!("cherenkov-live-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let out = dir.join("calc.test");
-        build_go_test_binary(&tool("go"), &fixture(), &out).unwrap();
-        out
-    })
+/// The fixture's test binary, built into a directory that goes with this
+/// value (a panicking test included), and the config that runs it.
+struct Live {
+    config: DelveConfig,
+    _dir: TestDir,
 }
 
-fn config() -> DelveConfig {
-    DelveConfig {
-        dlv: tool("dlv"),
-        test_binary: test_binary().to_path_buf(),
-        test_args: Vec::new(),
+impl std::ops::Deref for Live {
+    type Target = DelveConfig;
+
+    fn deref(&self) -> &DelveConfig {
+        &self.config
+    }
+}
+
+fn live() -> Live {
+    let dir = TestDir::new("cherenkov-live");
+    let out = dir.join("calc.test");
+    build_go_test_binary(&tool("go"), &fixture(), &out).unwrap();
+    Live {
+        config: DelveConfig {
+            dlv: tool("dlv"),
+            test_binary: out,
+            test_args: Vec::new(),
+        },
+        _dir: dir,
     }
 }
 
@@ -104,7 +114,8 @@ fn negate_is_small(session: &mut DelveSession) -> Patch {
 #[test]
 #[ignore = "slow: needs dlv and go"]
 fn test_live_patch_arms_and_disarms_byte_identical() {
-    let mut s = DelveSession::start(&config()).unwrap();
+    let live = live();
+    let mut s = DelveSession::start(&live).unwrap();
     let patch = negate_is_small(&mut s);
     let window = s.read(patch.regions[0].addr - 4, 16).unwrap();
     s.arm(&patch).unwrap();
@@ -120,7 +131,8 @@ fn test_live_patch_arms_and_disarms_byte_identical() {
 #[test]
 #[ignore = "slow: needs dlv and go"]
 fn test_live_arm_refuses_when_memory_does_not_hold_the_original() {
-    let mut s = DelveSession::start(&config()).unwrap();
+    let live = live();
+    let mut s = DelveSession::start(&live).unwrap();
     let mut patch = negate_is_small(&mut s);
     let before = s
         .read(patch.regions[0].addr, patch.regions[0].original.len())
@@ -137,12 +149,13 @@ fn test_live_arm_refuses_when_memory_does_not_hold_the_original() {
 #[test]
 #[ignore = "slow: needs dlv and go"]
 fn test_live_unmutated_run_exits_zero_and_patched_run_reports_exit_code() {
-    let mut s = DelveSession::start(&config()).unwrap();
+    let live = live();
+    let mut s = DelveSession::start(&live).unwrap();
     assert_eq!(
         s.run_to_exit(Duration::from_secs(30)).unwrap(),
         RunEnd::Exited(0)
     );
-    let mut s = DelveSession::start(&config()).unwrap();
+    let mut s = DelveSession::start(&live).unwrap();
     let patch = negate_is_small(&mut s);
     s.arm(&patch).unwrap();
     assert_eq!(
@@ -154,7 +167,8 @@ fn test_live_unmutated_run_exits_zero_and_patched_run_reports_exit_code() {
 #[test]
 #[ignore = "slow: needs dlv and go"]
 fn test_live_executor_baseline_passes_and_mutants_kill_or_survive() {
-    let mut exec = DelveExecutor::new(config(), Isa::amd64());
+    let live = live();
+    let mut exec = DelveExecutor::new(live.config.clone(), Isa::amd64());
     let code = |raw: RawOutcome| match raw {
         RawOutcome::Exited { code, tier, .. } => {
             assert_eq!(tier, Tier::P);
@@ -182,7 +196,8 @@ fn test_live_executor_baseline_passes_and_mutants_kill_or_survive() {
 #[test]
 #[ignore = "slow: needs dlv and go"]
 fn test_live_executor_reports_unpatchable_plan_as_unsupported() {
-    let mut exec = DelveExecutor::new(config(), Isa::amd64());
+    let live = live();
+    let mut exec = DelveExecutor::new(live.config.clone(), Isa::amd64());
     // Multiplication has no same-length machine-code swap.
     let mut p = plan("aor", 6);
     p.edit = cherenkov_mutation::edit::Edit::ReplaceToken {
@@ -205,8 +220,9 @@ fn test_live_executor_reports_unpatchable_plan_as_unsupported() {
 #[test]
 #[ignore = "slow: needs dlv and go"]
 fn test_live_executor_reports_the_go_tests_a_mutant_failed_and_none_for_a_pass() {
+    let live = live();
     use cherenkov_mutation::execution::{Failure, TestReport, TestResult};
-    let mut exec = DelveExecutor::new(config(), Isa::amd64());
+    let mut exec = DelveExecutor::new(live.config.clone(), Isa::amd64());
     // `a + b` -> `a - b` fails TestTotal's `t.Fatal("Total")`.
     let killed = exec.run(&plan("aor", 6), budget()).unwrap();
     assert!(
@@ -235,8 +251,9 @@ fn test_live_executor_reports_the_go_tests_a_mutant_failed_and_none_for_a_pass()
 #[test]
 #[ignore = "slow: needs dlv and go"]
 fn test_live_run_past_budget_times_out() {
+    let live = live();
     // A 1 ms budget cannot fit even the unmutated run.
-    let mut exec = DelveExecutor::new(config(), Isa::amd64());
+    let mut exec = DelveExecutor::new(live.config.clone(), Isa::amd64());
     let raw = exec
         .baseline(Budget {
             timeout: Duration::from_millis(1),
@@ -251,10 +268,11 @@ fn test_live_run_past_budget_times_out() {
 #[test]
 #[ignore = "slow: needs dlv and go"]
 fn test_live_panicking_mutant_is_caught_by_delve_as_a_crash_with_its_message() {
+    let live = live();
     // `j <= len(xs)` indexes past the end. Delve stops on the unrecovered
     // panic, so the run ends at once, under the debugger, with the stack
     // that locates the crash and the test that hit it.
-    let mut exec = DelveExecutor::new(config(), Isa::amd64());
+    let mut exec = DelveExecutor::new(live.config.clone(), Isa::amd64());
     match exec.run(&plan("ror", 28), budget()).unwrap().outcome {
         RawOutcome::Crashed {
             kind,
@@ -277,9 +295,10 @@ fn test_live_panicking_mutant_is_caught_by_delve_as_a_crash_with_its_message() {
 #[test]
 #[ignore = "slow: needs dlv and go"]
 fn test_live_a_go_test_that_panics_is_still_named_among_the_failed() {
+    let live = live();
     // Go prints `--- FAIL` before it re-panics, and Delve stops at the
     // panic after that: the crash names its test.
-    let mut exec = DelveExecutor::new(config(), Isa::amd64());
+    let mut exec = DelveExecutor::new(live.config.clone(), Isa::amd64());
     let observed = exec.run(&plan("ror", 28), budget()).unwrap();
     assert!(
         matches!(observed.outcome, RawOutcome::Crashed { .. }),
@@ -292,7 +311,8 @@ fn test_live_a_go_test_that_panics_is_still_named_among_the_failed() {
 #[test]
 #[ignore = "slow: needs dlv and go"]
 fn test_live_dropping_a_session_stops_delve() {
-    let s = DelveSession::start(&config()).unwrap();
+    let live = live();
+    let s = DelveSession::start(&live).unwrap();
     let pid = s.pid();
     assert!(Path::new(&format!("/proc/{pid}")).exists());
     drop(s);
@@ -305,8 +325,9 @@ fn test_live_dropping_a_session_stops_delve() {
 #[test]
 #[ignore = "slow: needs dlv and go"]
 fn test_live_looping_mutant_times_out_and_is_torn_down_promptly() {
+    let live = live();
     // `i = i - 1` in CountUp never ends the loop.
-    let mut exec = DelveExecutor::new(config(), Isa::amd64());
+    let mut exec = DelveExecutor::new(live.config.clone(), Isa::amd64());
     let start = std::time::Instant::now();
     let raw = exec
         .run(
@@ -334,7 +355,8 @@ fn gone(pid: u32) -> bool {
 #[test]
 #[ignore = "slow: needs dlv and go"]
 fn test_live_dropping_a_timed_out_session_kills_its_looping_debuggee() {
-    let mut s = DelveSession::start(&config()).unwrap();
+    let live = live();
+    let mut s = DelveSession::start(&live).unwrap();
     let debuggee = s.debuggee_pid();
     let file = fixture().join("calc.go");
     let code = s.function_code(&file, 21).unwrap().unwrap();
@@ -349,18 +371,19 @@ fn test_live_dropping_a_timed_out_session_kills_its_looping_debuggee() {
     assert!(gone(debuggee), "debuggee {debuggee} still running");
 }
 
-fn selecting(test: &str) -> DelveConfig {
+fn selecting(live: &Live, test: &str) -> DelveConfig {
     DelveConfig {
         test_args: cherenkov_exec_dap::toolchain::go_test_args(&[test.to_string()]),
-        ..config()
+        ..live.config.clone()
     }
 }
 
 #[test]
 #[ignore = "slow: needs dlv and go"]
 fn test_live_delve_mutant_the_selected_test_never_executes_is_not_reached() {
+    let live = live();
     // TestTotal never calls IsSmall: its mutant must not "survive".
-    let mut exec = DelveExecutor::new(selecting("TestTotal"), Isa::amd64());
+    let mut exec = DelveExecutor::new(selecting(&live, "TestTotal"), Isa::amd64());
     let raw = exec
         .run(&plan("negate-condition", 12), budget())
         .unwrap()
@@ -371,7 +394,8 @@ fn test_live_delve_mutant_the_selected_test_never_executes_is_not_reached() {
 #[test]
 #[ignore = "slow: needs dlv and go"]
 fn test_live_delve_reached_mutant_is_judged_by_the_selected_test() {
-    let mut exec = DelveExecutor::new(selecting("TestIsSmall"), Isa::amd64());
+    let live = live();
+    let mut exec = DelveExecutor::new(selecting(&live, "TestIsSmall"), Isa::amd64());
     let raw = exec
         .run(&plan("negate-condition", 12), budget())
         .unwrap()

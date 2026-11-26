@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use test_dir::TestDir;
 
 use cherenkov_exec_dap::viability::{
     Blamed, Candidate, Diag, apply_edits, batches, blame, diagnostics, settle,
@@ -303,9 +304,13 @@ fn id(s: &str) -> cherenkov_mutation::id::MutantId {
     cherenkov_mutation::id::MutantId(s.to_string())
 }
 
-fn workspace(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("cherenkov-via-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+/// An empty directory for one test of `candidates`.
+fn candidates_dir() -> TestDir {
+    TestDir::new("cherenkov-via-cand")
+}
+
+fn workspace(name: &str) -> TestDir {
+    let dir = TestDir::new(&format!("cherenkov-via-{name}"));
     std::fs::create_dir_all(dir.join("member/src")).unwrap();
     std::fs::write(
         dir.join("Cargo.toml"),
@@ -359,7 +364,6 @@ fn test_cargo_check_rejects_only_the_mutants_that_do_not_compile() {
     let warned = check(Path::new("cargo"), &dir, &root, &[], &cs[4..]).unwrap();
     assert!(warned.rejected.is_empty(), "{:?}", warned.rejected);
     assert_eq!(warned.compiles, 1);
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -375,7 +379,6 @@ fn test_a_project_that_does_not_pass_cargo_check_is_not_checked() {
         "cherenkov-exec-dap-toolchain-baseline-unchecked"
     );
     assert!(err.to_string().contains("could not compile"), "{err}");
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 // --- Which plans are checked: a function body's replacement whose text is
@@ -411,8 +414,7 @@ fn test_only_a_body_replacement_still_in_its_file_is_a_candidate() {
     use cherenkov_exec_dap::viability::candidates;
     let src = "pub fn f() -> u32 { 1 + 2 }\n";
     let plan = fn_value_plan(src);
-    let dir = std::env::temp_dir().join(format!("cherenkov-via-cand-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = candidates_dir();
     std::fs::write(dir.join("lib.rs"), src).unwrap();
     let mut other = plan.clone();
     other.operator = "aor";
@@ -428,7 +430,6 @@ fn test_only_a_body_replacement_still_in_its_file_is_a_candidate() {
     // The file has changed since the plan: its offsets mean nothing.
     std::fs::write(dir.join("lib.rs"), "pub fn f() -> u32 { 2 + 2 }\n").unwrap();
     assert!(candidates(&dir, &[plan]).is_empty());
-    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -562,4 +563,28 @@ fn test_rustc_rejects_hands_back_the_inner_executors_canceller() {
     let executor = RustcRejects::new(Counting(cancels.clone()), Default::default());
     executor.canceller().cancel();
     assert_eq!(cancels.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_a_workspace_of_a_test_that_panics_is_removed() {
+    let mut path = None;
+    let ended = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let dir = workspace("panics");
+        path = Some(dir.to_path_buf());
+        panic!("the test fails");
+    }));
+    assert!(ended.is_err());
+    assert!(!path.unwrap().exists(), "the workspace outlived its test");
+}
+
+#[test]
+fn test_the_candidates_directory_of_a_test_that_panics_is_removed() {
+    let mut path = None;
+    let ended = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let dir = candidates_dir();
+        path = Some(dir.to_path_buf());
+        panic!("the test fails");
+    }));
+    assert!(ended.is_err());
+    assert!(!path.unwrap().exists(), "the directory outlived its test");
 }
