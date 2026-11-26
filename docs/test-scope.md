@@ -84,6 +84,15 @@ What readers see of an `--in-diff` run:
 
 ## Phase times
 
-Said on stderr (under JSON as `cherenkov-cli-notice-phase` envelopes): `cherenkov: phase build`, `phase viability check`, and,
+Said on stderr (under JSON as `cherenkov-cli-notice-phase` envelopes): `cherenkov: phase build: 1.0 s`, `phase source facts`, `phase viability check`, and,
 when the run finishes, `phase preparation and recording` (up to the last
 test program prepared) and `phase mutants` (the rest).
+
+So that a long phase shows the run alive (a watcher that kills a run silent
+for too long), each phase before the run is also announced when it starts
+(`cherenkov-cli-notice-phase-started`: `cherenkov: phase build started`),
+and the viability check says `cherenkov-cli-notice-viability-progress`
+before each `cargo check` it runs: `viability check: cargo check run 2
+(batch 1 of 3)`. The runs of a batch are bisected when it fails, so their
+number is not known in advance; the batches are. Both are stderr only; the
+stdout events, their order and the exit codes are unchanged.

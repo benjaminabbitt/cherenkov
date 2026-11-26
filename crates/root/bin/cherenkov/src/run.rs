@@ -250,7 +250,9 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     })?;
     programs.sort();
     let prefix = cargo_workspace_prefix(&cargo, root).map_err(toolchain)?;
-    let facts = default_facts(&cargo, root, &tools.cargo_args)?;
+    let facts = timed(asked.say, "source facts", || {
+        default_facts(&cargo, root, &tools.cargo_args)
+    })?;
     let (workspace_root, _) = cargo_workspace(&cargo, root).map_err(toolchain)?;
     let rejected = timed(asked.say, "viability check", || {
         rustc_rejects(asked, &cargo, &workspace_root, &plans, &scope)
@@ -369,6 +371,9 @@ fn build_programs(
 
 /// `work`, and what it took on stderr.
 fn timed<T>(say: &Say, phase: &str, work: impl FnOnce() -> T) -> T {
+    say.say(&Notice::PhaseStarted {
+        phase: phase.to_string(),
+    });
     let started = std::time::Instant::now();
     let done = work();
     say.say(&Notice::Phase {
@@ -400,7 +405,15 @@ fn rustc_rejects(
     }
     // Only the packages the mutants are in are compiled.
     let args = [tools.cargo_args.clone(), package_args(&scope.mutated())].concat();
-    match viability::check(cargo, workspace, asked.root, &args, &candidates) {
+    let mut progress = |at| say_progress(asked.say, at);
+    match viability::check(
+        cargo,
+        workspace,
+        asked.root,
+        &args,
+        &candidates,
+        &mut progress,
+    ) {
         Ok(found) => {
             asked.say.say(&viability_summary(candidates.len(), &found));
             Arc::new(found.rejected)
@@ -412,6 +425,15 @@ fn rustc_rejects(
             Arc::default()
         }
     }
+}
+
+/// The notice that the viability check is about to run another `cargo check`.
+fn say_progress(say: &Say, at: viability::Progress) {
+    say.say(&Notice::ViabilityProgress {
+        compile: at.compile as u64,
+        batch: at.batch as u64,
+        batches: at.batches as u64,
+    });
 }
 
 /// The notice of a finished viability check.
@@ -634,6 +656,60 @@ mod tests {
                 compiles: 3,
                 tenths: 123,
             }
+        );
+    }
+
+    #[derive(Clone, Default)]
+    struct Heard(Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for Heard {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl Heard {
+        fn text(&self) -> String {
+            String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+        }
+    }
+
+    fn say_into(heard: &Heard) -> Say {
+        let catalog = presentation::Catalog::en_us(&[cherenkov_cli::error::EN_US]).unwrap();
+        Say::to(Format::Text, Arc::new(catalog), heard.clone())
+    }
+
+    #[test]
+    fn test_a_phase_says_it_started_before_its_work_runs_and_its_time_after() {
+        let heard = Heard::default();
+        let say = say_into(&heard);
+        let during = timed(&say, "build", || heard.text());
+        assert_eq!(during, "cherenkov: phase build started\n");
+        let after = heard.text();
+        assert!(
+            after.ends_with("cherenkov: phase build: 0.0 s\n"),
+            "{after}"
+        );
+    }
+
+    #[test]
+    fn test_a_viability_progress_is_said_as_its_notice() {
+        let heard = Heard::default();
+        say_progress(
+            &say_into(&heard),
+            viability::Progress {
+                compile: 4,
+                batch: 2,
+                batches: 5,
+            },
+        );
+        assert_eq!(
+            heard.text(),
+            "cherenkov: viability check: cargo check run 4 (batch 2 of 5)\n"
         );
     }
 

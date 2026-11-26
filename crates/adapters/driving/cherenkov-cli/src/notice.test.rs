@@ -69,6 +69,20 @@ fn test_a_text_notice_is_the_program_s_name_and_its_message_on_a_line() {
             "cherenkov: phase build: 1.5 s\n",
         ),
         (
+            Notice::PhaseStarted {
+                phase: "viability check".into(),
+            },
+            "cherenkov: phase viability check started\n",
+        ),
+        (
+            Notice::ViabilityProgress {
+                compile: 2,
+                batch: 1,
+                batches: 3,
+            },
+            "cherenkov: viability check: cargo check run 2 (batch 1 of 3)\n",
+        ),
+        (
             Notice::Phases {
                 preparation_tenths: 25,
                 mutants_tenths: 75,

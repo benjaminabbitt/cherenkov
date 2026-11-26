@@ -39,10 +39,12 @@ cherenkov-cli-notice-planned = { $lang }: { $mutants } mutants; concepts mapped 
     }
 cherenkov-cli-notice-file-problem = problem: { $path }: { $cause }
 cherenkov-cli-notice-provenance = provenance: { $each }; in more than one set: { $shared }
+cherenkov-cli-notice-phase-started = phase { $phase } started
 cherenkov-cli-notice-phase = phase { $phase }: { $whole }.{ $tenth } s
 cherenkov-cli-notice-phases = phase preparation and recording: { $preparation_whole }.{ $preparation_tenth } s; phase mutants: { $mutants_whole }.{ $mutants_tenth } s
 cherenkov-cli-notice-viability-off = viability check off (--no-viability-check): mutants rustc would reject stay unsupported
 cherenkov-cli-notice-viability = viability check: { $rejected } of { $checked } function-body replacements rejected by rustc (unviable when the debugger cannot run them), { $compiles } cargo check runs, { $whole }.{ $tenth } s
+cherenkov-cli-notice-viability-progress = viability check: cargo check run { $compile } (batch { $batch } of { $batches })
 cherenkov-cli-notice-viability-skipped = viability check skipped ({ $cause }): mutants rustc would reject stay unsupported; --no-viability-check turns it off
 cherenkov-cli-notice-carried-on = carried on run { $run }
 cherenkov-cli-notice-workers = { $cpus } workers (cores; available memory unknown)

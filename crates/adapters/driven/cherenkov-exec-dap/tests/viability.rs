@@ -342,7 +342,7 @@ fn test_cargo_check_rejects_only_the_mutants_that_do_not_compile() {
         candidate_at(LIB, "{ 4 }\n", "{ let unused = 5; 2 }\n"),
     ];
     let root = dir.join("member");
-    let got = check(Path::new("cargo"), &dir, &root, &[], &cs[..4]).unwrap();
+    let got = check(Path::new("cargo"), &dir, &root, &[], &cs[..4], &mut |_| {}).unwrap();
     let mut rejected: Vec<_> = got.rejected.keys().map(|k| k.0.as_str()).collect();
     rejected.sort();
     assert_eq!(rejected, ["{ 4 }", "{ Foo(1) }"], "{:?}", got.rejected);
@@ -364,9 +364,37 @@ fn test_cargo_check_rejects_only_the_mutants_that_do_not_compile() {
         std::fs::read_to_string(root.join("src/lib.rs")).unwrap(),
         LIB
     );
-    let warned = check(Path::new("cargo"), &dir, &root, &[], &cs[4..]).unwrap();
+    let warned = check(Path::new("cargo"), &dir, &root, &[], &cs[4..], &mut |_| {}).unwrap();
     assert!(warned.rejected.is_empty(), "{:?}", warned.rejected);
     assert_eq!(warned.compiles, 1);
+}
+
+#[test]
+fn test_each_cargo_check_run_is_announced_before_it_starts_with_its_batch() {
+    use cherenkov_exec_dap::viability::{Progress, check};
+    let dir = workspace("progress");
+    let cs = [
+        candidate_at(LIB, "{ 1 }", "{ Default::default() }"),
+        candidate_at(LIB, "{ 4 }", "{ Foo::new() }"),
+    ];
+    let mut told = Vec::new();
+    let got = check(
+        Path::new("cargo"),
+        &dir,
+        &dir.join("member"),
+        &[],
+        &cs,
+        &mut |p| told.push(p),
+    )
+    .unwrap();
+    // One notice for each run, the baseline's included: they are what a
+    // watcher of a long check sees before each compile ends.
+    assert_eq!(told.len(), got.compiles, "{told:?}");
+    let compiles: Vec<usize> = told.iter().map(|p| p.compile).collect();
+    assert_eq!(compiles, (1..=got.compiles).collect::<Vec<_>>());
+    assert!(told.iter().all(|p| p.batches == 1 && p.batch == 1));
+    let _: Progress = told[0];
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 #[test]
@@ -376,7 +404,15 @@ fn test_a_project_that_does_not_pass_cargo_check_is_not_checked() {
     let broken = format!("{LIB}pub fn e() -> u8 {{ nope }}\n");
     std::fs::write(dir.join("member/src/lib.rs"), &broken).unwrap();
     let cs = [candidate_at(&broken, "{ 4 }", "{ 5 }")];
-    let err = check(Path::new("cargo"), &dir, &dir.join("member"), &[], &cs).unwrap_err();
+    let err = check(
+        Path::new("cargo"),
+        &dir,
+        &dir.join("member"),
+        &[],
+        &cs,
+        &mut |_| {},
+    )
+    .unwrap_err();
     assert_eq!(
         err.code(),
         "cherenkov-exec-dap-toolchain-baseline-unchecked"
