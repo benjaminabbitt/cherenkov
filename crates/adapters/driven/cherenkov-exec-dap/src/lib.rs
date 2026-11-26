@@ -4,6 +4,7 @@
 //! driver uses DAP plus GDB's repl.
 //! Nothing outside this crate knows JSON-RPC exists.
 
+pub mod cancel;
 pub mod dap;
 pub mod delve;
 mod diagnostics;

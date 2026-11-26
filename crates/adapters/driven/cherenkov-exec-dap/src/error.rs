@@ -145,6 +145,8 @@ pub enum Session {
     },
     /// The debugger cannot restart with the tests selected.
     NoRestart,
+    /// The session was ended from outside (the run failed elsewhere).
+    Cancelled,
 }
 
 impl std::fmt::Display for Session {
@@ -172,6 +174,7 @@ impl Diagnostic for Session {
             Session::PatchMismatch { .. } => code!("session-patch-mismatch"),
             Session::WriteMismatch { .. } => code!("session-write-mismatch"),
             Session::NoRestart => code!("session-no-restart"),
+            Session::Cancelled => code!("session-cancelled"),
         }
     }
 
@@ -213,7 +216,7 @@ impl Diagnostic for Session {
             Session::WriteMismatch { wrote, addr, back } => {
                 vec![text("wrote", wrote), text("addr", addr), text("back", back)]
             }
-            Session::NoRestart => Vec::new(),
+            Session::NoRestart | Session::Cancelled => Vec::new(),
         }
     }
 }
@@ -391,6 +394,7 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             back: s(),
         }),
         Box::new(Session::NoRestart),
+        Box::new(Session::Cancelled),
         Box::new(NotRecorded::NoTestList),
         Box::new(NotRecorded::NothingRecorded),
         Box::new(NotRecorded::TestsFailed { end: s() }),

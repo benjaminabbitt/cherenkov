@@ -46,6 +46,7 @@ cherenkov-exec-dap-session-unresolved = { $value } for { $ty }: a constructor no
 cherenkov-exec-dap-session-patch-mismatch = expected { $expected } at { $addr }, found { $found }
 cherenkov-exec-dap-session-write-mismatch = wrote { $wrote } at { $addr }, read back { $back }
 cherenkov-exec-dap-session-no-restart = the debugger cannot restart with selected tests
+cherenkov-exec-dap-session-cancelled = the debugger session was cancelled: the run failed elsewhere
 
 # What a library said, which has no code of its own.
 
