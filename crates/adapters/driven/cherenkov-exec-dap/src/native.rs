@@ -1875,13 +1875,29 @@ mod tests {
         }
     }
 
+    /// A directory for the program of one test.
+    fn columns_dir() -> test_dir::TestDir {
+        test_dir::TestDir::new("cherenkov-columns")
+    }
+
+    #[test]
+    fn test_the_columns_directory_of_a_test_that_panics_is_removed() {
+        let mut path = None;
+        let ended = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let dir = columns_dir();
+            path = Some(dir.to_path_buf());
+            panic!("the test fails");
+        }));
+        assert!(ended.is_err());
+        assert!(!path.unwrap().exists(), "the directory outlived its test");
+    }
+
     #[test]
     fn test_columns_found_after_the_binary_could_not_be_read_once() {
         let exe = std::env::current_exe().unwrap();
         let rows = crate::lines::rows(&exe).unwrap();
         let code = own_code(&rows);
-        let dir = std::env::temp_dir().join(format!("cherenkov-columns-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = columns_dir();
         let binary = dir.join("program");
         let executor = TierPExecutor::new(BinaryOnly::new(binary.clone()), Isa::amd64());
         // The first look finds no binary (a rebuild, a descriptor limit, a
@@ -1900,7 +1916,6 @@ mod tests {
             columned.insns.iter().any(|i| i.column != 0),
             "a failed read of the line table was remembered for good"
         );
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[inline(never)]

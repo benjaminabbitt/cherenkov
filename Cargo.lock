@@ -449,6 +449,7 @@ dependencies = [
  "presentation",
  "serde",
  "serde_json",
+ "test-dir",
  "tokio",
 ]
 
@@ -489,6 +490,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sysinfo",
+ "test-dir",
  "toml 1.2.1+spec-1.1.0",
 ]
 
