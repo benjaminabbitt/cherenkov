@@ -476,6 +476,38 @@ fn test_live_gdb_dropping_a_timed_out_session_kills_its_looping_inferior() {
 
 #[test]
 #[ignore = "slow: needs gdb and cargo"]
+fn test_live_gdb_cancelling_a_run_in_flight_ends_gdb_and_its_inferior() {
+    use cherenkov_exec_dap::cancel::Watch;
+    use cherenkov_run_ports::executor::Cancel;
+    let watch = std::sync::Arc::new(Watch::default());
+    let mut s = GdbSession::start_watched(&config(integration()), &watch).unwrap();
+    let inferior = s.debuggee_pid();
+    let code = s
+        .function_code(&fixture().join("src/lib.rs"), 19)
+        .unwrap()
+        .unwrap();
+    let patch = derive(&plan("aor", 19), &code.file, &code.insns, &Isa::amd64()).unwrap();
+    s.arm(&patch).unwrap();
+    // The mutant loops: the run is in flight, blocked in gdb's `continue`.
+    let (done, ended) = std::sync::mpsc::channel();
+    let runner = std::thread::spawn(move || {
+        let end = s.run_to_exit(Duration::from_secs(600));
+        let _ = done.send(end.is_err());
+        s
+    });
+    std::thread::sleep(Duration::from_secs(1));
+    watch.cancel();
+    let errored = ended.recv_timeout(Duration::from_secs(5));
+    let session = runner.join().unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    let left = !gone(inferior);
+    drop(session);
+    assert_eq!(errored, Ok(true), "the blocked run did not return an error");
+    assert!(!left, "inferior {inferior} still running after the cancel");
+}
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
 fn test_live_gdb_run_capturing_returns_the_test_binarys_stdout() {
     let mut exec = GdbExecutor::new(config(integration()), Isa::amd64());
     let (raw, out) = exec
