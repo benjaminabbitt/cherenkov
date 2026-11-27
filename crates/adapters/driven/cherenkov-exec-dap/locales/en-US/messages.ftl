@@ -29,6 +29,7 @@ cherenkov-exec-dap-toolchain-binary = { $binary }: { $step }: { $detail }
 cherenkov-exec-dap-toolchain-viability = viability check: { $detail }
 cherenkov-exec-dap-toolchain-baseline-unchecked = the unmutated project does not pass cargo check: { $detail }
 cherenkov-exec-dap-toolchain-no-line-table = { $binary } has no debug line information: build its tests with debug info and without strip (for a project whose profile turns them off: CARGO_PROFILE_TEST_DEBUG=2 CARGO_PROFILE_TEST_STRIP=false)
+cherenkov-exec-dap-toolchain-blame-outside-subset = viability check blamed mutant { $mutant }, which the subset it checked does not hold: the check's blame is broken
 
 # A debugger session.
 

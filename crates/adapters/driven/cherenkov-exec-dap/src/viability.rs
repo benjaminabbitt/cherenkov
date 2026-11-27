@@ -253,10 +253,11 @@ fn settle_one(
             }
             return Ok(());
         }
-        debug_assert!(
-            blamed.by_mutant.iter().all(|(m, _)| subset.contains(m)),
-            "blamed a mutant outside the subset checked"
-        );
+        if let Some((stray, _)) = blamed.by_mutant.iter().find(|(m, _)| !subset.contains(m)) {
+            return Err(ExecError::of(&Toolchain::BlameOutsideSubset {
+                mutant: *stray,
+            }));
+        }
         subset.retain(|i| !blamed.by_mutant.iter().any(|(m, _)| m == i));
         rejected.extend(blamed.by_mutant);
     }
