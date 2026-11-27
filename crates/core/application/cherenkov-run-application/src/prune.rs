@@ -14,6 +14,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use angzarr_embedded::angzarr_ports::tombstone;
 use angzarr_embedded::v1::Uuid;
 use cherenkov_run_domain::{MUTANT_DOMAIN, RUN_DOMAIN, mutant_root};
 use cherenkov_run_ports::{Listed, Listing, Purging};
@@ -192,10 +193,13 @@ async fn remove<C: Purging>(
     Ok(())
 }
 
-/// How many events `stream` holds, removed unless `dry_run`.
+/// How many events `stream` holds, removed unless `dry_run`. A stream's head
+/// counts the events a purge erased and its tombstones, which a purge removes
+/// none of again, so a dry run counts what the stream reads as.
 async fn purge<C: Purging>(core: &C, stream: &Listed, dry_run: bool) -> Result<u64, RunLayerError> {
     if dry_run {
-        return Ok(stream.head);
+        let held = core.events(&stream.cover, 0).await?;
+        return Ok(held.iter().filter(|page| !tombstone::is(page)).count() as u64);
     }
     Ok(core.purge(&stream.cover, stream.head).await?)
 }
