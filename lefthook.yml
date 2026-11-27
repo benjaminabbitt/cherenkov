@@ -4,7 +4,7 @@
 # Bypass: none; a failing hook is a finding: fix the cause and commit again.
 #
 # pre-commit is the fast checks only; the tests run on push (`just
-# push-check`): red tests may be pushed off master with a warning, never to it.
+# push-check`): red tests may be pushed off main with a warning, never to it.
 
 pre-commit:
   parallel: false

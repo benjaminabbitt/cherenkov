@@ -109,7 +109,7 @@ on the staged files, `just scan-secrets-all` on the history; a false positive
 goes in `.gitleaksignore` or `.gitleaks.toml`, never `--no-verify`). Hooks are
 lefthook's (`lefthook.yml`): run `lefthook install` once per clone. Pre-commit
 is fast checks only (secrets, fmt, clippy); pre-push runs `just check`, red
-tests allowed off master with a warning. CI (`.github/workflows/ci.yml`)
+tests allowed off main with a warning, and a push to main refused when red. CI (`.github/workflows/ci.yml`)
 installs tools and calls just recipes only; actions are pinned to SHAs.
 
 # Co-developing the angzarr backends

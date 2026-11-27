@@ -190,28 +190,40 @@ scan-secrets-all:
     fi
     echo "scan-secrets-all: no leaks found"
 
+# The command push-check runs as the check; a test overrides it with a stub
+# (`just --set push_check_cmd ... push-check`, scripts/test-push-check.sh).
+push_check_cmd := "just --justfile '" + justfile() + "' check"
+
 # lefthook's pre-push step: `check` on the working tree. Red tests are allowed
 # off the default branch (warned: a TDD red commit) and refused on it. git's
-# pushed refs arrive on stdin; a push to refs/heads/master is judged strictly.
+# pushed refs arrive on stdin; a push to refs/heads/main (the default branch,
+# named here, not looked up) is judged strictly, and a push that only deletes
+# refs runs no check.
 # Simpler than angzarr's push-check: it tests the working tree, not each pushed
-# commit's own tree. Check a push to master by hand:
-#     echo "refs/heads/B $(git rev-parse HEAD) refs/heads/master 0" | just push-check
+# commit's own tree. Check a push to main by hand:
+#     echo "refs/heads/B $(git rev-parse HEAD) refs/heads/main 0" | just push-check
 push-check:
     #!/usr/bin/env bash
     set -uo pipefail
     to_default=0
+    updates=0
     while read -r _local_ref local_sha remote_ref _remote_sha; do
         [ "${local_sha//0/}" = "" ] && continue  # a deletion
-        [ "${remote_ref}" = "refs/heads/master" ] && to_default=1
+        updates=1
+        [ "${remote_ref}" = "refs/heads/main" ] && to_default=1
     done
-    if just --justfile '{{justfile()}}' check; then
+    if [ "${updates}" = 0 ]; then
+        echo "push-check: only deletions, no check to run" >&2
+        exit 0
+    fi
+    if {{push_check_cmd}}; then
         exit 0
     fi
     if [ "${to_default}" = 1 ]; then
-        echo "FAIL push-check: red tests (or format/lint) cannot be pushed to master." >&2
+        echo "FAIL push-check: red tests (or format/lint) cannot be pushed to main." >&2
         exit 1
     fi
-    echo "RED  push-check: check failed; allowed off master, but this branch cannot reach master until it passes" >&2
+    echo "RED  push-check: check failed; allowed off main, but this branch cannot reach main until it passes" >&2
 
 import 'devcontainer.just'
 
