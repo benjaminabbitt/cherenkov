@@ -234,12 +234,15 @@ never used.
 A run is kept in a store (`.cherenkov/store/runs.sqlite`, or `--store FILE`;
 `--ephemeral` keeps nothing), one process at a time: a second `cherenkov run`
 on a held store is refused at once, naming the holder. Every run is kept;
-`cherenkov store prune --keep N [--dry-run]` keeps the last N finished runs,
-and `cherenkov store unlock` clears what a killed run left of its hold (it
+in the purge build (`cargo build --features purge`, released as
+`cherenkov-purge`; the default build is append-only) `cherenkov store prune
+--keep N [--dry-run]` keeps the last N finished runs, and `cherenkov store unlock` clears what a killed run left of its hold (it
 refuses while the holder is alive).
 
 Development recipes (`justfile`):
 
+- `just check-purge`: clippy and the tests of the purge build (`just check` is
+  the default one)
 - `just check`: format check, clippy, and the fast tests
 - `just tierp-gate`: the tier P arithmetic gate alone (compiles and runs
   natively every arithmetic patch against rustc's own mutant; about 40 s, in

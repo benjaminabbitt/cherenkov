@@ -72,7 +72,7 @@ executable and put the run on the bus.
 
 ## Decided
 - **Rulings after 5.7** (built, see 5.7): the store keeps every run,
-  `cherenkov store prune --keep N` keeps the last N finished runs; the
+  `cherenkov store prune --keep N` (the purge build only) keeps the last N finished runs; the
   verdict file stays opt-in (`--verdicts FILE`); an exclusive lock on the
   store file makes a second `cherenkov run` refuse with a diagnostic naming
   the holder, and `cherenkov store unlock` clears what a killed holder left.

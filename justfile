@@ -4,6 +4,11 @@ default: check
 # github.com.
 check: fmt-check lint lint-arch test
 
+# The purge flavour (`--features purge`, the build that can delete: `store
+# prune`); `check` is the default one, append-only. CI runs both. The arch and
+# format gates do not depend on the flavour and are not repeated.
+check-purge: lint-purge test-purge
+
 fmt:
     cargo fmt --all
 
@@ -12,6 +17,9 @@ fmt-check:
 
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
+
+lint-purge:
+    cargo clippy --workspace --all-targets --features purge -- -D warnings
 
 # arch-lint at rust-support's pinned commit (the one Cargo.toml pins for
 # cli-support), installed once into the cache.
@@ -34,6 +42,14 @@ lint-arch:
 
 test:
     cargo test --workspace
+
+test-purge:
+    cargo test --workspace --features purge
+
+# The program that deletes: `cherenkov` built with the purge feature (the
+# release names it cherenkov-purge). Prints its path.
+build-purge:
+    cargo build --release -p cherenkov --features purge
 
 # Tests against real debuggers and toolchains (dlv, go). Slow. Skips the
 # fixture regenerator, which only `just regen-replay-fixtures` runs.
