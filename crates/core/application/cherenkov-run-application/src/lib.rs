@@ -24,6 +24,7 @@ pub mod live;
 pub mod policies;
 pub mod pool;
 pub mod programs;
+#[cfg(feature = "purge")]
 pub mod prune;
 pub mod reason;
 pub mod resume;

@@ -15,9 +15,10 @@ use angzarr_embedded::angzarr_ports::CommitWait;
 use angzarr_embedded::v1::{CommandBook, Cover, EventPage};
 use angzarr_embedded::{Bus, Host, OnRetryable, Registry, Sampled, StreamRef, Wait};
 use angzarr_embedded_host::{App, OneStore};
+#[cfg(feature = "purge")]
+use cherenkov_run_ports::Purging;
 use cherenkov_run_ports::{
-    Delivery, Edge, EdgeError, Listed, Listing, Purging, Recovery, Report, Reported, Serving,
-    Subscriptions,
+    Delivery, Edge, EdgeError, Listed, Listing, Recovery, Report, Reported, Serving, Subscriptions,
 };
 
 /// How often the bus looks at the store when no commit woke it.
@@ -209,6 +210,7 @@ impl<S: RunStore> Listing for EmbeddedEdge<S> {
     }
 }
 
+#[cfg(feature = "purge")]
 impl<S: RunStore + angzarr_embedded::Purge> Purging for EmbeddedEdge<S> {
     async fn purge(&self, stream: &Cover, expected: u64) -> Result<u64, EdgeError> {
         let at = StreamRef::try_from(stream).map_err(|e| failed(&e, Recovery::Invalid))?;

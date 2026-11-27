@@ -18,6 +18,7 @@ use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_application::error::RunLayerError;
 use cherenkov_run_application::host::Readers;
 use cherenkov_run_application::layer::{self, Settings, Started, Workers};
+#[cfg(feature = "purge")]
 use cherenkov_run_application::prune::{self, Pruned};
 use cherenkov_run_domain::RunStatus;
 
@@ -159,6 +160,7 @@ pub fn start_in_file(
     start_on(opening, plans, settings, workers, readers, sampling)
 }
 
+#[cfg(feature = "purge")]
 /// Prune the durable store in the file at `path` to its last `keep`
 /// finished runs (and every unfinished one), or, with `dry_run`, say what
 /// that would remove. The caller holds the store's lock. See

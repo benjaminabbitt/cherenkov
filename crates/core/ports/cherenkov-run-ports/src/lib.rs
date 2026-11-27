@@ -166,8 +166,9 @@ pub trait Listing: Edge {
     ) -> impl Future<Output = Result<Vec<EventPage>, EdgeError>> + Send;
 }
 
+#[cfg(feature = "purge")]
 /// What the core can do to a stream beyond writing to it: delete it. Only
-/// pruning asks for it.
+/// pruning asks for it, and only the `purge` build has it.
 pub trait Purging: Edge {
     /// Delete `stream` with its snapshot, if it still holds `expected`
     /// events (the head the caller read); answers how many events it

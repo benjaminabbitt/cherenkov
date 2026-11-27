@@ -8,7 +8,12 @@ license.workspace = true
 publish.workspace = true
 
 [features]
-purge = []
+# The deleting capability (off by default: the default build is append-only).
+purge = [
+    "cherenkov-wiring/purge",
+    "cherenkov-run-application/purge",
+    "cherenkov-run-store/purge",
+]
 
 [dependencies]
 cherenkov-run-ports.workspace = true
