@@ -135,6 +135,9 @@ pub enum Notice {
         batch: u64,
         batches: u64,
     },
+    /// Cargo has finished compiling `done` crates, `last` the latest; said
+    /// while a build or a viability check's `cargo check` runs.
+    Compiling { done: u64, last: String },
     /// The viability check could not run: `cause` is what stopped it.
     ViabilitySkipped { cause: Report },
     /// A run carried on a run an earlier process began.
@@ -184,6 +187,7 @@ impl Diagnostic for Notice {
             Notice::ViabilityOff => code!("notice-viability-off"),
             Notice::Viability { .. } => code!("notice-viability"),
             Notice::ViabilityProgress { .. } => code!("notice-viability-progress"),
+            Notice::Compiling { .. } => code!("notice-compiling"),
             Notice::ViabilitySkipped { .. } => code!("notice-viability-skipped"),
             Notice::CarriedOn { .. } => code!("notice-carried-on"),
             Notice::Workers { .. } => code!("notice-workers"),
@@ -244,6 +248,9 @@ impl Diagnostic for Notice {
                 ("batch", (*batch).into()),
                 ("batches", (*batches).into()),
             ],
+            Notice::Compiling { done, last } => {
+                vec![("done", (*done).into()), ("last", last.as_str().into())]
+            }
             Notice::ViabilitySkipped { cause } => vec![("cause", Arg::nested(cause))],
             Notice::CarriedOn { run } => vec![("run", run.as_str().into())],
             Notice::Workers { cpus } => vec![("cpus", (*cpus).into())],
@@ -361,6 +368,10 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             compile: 2,
             batch: 1,
             batches: 3,
+        }),
+        Box::new(Notice::Compiling {
+            done: 12,
+            last: "serde".into(),
         }),
         Box::new(Notice::Phases {
             preparation_tenths: 25,

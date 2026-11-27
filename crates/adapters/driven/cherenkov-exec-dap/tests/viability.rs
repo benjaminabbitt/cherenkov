@@ -472,6 +472,7 @@ fn test_each_cargo_check_run_is_announced_before_it_starts_with_its_batch() {
         &[],
         &cs,
         &mut |p| told.push(p),
+        &mut |_| {},
     )
     .unwrap();
     // One notice for each run, the baseline's included: they are what a

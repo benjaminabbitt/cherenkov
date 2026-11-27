@@ -7,7 +7,7 @@ use std::process::Command;
 use cherenkov_run_ports::executor::ExecError;
 
 use crate::error::Toolchain;
-use crate::progress::Compiling;
+use crate::progress::{Compiling, NOTICE_INTERVAL, output_streaming};
 use serde_json::Value;
 
 /// Build a Go package's test binary without optimization or inlining, so
@@ -125,20 +125,22 @@ pub fn build_rust_test_programs_of(
     packages: &[String],
     compiling: &mut dyn FnMut(Compiling),
 ) -> Result<Vec<TestProgram>, ExecError> {
-    let _ = compiling;
-    let output = Command::new(cargo)
-        .args(["test", "--no-run", "--message-format=json"])
-        .args(cargo_args)
-        .args(package_args(packages))
-        .envs(debug_profile_env(|name| std::env::var_os(name).is_some()))
-        .current_dir(manifest_dir)
-        .output()
-        .map_err(|e| {
-            ExecError::of(&Toolchain::Spawn {
-                tool: cargo.display().to_string(),
-                detail: e.to_string(),
-            })
-        })?;
+    let output = output_streaming(
+        Command::new(cargo)
+            .args(["test", "--no-run", "--message-format=json"])
+            .args(cargo_args)
+            .args(package_args(packages))
+            .envs(debug_profile_env(|name| std::env::var_os(name).is_some()))
+            .current_dir(manifest_dir),
+        NOTICE_INTERVAL,
+        compiling,
+    )
+    .map_err(|e| {
+        ExecError::of(&Toolchain::Spawn {
+            tool: cargo.display().to_string(),
+            detail: e.to_string(),
+        })
+    })?;
     if !output.status.success() {
         return Err(ExecError::of(&Toolchain::Failed {
             tool: "cargo test --no-run".to_string(),

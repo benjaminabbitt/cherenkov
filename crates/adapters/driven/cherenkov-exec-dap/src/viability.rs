@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::error::Toolchain;
-use crate::progress::Compiling;
+use crate::progress::{Compiling, NOTICE_INTERVAL, output_streaming};
 use crate::reason::Reason;
 use cherenkov_mutation::execution::{Budget, Observed, RawOutcome};
 use cherenkov_mutation::id::MutantId;
@@ -448,25 +448,28 @@ impl Rustc<'_> {
             batches: self.batch.1,
         });
         let flags = std::env::var("RUSTFLAGS").unwrap_or_default();
-        let out = Command::new(self.cargo)
-            .args([
-                "check",
-                "--all-targets",
-                "--offline",
-                "--message-format=json",
-            ])
-            .args(self.args)
-            .env("CARGO_TARGET_DIR", &self.target)
-            // A lint that denies warnings makes no mutant unviable.
-            .env("RUSTFLAGS", format!("{flags} --cap-lints=warn"))
-            .current_dir(self.tree.join(&self.below))
-            .output()
-            .map_err(|e| {
-                ExecError::of(&Toolchain::Spawn {
-                    tool: self.cargo.display().to_string(),
-                    detail: e.to_string(),
-                })
-            })?;
+        let out = output_streaming(
+            Command::new(self.cargo)
+                .args([
+                    "check",
+                    "--all-targets",
+                    "--offline",
+                    "--message-format=json",
+                ])
+                .args(self.args)
+                .env("CARGO_TARGET_DIR", &self.target)
+                // A lint that denies warnings makes no mutant unviable.
+                .env("RUSTFLAGS", format!("{flags} --cap-lints=warn"))
+                .current_dir(self.tree.join(&self.below)),
+            NOTICE_INTERVAL,
+            &mut *self.compiling,
+        )
+        .map_err(|e| {
+            ExecError::of(&Toolchain::Spawn {
+                tool: self.cargo.display().to_string(),
+                detail: e.to_string(),
+            })
+        })?;
         Ok((
             out.status.success(),
             String::from_utf8_lossy(&out.stdout).into_owned(),
