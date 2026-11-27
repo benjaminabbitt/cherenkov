@@ -373,7 +373,7 @@ fn test_live_dropping_a_timed_out_session_kills_its_looping_debuggee() {
 
 fn selecting(live: &Live, test: &str) -> DelveConfig {
     DelveConfig {
-        test_args: cherenkov_exec_dap::toolchain::go_test_args(&[test.to_string()]),
+        test_args: cherenkov_exec_dap::toolchain::go_test_args(&[test.to_string()], &[]),
         ..live.config.clone()
     }
 }

@@ -767,6 +767,34 @@ mod tests {
     }
 
     #[test]
+    fn test_a_program_runs_with_the_skipped_tests_left_out() {
+        let mut tools = tools();
+        tools.selection.skip_tests = vec!["bus::slow".to_string()];
+        let heard = Heard::default();
+        let say = say_into(&heard);
+        let asked = Asked {
+            root: Path::new("/w"),
+            tools: &tools,
+            sets: &[],
+            tests: &[],
+            format: Format::Text,
+            say: &say,
+        };
+        let program = TestProgram {
+            binary: PathBuf::from("/t/missing"),
+            package_dir: PathBuf::from("/w/a"),
+        };
+        let scope = Scope::of(
+            &TestPackages::Mutated,
+            &[],
+            &[package("a")],
+            Path::new("/w"),
+        );
+        let routed = routed(&asked, &[package("a")], &scope, &program);
+        assert_eq!(routed.test_args, ["--skip", "bus::slow", "--exact"]);
+    }
+
+    #[test]
     fn test_the_go_scratch_directory_of_a_run_that_panics_is_removed() {
         let base = test_dir::TestDir::new("cherenkov-go-scratch");
         let path = base.join("cherenkov-run-1");
