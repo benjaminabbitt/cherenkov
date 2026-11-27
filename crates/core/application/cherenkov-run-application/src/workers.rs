@@ -287,6 +287,14 @@ fn refused(prepared: &Result<Preparation, Report>) -> bool {
         .map_or(true, |preparation| preparation.recording.is_none())
 }
 
+/// Close the session of every executor that arrives on `done` until every
+/// sender is gone: the programs a failed batch abandoned, each closed the
+/// moment it finishes, whether its thread sent before or after the batch
+/// stopped listening.
+fn close_abandoned(done: std::sync::mpsc::Receiver<Finished>) {
+    drop(done);
+}
+
 /// Prepare program `program` on a thread of its own, sending it back with
 /// its executor. When nobody waits any more (the run failed), the batch has
 /// cancelled the program (its call returns an error soon), and the thread

@@ -661,3 +661,66 @@ fn test_a_failed_run_does_not_cancel_a_program_that_already_finished() {
     assert_eq!(done.cancels(), 0);
     assert_eq!(hung.cancels(), 1);
 }
+
+/// Counts the sessions it closes.
+struct Counts(Arc<std::sync::atomic::AtomicUsize>);
+
+impl MutantExecutor for Counts {
+    fn run(&mut self, _: &MutantPlan, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
+    }
+
+    fn baseline(&mut self, _: Budget) -> Result<Observed, ExecError> {
+        Ok(exited(0).into())
+    }
+
+    fn close_session(&mut self) {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+fn finished_counting(program: usize, closes: &Arc<std::sync::atomic::AtomicUsize>) -> Finished {
+    Finished {
+        program,
+        describe: None,
+        prepared: Err(Report::new("test-cancelled")),
+        executor: Box::new(Counts(closes.clone())),
+    }
+}
+
+#[test]
+fn test_an_abandoned_program_that_finished_into_the_channel_is_closed_once() {
+    let closes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (sender, done) = std::sync::mpsc::channel();
+    sender.send(finished_counting(1, &closes)).unwrap();
+    drop(sender);
+    close_abandoned(done);
+    assert_eq!(closes.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_an_abandoned_program_that_finishes_after_the_batch_stopped_listening_is_closed() {
+    let closes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let (sender, done) = std::sync::mpsc::channel();
+    let reaper = std::thread::spawn(move || close_abandoned(done));
+    sender.send(finished_counting(1, &closes)).unwrap();
+    drop(sender);
+    reaper.join().unwrap();
+    assert_eq!(closes.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_a_failed_run_closes_every_program_exactly_once() {
+    let closes: Vec<_> = (0..2)
+        .map(|_| Arc::new(std::sync::atomic::AtomicUsize::new(0)))
+        .collect();
+    let set: Vec<Box<dyn MutantExecutor + Send>> = vec![
+        Box::new(Broken),
+        Box::new(Counts(closes[0].clone())),
+        Box::new(Counts(closes[1].clone())),
+    ];
+    prepare(&plans(), set, 1, &mut |_| {});
+    for c in &closes {
+        assert_eq!(c.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+}
