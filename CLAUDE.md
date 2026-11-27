@@ -42,7 +42,7 @@ the `encodings.txt` beside `cherenkov-run-wire`'s and `cherenkov-run-domain`'s
 tests holds every message's and refusal's bytes, and those tests fail on any
 change to them.
 
-The angzarr pins are one full commit, `66fb76b` of github.com/angzarr-io/angzarr
+The angzarr pins are one full commit, `c2b342e` of github.com/angzarr-io/angzarr
 (core, embedded, router, build and platform are crates of that one workspace).
 angzarr's spec (angzarr-project's `proto/` and `features/`) reaches it as the
 `angzarr-project` cargo package, at the rev angzarr pins: the lock holds it,
