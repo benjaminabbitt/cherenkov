@@ -7,6 +7,9 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+purge = []
+
 [dependencies]
 cherenkov-run-ports.workspace = true
 coded-diagnostic.workspace = true

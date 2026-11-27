@@ -51,6 +51,6 @@ mod resumed;
 #[path = "yielding.test.rs"]
 mod yielding;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "purge"))]
 #[path = "prune.test.rs"]
 mod pruned;

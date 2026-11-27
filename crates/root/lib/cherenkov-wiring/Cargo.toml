@@ -11,6 +11,7 @@ publish.workspace = true
 # `testing::sampling`: angzarr's `Samples` and numbered run ids, for the
 # tests of the crates that start runs.
 test-support = ["angzarr-embedded/test-support"]
+purge = []
 
 [dependencies]
 angzarr-embedded.workspace = true
