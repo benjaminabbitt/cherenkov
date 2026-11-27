@@ -104,8 +104,8 @@ for too long), each phase before the run is also announced when it starts
 (`cherenkov-cli-notice-phase-started`: `cherenkov: phase build started`),
 and the viability check says `cherenkov-cli-notice-viability-progress`
 before each `cargo check` it runs: `viability check: cargo check run 2
-(batch 1 of 3)`. While cargo compiles (the build phase and each viability
-`cargo check`) it also says `cherenkov-cli-notice-compiling` as crates
+(batch 1 of 3)`. While cargo compiles (the build phase, the source-facts
+`cargo check` and each viability `cargo check`) it also says `cherenkov-cli-notice-compiling` as crates
 finish: `compiling: 12 crates done, last serde`, the first crate at once and
 then at most one a second, so one cold compile of many crates shows the run
 alive. The runs of a batch are bisected when it fails, so their

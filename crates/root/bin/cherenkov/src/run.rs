@@ -237,7 +237,10 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     let cargo = find_tool(tools.cargo.as_deref(), "cargo")?;
     // The code under test is what a non-test build compiles: test modules,
     // inline or in their own files, are never mutated.
-    let code = rust_code_files_with(&cargo, root, &tools.cargo_args).map_err(toolchain)?;
+    let code = rust_code_files_with(&cargo, root, &tools.cargo_args, &mut |c| {
+        say_compiling(asked.say, c)
+    })
+    .map_err(toolchain)?;
     let canonical = root.canonicalize().map_err(|e| unreadable(root, &e))?;
     let every: Vec<MutantPlan> = plan_language(root, "rust", asked.sets, &tools.selection)?
         .into_iter()
@@ -264,7 +267,9 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     programs.sort();
     let prefix = cargo_workspace_prefix(&cargo, root).map_err(toolchain)?;
     let facts = timed(asked.say, "source facts", || {
-        default_facts(&cargo, root, &tools.cargo_args)
+        default_facts(&cargo, root, &tools.cargo_args, &mut |c| {
+            say_compiling(asked.say, c)
+        })
     })?;
     let (workspace_root, _) = cargo_workspace(&cargo, root).map_err(toolchain)?;
     let rejected = timed(asked.say, "viability check", || {
@@ -577,13 +582,14 @@ fn default_facts(
     cargo: &Path,
     root: &Path,
     cargo_args: &[String],
+    compiling: &mut dyn FnMut(Compiling),
 ) -> Result<DefaultFacts, CliError> {
     let (workspace, crates) = cargo_workspace(cargo, root).map_err(toolchain)?;
     let mut facts = DefaultFacts::default();
     for name in &crates {
         facts.project_crate(name);
     }
-    for file in rust_code_files_with(cargo, &workspace, cargo_args).map_err(toolchain)? {
+    for file in rust_code_files_with(cargo, &workspace, cargo_args, compiling).map_err(toolchain)? {
         if let Ok(src) = std::fs::read_to_string(&file) {
             facts.merge(cherenkov_syntax::rust_types::default_facts(&src));
         }
