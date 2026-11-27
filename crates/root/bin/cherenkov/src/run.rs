@@ -35,6 +35,7 @@ use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
 use cherenkov_syntax::TreeSitterSyntax;
 
 use crate::changed_tests::{ChangedTest, changed_tests, libtest_names};
+use crate::checkout::{Snapshot, written_since};
 use crate::phases::Phases;
 use crate::selection::{Selection, plan_selected};
 use crate::test_scope::{Scope, records_changed_tests_only};
@@ -149,10 +150,28 @@ pub fn run(
     let _held = store_file(&asked)?
         .map(|path| crate::store::lock(&path))
         .transpose()?;
-    if lang == "go" {
+    let before = Snapshot::take(&root);
+    let result = if lang == "go" {
         run_go(&asked)
     } else {
         run_rust(&asked)
+    };
+    say_checkout_writes(say, &root, before.as_ref());
+    result
+}
+
+/// Say which files the run created or changed in the checkout, when any.
+/// Nothing is changed or removed; outside a git repository there is nothing
+/// to compare and nothing is said.
+fn say_checkout_writes(say: &Say, root: &Path, before: Option<&Snapshot>) {
+    let (Some(before), Some(after)) = (before, Snapshot::take(root)) else {
+        return;
+    };
+    let written = written_since(before, &after);
+    if !written.is_empty() {
+        say.say(&Notice::CheckoutWritten {
+            files: written.join(", "),
+        });
     }
 }
 

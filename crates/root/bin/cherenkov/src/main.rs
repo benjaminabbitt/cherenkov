@@ -13,6 +13,7 @@
 #[path = "catalog.test.rs"]
 mod catalog_test;
 mod changed_tests;
+mod checkout;
 mod config;
 mod names;
 mod phases;

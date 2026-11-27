@@ -257,6 +257,24 @@ fn test_skipped_tests_are_said_under_text_and_under_json() {
 }
 
 #[test]
+fn test_a_checkout_write_names_the_files_under_text_and_under_json() {
+    let notice = Notice::CheckoutWritten {
+        files: "crates/a/default/marker, crates/a/tree/x".into(),
+    };
+    assert_eq!(
+        text(&notice),
+        "cherenkov: the run wrote to the checkout (left as they are): crates/a/default/marker, crates/a/tree/x\n"
+    );
+    let envelope: serde_json::Value =
+        serde_json::from_str(said(Format::Json, &notice).trim()).unwrap();
+    assert_eq!(envelope["code"], "cherenkov-cli-notice-checkout-written");
+    assert_eq!(
+        envelope["args"]["files"],
+        "crates/a/default/marker, crates/a/tree/x"
+    );
+}
+
+#[test]
 fn test_the_notices_the_stream_or_the_terminal_already_carries_are_left_out_of_json() {
     for notice in [
         Notice::Operators { label: "l".into() },

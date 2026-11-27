@@ -737,3 +737,49 @@ fn test_a_run_killed_with_sigkill_is_carried_on_and_ends_as_an_uninterrupted_run
     );
     assert_ne!(documents(&after.stdout)[0]["run"], seen[0]["run"]);
 }
+
+/// A copy of the rust fixture in a git repository of its own, with one more
+/// test that writes `written-by-test.txt` relative to its cwd, as a mutant of
+/// path-building code makes a test do.
+fn writing_checkout(tag: &str) -> test_dir::TestDir {
+    let dir = test_dir::TestDir::new(tag);
+    let source = fixtures().join("rust");
+    let copied = Command::new("cp")
+        .arg("-r")
+        .arg(source.join("Cargo.toml"))
+        .arg(source.join("src"))
+        .arg(source.join("tests"))
+        .arg(dir.path())
+        .status()
+        .unwrap();
+    assert!(copied.success());
+    std::fs::write(dir.join(".gitignore"), "target\nCargo.lock\n").unwrap();
+    std::fs::write(
+        dir.join("tests/writes.rs"),
+        "#[test]\nfn test_writes_a_marker() {\n    std::fs::write(\"written-by-test.txt\", \"x\").unwrap();\n}\n",
+    )
+    .unwrap();
+    let init = Command::new("git")
+        .arg("init")
+        .arg("--quiet")
+        .arg(dir.path())
+        .status()
+        .unwrap();
+    assert!(init.success());
+    dir
+}
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_a_run_names_the_file_a_test_wrote_in_the_checkout_and_leaves_it() {
+    let dir = writing_checkout("cherenkov-checkout-writes");
+    let out = run(dir.path(), &["--operators", "breadth", "--format", "text"]);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let said = stderr
+        .lines()
+        .find(|l| l.contains("wrote to the checkout"))
+        .unwrap_or_else(|| panic!("no checkout notice: {stderr}"));
+    assert!(said.contains("written-by-test.txt"), "{said}");
+    assert!(!said.contains("tests/writes.rs"), "{said}");
+    assert!(dir.join("written-by-test.txt").is_file(), "the file stays");
+}
