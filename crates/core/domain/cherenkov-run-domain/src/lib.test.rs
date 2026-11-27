@@ -1288,3 +1288,26 @@ fn test_a_purge_tombstone_in_either_stream_is_no_run_or_mutant_event_and_is_skip
     assert!(run_event(&closed).is_none());
     assert!(mutant_event(&closed).is_none());
 }
+
+#[test]
+fn test_a_run_stream_purged_to_a_tombstone_is_planned_again_not_refused_as_already_planned() {
+    let mut core = run_harness();
+    core.command(&plan(&["a"])).unwrap();
+    let stream = StreamRef::try_from(core.cover()).unwrap();
+    let head = u64::try_from(core.pages().len()).unwrap();
+    let purged = block_on_ready(angzarr_embedded::Purge::purge(
+        core.store().inner(),
+        stream,
+        head,
+    ))
+    .unwrap();
+    assert_eq!(purged, head);
+    assert!(
+        core.pages()
+            .last()
+            .is_some_and(angzarr_embedded::angzarr_ports::tombstone::is)
+    );
+    core.command(&plan(&["b"]))
+        .expect("a purged run plans afresh");
+    assert_eq!(run_events(&core).len(), 2, "its new start and plan only");
+}
