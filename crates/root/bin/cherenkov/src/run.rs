@@ -13,6 +13,7 @@ use cherenkov_exec_dap::delve::{DelveConfig, DelveExecutor};
 use cherenkov_exec_dap::gdb::{GdbConfig, GdbExecutor};
 use cherenkov_exec_dap::isa::Isa;
 use cherenkov_exec_dap::libtest::list_tests;
+use cherenkov_exec_dap::progress::Compiling;
 use cherenkov_exec_dap::routing::OnlyJudged;
 use cherenkov_exec_dap::toolchain::{
     Package, TestProgram, build_go_test_binary, build_rust_test_programs_of,
@@ -256,7 +257,9 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     let scope = scope.with_changed_tests(&changed_tests, &every, &packages, &canonical);
     let plans = scope.plans_to_run(changed_code, &every);
     let mut programs = timed(asked.say, "build", || {
-        build_programs(&cargo, root, tools, &scope)
+        build_programs(&cargo, root, tools, &scope, &mut |c| {
+            say_compiling(asked.say, c)
+        })
     })?;
     programs.sort();
     let prefix = cargo_workspace_prefix(&cargo, root).map_err(toolchain)?;
@@ -370,12 +373,15 @@ fn build_programs(
     root: &Path,
     tools: &Tools,
     scope: &Scope,
+    compiling: &mut dyn FnMut(Compiling),
 ) -> Result<Vec<TestProgram>, CliError> {
     // cargo builds into the project's own target directory, as for any test run.
     match scope.build() {
-        None => build_rust_test_programs_with(cargo, root, &tools.cargo_args),
+        None => build_rust_test_programs_with(cargo, root, &tools.cargo_args, compiling),
         Some(packages) if packages.is_empty() => Ok(Vec::new()),
-        Some(packages) => build_rust_test_programs_of(cargo, root, &tools.cargo_args, &packages),
+        Some(packages) => {
+            build_rust_test_programs_of(cargo, root, &tools.cargo_args, &packages, compiling)
+        }
     }
     .map_err(toolchain)
 }
@@ -417,6 +423,7 @@ fn rustc_rejects(
     // Only the packages the mutants are in are compiled.
     let args = [tools.cargo_args.clone(), package_args(&scope.mutated())].concat();
     let mut progress = |at| say_progress(asked.say, at);
+    let mut compiling = |c| say_compiling(asked.say, c);
     match viability::check(
         cargo,
         workspace,
@@ -424,6 +431,7 @@ fn rustc_rejects(
         &args,
         &candidates,
         &mut progress,
+        &mut compiling,
     ) {
         Ok(found) => {
             asked.say.say(&viability_summary(candidates.len(), &found));
@@ -444,6 +452,14 @@ fn say_progress(say: &Say, at: viability::Progress) {
         compile: at.compile as u64,
         batch: at.batch as u64,
         batches: at.batches as u64,
+    });
+}
+
+/// The notice that cargo has finished compiling another crate.
+fn say_compiling(say: &Say, at: Compiling) {
+    say.say(&Notice::Compiling {
+        done: at.done as u64,
+        last: at.last,
     });
 }
 
@@ -827,18 +843,18 @@ mod tests {
         let plans = [plan_in("m1", "a/src/lib.rs")];
         let root = Path::new("/w");
         let scope = Scope::of(&TestPackages::Mutated, &plans, &packages, root);
-        let built = build_programs(&cargo, Path::new("/"), &tools(), &scope).unwrap();
+        let built = build_programs(&cargo, Path::new("/"), &tools(), &scope, &mut |_| {}).unwrap();
         assert_eq!(built.len(), 1);
         assert_eq!(built[0].binary, PathBuf::from("/t/a-1"));
         let nothing = Scope::of(&TestPackages::Mutated, &[], &packages, root);
         assert!(
-            build_programs(&cargo, Path::new("/"), &tools(), &nothing)
+            build_programs(&cargo, Path::new("/"), &tools(), &nothing, &mut |_| {})
                 .unwrap()
                 .is_empty()
         );
         let everything = Scope::of(&TestPackages::Workspace, &plans, &packages, root);
         assert_eq!(
-            build_programs(&cargo, Path::new("/"), &tools(), &everything)
+            build_programs(&cargo, Path::new("/"), &tools(), &everything, &mut |_| {})
                 .unwrap()
                 .len(),
             1

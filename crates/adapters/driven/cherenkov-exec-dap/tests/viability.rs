@@ -411,7 +411,16 @@ fn test_cargo_check_rejects_only_the_mutants_that_do_not_compile() {
         candidate_at(LIB, "{ 4 }\n", "{ let unused = 5; 2 }\n"),
     ];
     let root = dir.join("member");
-    let got = check(Path::new("cargo"), &dir, &root, &[], &cs[..4], &mut |_| {}).unwrap();
+    let got = check(
+        Path::new("cargo"),
+        &dir,
+        &root,
+        &[],
+        &cs[..4],
+        &mut |_| {},
+        &mut |_| {},
+    )
+    .unwrap();
     let mut rejected: Vec<_> = got.rejected.keys().map(|k| k.0.as_str()).collect();
     rejected.sort();
     assert_eq!(rejected, ["{ 4 }", "{ Foo(1) }"], "{:?}", got.rejected);
@@ -433,7 +442,16 @@ fn test_cargo_check_rejects_only_the_mutants_that_do_not_compile() {
         std::fs::read_to_string(root.join("src/lib.rs")).unwrap(),
         LIB
     );
-    let warned = check(Path::new("cargo"), &dir, &root, &[], &cs[4..], &mut |_| {}).unwrap();
+    let warned = check(
+        Path::new("cargo"),
+        &dir,
+        &root,
+        &[],
+        &cs[4..],
+        &mut |_| {},
+        &mut |_| {},
+    )
+    .unwrap();
     assert!(warned.rejected.is_empty(), "{:?}", warned.rejected);
     assert_eq!(warned.compiles, 1);
 }
@@ -454,6 +472,7 @@ fn test_each_cargo_check_run_is_announced_before_it_starts_with_its_batch() {
         &[],
         &cs,
         &mut |p| told.push(p),
+        &mut |_| {},
     )
     .unwrap();
     // One notice for each run, the baseline's included: they are what a
@@ -479,6 +498,7 @@ fn test_a_project_that_does_not_pass_cargo_check_is_not_checked() {
         &dir.join("member"),
         &[],
         &cs,
+        &mut |_| {},
         &mut |_| {},
     )
     .unwrap_err();

@@ -136,6 +136,18 @@ fn test_a_text_notice_is_the_program_s_name_and_its_message_on_a_line() {
 }
 
 #[test]
+fn test_a_compiling_notice_says_how_many_crates_are_done_and_the_latest() {
+    let notice = Notice::Compiling {
+        done: 12,
+        last: "serde".into(),
+    };
+    assert_eq!(
+        text(&notice),
+        "cherenkov: compiling: 12 crates done, last serde\n"
+    );
+}
+
+#[test]
 fn test_a_plan_says_each_optional_part_only_when_it_has_something_to_say() {
     let full = Notice::Planned(Box::new(sample_planned()));
     assert_eq!(

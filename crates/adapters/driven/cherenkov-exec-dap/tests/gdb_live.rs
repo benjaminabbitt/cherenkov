@@ -376,6 +376,7 @@ fn test_live_gdb_finds_code_in_a_binary_built_at_another_path() {
         Path::new("cargo"),
         elsewhere,
         &["--target-dir".to_string(), target],
+        &mut |_| {},
     )
     .unwrap()
     .into_iter()
