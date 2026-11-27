@@ -228,6 +228,60 @@ fn test_run_with_a_selected_test_runs_only_that_test() {
     assert_eq!(total, ["killed", "killed", "survived"]);
 }
 
+/// `first`'s body-default mutant of the Rust fixture, in a JSON run.
+fn first_body_default(stdout: &[u8]) -> Value {
+    decided(stdout)
+        .into_iter()
+        .find(|d| d["function"] == "first" && d["operator"] == "body-default")
+        .expect("the fixture plans first's body-default mutant")
+}
+
+/// The tests that killed `mutant`, by name.
+fn killers(mutant: &Value) -> Vec<String> {
+    mutant["killed_by"]
+        .as_array()
+        .map(|all| {
+            all.iter()
+                .map(|k| k["test"].as_str().unwrap().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_run_with_a_skipped_test_never_lets_that_test_judge_a_mutant() {
+    // test_first alone kills first's body-default mutant (trustless-cattle).
+    let dir = fixtures().join("rust");
+    let judged = run(&dir, &["--format", "json", "--operators", "breadth"]);
+    let by = first_body_default(&judged.stdout);
+    assert_eq!(by["verdict"], "killed", "the companion run: {by}");
+    assert_eq!(killers(&by), ["test_first"], "the companion run: {by}");
+
+    let out = run(
+        &dir,
+        &[
+            "--format",
+            "json",
+            "--operators",
+            "breadth",
+            "--skip-test",
+            "test_first",
+        ],
+    );
+    let started = documents(&out.stdout)
+        .into_iter()
+        .find(|d| d["event"] == "run.started")
+        .expect("run.started");
+    assert_eq!(started["skipped_tests"], serde_json::json!(["test_first"]));
+    let skipped = first_body_default(&out.stdout);
+    assert!(
+        !killers(&skipped).contains(&"test_first".to_string()),
+        "the skipped test judged: {skipped}"
+    );
+    assert_ne!(skipped["verdict"], "killed", "{skipped}");
+}
+
 #[test]
 #[ignore = "slow: needs gdb and cargo"]
 fn test_run_reports_what_killed_each_mutant() {
