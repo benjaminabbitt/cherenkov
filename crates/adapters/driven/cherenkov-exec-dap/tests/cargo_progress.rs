@@ -10,7 +10,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use cherenkov_exec_dap::progress::Compiling;
-use cherenkov_exec_dap::toolchain::build_rust_test_programs_with;
+use cherenkov_exec_dap::toolchain::{build_rust_test_programs_with, rust_code_files_with};
 use cherenkov_exec_dap::viability::{Candidate, check};
 use cherenkov_mutation::id::MutantId;
 use test_dir::TestDir;
@@ -92,4 +92,28 @@ fn test_the_viability_check_says_a_crate_is_compiled_before_cargo_exits() {
             last: "first".into()
         }
     );
+}
+
+#[test]
+fn test_the_source_facts_check_says_a_crate_is_compiled_before_cargo_exits() {
+    let dir = TestDir::new("progress");
+    let root = dir.path().to_path_buf();
+    let gate = root.join("gate");
+    let cargo = gated_cargo(&root, &gate);
+    let mut said = Vec::new();
+    // The fake prints no dep-info, so no source file is found; what is
+    // asked is that the notice came before cargo exited successfully.
+    let files = rust_code_files_with(&cargo, &root, &[], &mut |c: Compiling| {
+        said.push(c);
+        std::fs::write(&gate, "").unwrap();
+    })
+    .expect("cargo exits only after the first notice");
+    assert_eq!(
+        said[0],
+        Compiling {
+            done: 1,
+            last: "first".into()
+        }
+    );
+    assert!(files.is_empty());
 }

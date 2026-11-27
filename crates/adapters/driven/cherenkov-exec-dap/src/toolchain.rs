@@ -291,7 +291,7 @@ pub fn cargo_workspace_prefix(cargo: &Path, dir: &Path) -> Result<PathBuf, ExecE
 /// that exist only under `cfg(test)`, inline or in their own file, are not
 /// in it. Absolute paths, under `dir` only.
 pub fn rust_code_files(cargo: &Path, dir: &Path) -> Result<Vec<PathBuf>, ExecError> {
-    rust_code_files_with(cargo, dir, &[])
+    rust_code_files_with(cargo, dir, &[], &mut |_| {})
 }
 
 /// [`rust_code_files`], with arguments for cargo (features select code).
@@ -299,7 +299,9 @@ pub fn rust_code_files_with(
     cargo: &Path,
     dir: &Path,
     cargo_args: &[String],
+    compiling: &mut dyn FnMut(Compiling),
 ) -> Result<Vec<PathBuf>, ExecError> {
+    let _ = compiling;
     let output = Command::new(cargo)
         .args(["check", "--message-format=json"])
         .args(cargo_args)
