@@ -455,3 +455,58 @@ fn test_diagnostic_output_has_stderr_in_arrival_order_and_the_verdict_output_doe
         "test b ... FAILED\nthread 'b' panicked at src/lib.rs:5\ntest result: FAILED\n"
     );
 }
+
+// --- Dropping a session.
+
+/// Whether `/proc/<pid>` is absent: the process is reaped, not a zombie.
+fn reaped(pid: u32) -> bool {
+    !Path::new(&format!("/proc/{pid}")).exists()
+}
+
+/// The fake of [`hung_gdb`] reporting its `sleep` child as the program under
+/// test. After the disconnect it waits on that child, so it ends only when
+/// the debuggee is killed.
+fn gdb_with_a_debuggee(pids: &Path) -> String {
+    let mut script = hung_gdb(&Hangs::OnContinue, pids)
+        .replace("result = str(os.getpid())", "result = str(child.pid)");
+    script.push_str("\nchild.wait()\n");
+    script
+}
+
+#[test]
+fn test_a_dropped_gdb_session_leaves_no_debugger_or_inferior_behind() {
+    let dir = TestDir::new("cherenkov-gdb-drop-reaps");
+    let (gdb, pids) = (dir.join("gdb"), dir.join("pids"));
+    std::fs::write(&gdb, gdb_with_a_debuggee(&pids)).unwrap();
+    std::fs::set_permissions(&gdb, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let config = GdbConfig {
+        gdb,
+        test_binary: Path::new("/nonexistent/tests").to_path_buf(),
+        test_args: Vec::new(),
+        cwd: None,
+        env: Vec::new(),
+        source_root: None,
+    };
+    let session = start(&config);
+    let (gdb_pid, inferior) = pids_of(&pids);
+    assert_eq!(session.pid(), gdb_pid);
+    assert_eq!(session.debuggee_pid(), inferior);
+
+    drop(session);
+
+    // GDB is reaped by the drop's own wait. The inferior is only signalled
+    // (SIGKILL) before GDB is killed, so nobody has to have reaped it yet:
+    // a zombie counts, and the kernel's delivery of the signal is awaited.
+    let (gdb_reaped, inferior_gone) = (reaped(gdb_pid), gone(inferior));
+    // A leak must not outlive the failing test.
+    for pid in [gdb_pid, inferior] {
+        let _ = std::process::Command::new("kill")
+            .args(["-KILL", &pid.to_string()])
+            .status();
+    }
+    assert!(gdb_reaped, "gdb {gdb_pid} outlived the dropped session");
+    assert!(
+        inferior_gone,
+        "the inferior {inferior} outlived the dropped session"
+    );
+}
