@@ -14,6 +14,29 @@ test-hooks:
 # format gates do not depend on the flavour and are not repeated.
 check-purge: lint-purge test-purge
 
+# Where `just install` puts the program: cargo's own root (~/.cargo/bin, on
+# PATH) unless CHERENKOV_INSTALL_ROOT names another.
+install_root := env("CHERENKOV_INSTALL_ROOT", home_directory() / ".cargo")
+
+# Install both builds from this checkout: `cherenkov` (the default,
+# append-only) and `cherenkov-purge` (the build that can delete: `store prune`).
+install: install-default install-purge
+
+install-default:
+    cargo install --locked --path crates/root/bin/cherenkov --root '{{install_root}}' --target-dir target/install
+    @echo "ok   install ({{install_root}}/bin/cherenkov)"
+
+# cargo names a binary after its target, so the purge build goes to a scratch
+# root and is copied in under its released name.
+install-purge:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    stage="$(mktemp -d)"
+    trap 'rm -rf "$stage"' EXIT
+    cargo install --locked --path crates/root/bin/cherenkov --features purge --root "$stage" --target-dir target/install-purge
+    install -D -m 0755 "$stage/bin/cherenkov" '{{install_root}}/bin/cherenkov-purge'
+    echo "ok   install ({{install_root}}/bin/cherenkov-purge)"
+
 fmt:
     cargo fmt --all
 

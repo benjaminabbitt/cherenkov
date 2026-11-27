@@ -96,7 +96,7 @@ Deleting is a compile-time cargo feature, `purge`, off by default (owner
 ruling 2026-11-26): the default build is append-only and has no `store prune`
 subcommand, no `Purging` port and no angzarr Purge API (reading a tombstone
 stays in every build). `cherenkov --features purge` (released as
-`cherenkov-purge`) has prune; the feature is forwarded crate by crate to
+`cherenkov-purge`; `just install` puts both builds in `~/.cargo/bin`) has prune; the feature is forwarded crate by crate to
 angzarr's `purge` (`angzarr-embedded`, `angzarr-store-sqlite`). The tests of
 prune are `cfg(feature = "purge")`. `just check` is the default flavour and
 `just check-purge` the other; CI runs both. `just mutants-purge BASE` is the
