@@ -301,18 +301,20 @@ pub fn rust_code_files_with(
     cargo_args: &[String],
     compiling: &mut dyn FnMut(Compiling),
 ) -> Result<Vec<PathBuf>, ExecError> {
-    let _ = compiling;
-    let output = Command::new(cargo)
-        .args(["check", "--message-format=json"])
-        .args(cargo_args)
-        .current_dir(dir)
-        .output()
-        .map_err(|e| {
-            ExecError::of(&Toolchain::Spawn {
-                tool: cargo.display().to_string(),
-                detail: e.to_string(),
-            })
-        })?;
+    let output = output_streaming(
+        Command::new(cargo)
+            .args(["check", "--message-format=json"])
+            .args(cargo_args)
+            .current_dir(dir),
+        NOTICE_INTERVAL,
+        compiling,
+    )
+    .map_err(|e| {
+        ExecError::of(&Toolchain::Spawn {
+            tool: cargo.display().to_string(),
+            detail: e.to_string(),
+        })
+    })?;
     if !output.status.success() {
         return Err(ExecError::of(&Toolchain::Failed {
             tool: "cargo check".to_string(),

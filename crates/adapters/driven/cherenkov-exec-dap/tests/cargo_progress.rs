@@ -15,6 +15,10 @@ use cherenkov_exec_dap::viability::{Candidate, check};
 use cherenkov_mutation::id::MutantId;
 use test_dir::TestDir;
 
+/// One fake at a time: a script being written must not be inherited open by
+/// another test's child process ("text file busy").
+static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 const ARTIFACT: &str = r#"{"reason":"compiler-artifact","package_id":"p 0.1.0","target":{"name":"first"},"profile":{"test":false},"executable":null}"#;
 const TEST: &str = r#"{"reason":"compiler-artifact","package_id":"a 0.1.0","target":{"name":"a"},"manifest_path":"/w/a/Cargo.toml","profile":{"test":true},"executable":"/t/a-1"}"#;
 
@@ -23,8 +27,9 @@ const TEST: &str = r#"{"reason":"compiler-artifact","package_id":"a 0.1.0","targ
 fn gated_cargo(dir: &Path, gate: &Path) -> PathBuf {
     let path = dir.join("cargo");
     let script = format!(
-        "#!/bin/sh\necho '{ARTIFACT}'\ni=0\nwhile [ ! -e '{gate}' ]; do\n  i=$((i+1))\n  [ $i -gt 200 ] && echo 'no progress before exit' >&2 && exit 1\n  sleep 0.05\ndone\necho '{TEST}'\nexit 0\n",
-        gate = gate.display()
+        "#!/bin/sh\n[ \"$1\" = metadata ] && {{ echo '{{\"workspace_root\":\"{root}\",\"packages\":[]}}'; exit 0; }}\necho '{ARTIFACT}'\ni=0\nwhile [ ! -e '{gate}' ]; do\n  i=$((i+1))\n  [ $i -gt 200 ] && echo 'no progress before exit' >&2 && exit 1\n  sleep 0.05\ndone\necho '{TEST}'\nexit 0\n",
+        gate = gate.display(),
+        root = dir.display()
     );
     std::fs::write(&path, script).unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -33,6 +38,7 @@ fn gated_cargo(dir: &Path, gate: &Path) -> PathBuf {
 
 #[test]
 fn test_the_build_says_a_crate_is_compiled_before_cargo_exits() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let dir = TestDir::new("progress");
     let root = dir.path().to_path_buf();
     let gate = root.join("gate");
@@ -56,6 +62,7 @@ fn test_the_build_says_a_crate_is_compiled_before_cargo_exits() {
 
 #[test]
 fn test_the_viability_check_says_a_crate_is_compiled_before_cargo_exits() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let dir = TestDir::new("progress");
     let root = dir.path().to_path_buf();
     std::fs::write(root.join("Cargo.toml"), "").unwrap();
@@ -96,6 +103,7 @@ fn test_the_viability_check_says_a_crate_is_compiled_before_cargo_exits() {
 
 #[test]
 fn test_the_source_facts_check_says_a_crate_is_compiled_before_cargo_exits() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let dir = TestDir::new("progress");
     let root = dir.path().to_path_buf();
     let gate = root.join("gate");
