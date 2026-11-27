@@ -219,6 +219,27 @@ fn test_an_error_nobody_owns_bisects_the_batch_down_to_the_one_that_causes_it() 
 }
 
 #[test]
+fn test_a_blame_outside_the_subset_checked_fails_with_a_coded_error_and_never_loops() {
+    // Subset [0, 1] blames mutant 7, which it does not hold: the contract
+    // between a check and settle is broken, and settle must say so.
+    let mut calls = 0;
+    let got = settle(2, &mut |_: &[usize]| {
+        calls += 1;
+        assert!(calls <= 5, "settle did not terminate");
+        Ok(Blamed {
+            by_mutant: vec![(7, "error: stray".into())],
+            elsewhere: None,
+        })
+    });
+    let err = got.expect_err("a blame outside the subset is an error");
+    assert_eq!(
+        err.code(),
+        "cherenkov-exec-dap-toolchain-blame-outside-subset"
+    );
+    assert_eq!(calls, 1);
+}
+
+#[test]
 fn test_a_failed_check_ends_the_settling() {
     let no_cargo = || ExecError::of(&Report::new("test-no-cargo"));
     let got = settle(2, &mut |_: &[usize]| Err(no_cargo()));

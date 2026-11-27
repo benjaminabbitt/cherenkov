@@ -35,6 +35,10 @@ pub enum Toolchain {
     BaselineUnchecked { detail: String },
     /// A test binary has no line table.
     NoLineTable { binary: String },
+    /// A viability check blamed a mutant the subset it checked does not
+    /// hold: the check's contract with the settling is broken, and no
+    /// further check of that batch can be believed.
+    BlameOutsideSubset { mutant: usize },
 }
 
 impl std::fmt::Display for Toolchain {
@@ -56,6 +60,7 @@ impl Diagnostic for Toolchain {
             Toolchain::Viability { .. } => code!("toolchain-viability"),
             Toolchain::BaselineUnchecked { .. } => code!("toolchain-baseline-unchecked"),
             Toolchain::NoLineTable { .. } => code!("toolchain-no-line-table"),
+            Toolchain::BlameOutsideSubset { .. } => code!("toolchain-blame-outside-subset"),
         }
     }
 
@@ -97,6 +102,7 @@ impl Diagnostic for Toolchain {
                 vec![("detail", detail.as_str().into())]
             }
             Toolchain::NoLineTable { binary } => vec![("binary", binary.as_str().into())],
+            Toolchain::BlameOutsideSubset { mutant } => vec![("mutant", Arg::from(*mutant as i64))],
         }
     }
 }
@@ -353,6 +359,7 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(Toolchain::Viability { detail: s() }),
         Box::new(Toolchain::BaselineUnchecked { detail: s() }),
         Box::new(Toolchain::NoLineTable { binary: s() }),
+        Box::new(Toolchain::BlameOutsideSubset { mutant: 0 }),
         Box::new(Session::Spawn {
             tool: s(),
             detail: s(),
