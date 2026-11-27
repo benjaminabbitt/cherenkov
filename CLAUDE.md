@@ -42,7 +42,7 @@ the `encodings.txt` beside `cherenkov-run-wire`'s and `cherenkov-run-domain`'s
 tests holds every message's and refusal's bytes, and those tests fail on any
 change to them.
 
-The angzarr pins are one full commit, `c2b342e` of github.com/angzarr-io/angzarr
+The angzarr pins are one full commit, `33528cf` of github.com/angzarr-io/angzarr
 (core, embedded, router, build and platform are crates of that one workspace).
 angzarr's spec (angzarr-project's `proto/` and `features/`) reaches it as the
 `angzarr-project` cargo package, at the rev angzarr pins: the lock holds it,
@@ -91,6 +91,15 @@ record a killed holder left. Every run is kept by default; `cherenkov store
 prune --keep N [--dry-run]` keeps the last N finished runs and every
 unfinished one, and a mutant's stream (shared by every run that plans it)
 goes only when no run that stays plans it.
+
+Deleting is a compile-time cargo feature, `purge`, off by default (owner
+ruling 2026-11-26): the default build is append-only and has no `store prune`
+subcommand, no `Purging` port and no angzarr Purge API (reading a tombstone
+stays in every build). `cherenkov --features purge` (released as
+`cherenkov-purge`) has prune; the feature is forwarded crate by crate to
+angzarr's `purge` (`angzarr-embedded`, `angzarr-store-sqlite`). The tests of
+prune are `cfg(feature = "purge")`. `just check` is the default flavour and
+`just check-purge` the other; CI runs both.
 
 # Hooks and CI
 

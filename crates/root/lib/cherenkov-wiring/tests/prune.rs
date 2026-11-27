@@ -1,6 +1,8 @@
 //! Pruning a durable store file: the older finished runs go, an unfinished
 //! one and the mutant streams a kept run plans stay, and a store pruned is
-//! the store a later run goes on in.
+//! the store a later run goes on in. Only the purge build prunes.
+
+#![cfg(feature = "purge")]
 
 use std::path::Path;
 

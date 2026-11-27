@@ -42,6 +42,23 @@ fn run(args: &[&str]) -> Output {
 
 const REFUSED: i32 = 48;
 
+#[cfg(not(feature = "purge"))]
+#[test]
+fn test_prune_is_not_a_store_subcommand_in_the_default_build() {
+    let help = cherenkov(&["store", "--help"]);
+    assert_eq!(help.status.code(), Some(0), "{}", stderr(&help));
+    let said = stdout(&help);
+    assert!(said.contains("unlock"), "{said}");
+    assert!(!said.contains("prune"), "{said}");
+    let out = cherenkov(&["store", "prune", "--keep", "1"]);
+    assert_ne!(out.status.code(), Some(0));
+    assert!(
+        stderr(&out).contains("unrecognized subcommand"),
+        "{}",
+        stderr(&out)
+    );
+}
+
 #[test]
 fn test_a_second_run_on_a_held_store_is_refused_at_once_naming_the_holder() {
     let dir = scratch("second-run");
@@ -138,6 +155,7 @@ fn test_unlock_of_a_store_nobody_holds_says_so_and_makes_nothing() {
     assert!(!lock_file(&store).exists() && !dir.join("sub").exists());
 }
 
+#[cfg(feature = "purge")]
 #[test]
 fn test_prune_refuses_while_a_run_holds_the_store() {
     let dir = scratch("prune-held");
@@ -171,6 +189,7 @@ fn test_prune_refuses_while_a_run_holds_the_store() {
     );
 }
 
+#[cfg(feature = "purge")]
 #[test]
 fn test_prune_of_a_path_with_no_store_is_refused_and_makes_none() {
     let dir = scratch("prune-none");
@@ -188,6 +207,7 @@ fn test_prune_of_a_path_with_no_store_is_refused_and_makes_none() {
     assert!(!store.exists());
 }
 
+#[cfg(feature = "purge")]
 #[test]
 fn test_prune_says_what_it_would_remove_and_a_dry_run_removes_nothing() {
     let dir = scratch("prune-dry");
@@ -233,6 +253,7 @@ fn test_prune_says_what_it_would_remove_and_a_dry_run_removes_nothing() {
     assert!(!holder_file(&store).exists(), "the lock was let go of");
 }
 
+#[cfg(feature = "purge")]
 #[test]
 fn test_prune_without_how_many_to_keep_is_a_usage_error() {
     let out = cherenkov(&["store", "prune"]);
@@ -240,6 +261,7 @@ fn test_prune_without_how_many_to_keep_is_a_usage_error() {
 }
 
 /// `runs` finished runs of no mutants in the store file `path`.
+#[cfg(feature = "purge")]
 fn populate(path: &Path, runs: usize) {
     use angzarr_embedded::ProjectorHandler;
     use angzarr_embedded::angzarr_router::error::CodedError;

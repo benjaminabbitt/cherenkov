@@ -73,8 +73,14 @@ enum Command {
     /// Run every mutant of a Go package (Delve) or Cargo project (GDB) and
     /// print each verdict as it is decided.
     Run(Box<RunArgs>),
-    /// Keep up the store the runs are kept in: prune it, or clear what a
-    /// killed run left of its hold on it.
+    /// Keep up the store the runs are kept in: clear what a killed run left
+    /// of its hold on it.
+    #[cfg_attr(
+        feature = "purge",
+        command(
+            about = "Keep up the store the runs are kept in: prune it, or clear what a killed run left of its hold on it"
+        )
+    )]
     Store(store::StoreArgs),
     /// List the named operator sets, their sources, and what each does not cover yet.
     Sets,

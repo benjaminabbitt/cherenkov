@@ -1,3 +1,4 @@
+#[cfg(feature = "purge")]
 use angzarr_embedded::v1::Uuid;
 
 use super::*;
@@ -33,6 +34,7 @@ fn test_a_time_held_is_in_the_largest_two_units() {
     assert_eq!(elapsed(7384), "2h 3m");
 }
 
+#[cfg(feature = "purge")]
 fn pruned(runs: usize) -> Pruned {
     Pruned {
         runs: (0..runs as u8).map(|n| Uuid::from_bytes([n; 16])).collect(),
@@ -43,6 +45,7 @@ fn pruned(runs: usize) -> Pruned {
     }
 }
 
+#[cfg(feature = "purge")]
 #[test]
 fn test_a_prune_says_what_it_removed_and_what_stays() {
     let text = report(&pruned(2), false);
@@ -56,6 +59,7 @@ fn test_a_prune_says_what_it_removed_and_what_stays() {
     assert!(text.contains("  run 00000000"), "{text}");
 }
 
+#[cfg(feature = "purge")]
 #[test]
 fn test_a_dry_prune_says_it_would_remove() {
     let text = report(&pruned(1), true);
@@ -65,6 +69,7 @@ fn test_a_dry_prune_says_it_would_remove() {
     );
 }
 
+#[cfg(feature = "purge")]
 #[test]
 fn test_a_prune_of_nothing_says_so_and_what_stays() {
     let text = report(&pruned(0), false);

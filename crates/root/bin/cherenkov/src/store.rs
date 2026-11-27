@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use cherenkov_cli::error::CliError;
+#[cfg(feature = "purge")]
 use cherenkov_run_application::prune::Pruned;
 use cherenkov_run_store::lock::{self, Holder, LockError, StoreLock, Unlocked};
 use clap::{Args, Subcommand};
@@ -23,6 +24,7 @@ enum StoreCommand {
     /// (`cherenkov run` keeps every run). An unfinished run is never
     /// removed, and a mutant's history is removed only when no run that
     /// stays plans the mutant. Refused while a run holds the store.
+    #[cfg(feature = "purge")]
     Prune(PruneArgs),
     /// Clear what a run that was killed left of its hold on the store. The
     /// operating system gives a lock up when its process ends, so a store a
@@ -42,6 +44,7 @@ struct WhereArgs {
     store: Option<PathBuf>,
 }
 
+#[cfg(feature = "purge")]
 #[derive(Args)]
 struct PruneArgs {
     #[command(flatten)]
@@ -67,6 +70,7 @@ impl WhereArgs {
 /// `cherenkov store`.
 pub fn command(args: StoreArgs) -> Result<(), CliError> {
     match args.command {
+        #[cfg(feature = "purge")]
         StoreCommand::Prune(args) => prune(&args),
         StoreCommand::Unlock(args) => unlock(&args.path()),
     }
@@ -147,6 +151,7 @@ fn unlock(path: &Path) -> Result<(), CliError> {
     Ok(())
 }
 
+#[cfg(feature = "purge")]
 /// `cherenkov store prune`.
 fn prune(args: &PruneArgs) -> Result<(), CliError> {
     let path = args.at.path();
@@ -162,6 +167,7 @@ fn prune(args: &PruneArgs) -> Result<(), CliError> {
     Ok(())
 }
 
+#[cfg(feature = "purge")]
 /// What a prune says: what it removed, or would, and what stays.
 fn report(pruned: &Pruned, dry_run: bool) -> String {
     let stays = format!(
@@ -188,6 +194,7 @@ fn report(pruned: &Pruned, dry_run: bool) -> String {
     text
 }
 
+#[cfg(feature = "purge")]
 fn plural(n: usize, word: &str) -> String {
     match n {
         1 => word.to_string(),

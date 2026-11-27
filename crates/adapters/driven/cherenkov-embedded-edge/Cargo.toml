@@ -7,6 +7,10 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# The deleting capability (off by default: the default build is append-only).
+purge = ["angzarr-embedded/purge", "cherenkov-run-ports/purge"]
+
 [dependencies]
 angzarr-embedded.workspace = true
 angzarr-embedded-host.workspace = true

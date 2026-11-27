@@ -6,19 +6,23 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+#[cfg(feature = "purge")]
 use angzarr_embedded::angzarr_ports::tombstone;
 use angzarr_embedded::v1::Uuid;
 use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, Tier};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, run_event};
 use cherenkov_run_domain::{RunStatus, Verdict};
+#[cfg(feature = "purge")]
+use cherenkov_run_ports::Purging;
 use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
-use cherenkov_run_ports::{Edge, Purging, Report};
+use cherenkov_run_ports::{Edge, Report};
 use cherenkov_run_wire::output::VerdictLine;
 
 use crate::covers::{mutant_cover, run_cover};
 use crate::host::Readers;
 use crate::layer::{Settings, Started, Workers, plan_run, start};
+#[cfg(feature = "purge")]
 use crate::resume::settle;
 use crate::test_plans::many;
 use crate::testing::{Core, new_core, new_run, recording, silent};
@@ -252,6 +256,7 @@ async fn test_a_run_killed_part_way_is_resumed_by_the_next_with_the_same_plan() 
     );
 }
 
+#[cfg(feature = "purge")]
 #[tokio::test]
 async fn test_a_run_purged_by_a_prune_is_destroyed_and_is_not_abandoned_by_the_next_run() {
     let core = Arc::new(new_core().await);

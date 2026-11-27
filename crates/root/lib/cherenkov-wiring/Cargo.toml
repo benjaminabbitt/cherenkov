@@ -11,6 +11,13 @@ publish.workspace = true
 # `testing::sampling`: angzarr's `Samples` and numbered run ids, for the
 # tests of the crates that start runs.
 test-support = ["angzarr-embedded/test-support"]
+# The deleting capability (off by default: the default build is append-only).
+purge = [
+    "angzarr-embedded/purge",
+    "cherenkov-embedded-edge/purge",
+    "cherenkov-run-application/purge",
+    "cherenkov-run-store/purge",
+]
 
 [dependencies]
 angzarr-embedded.workspace = true

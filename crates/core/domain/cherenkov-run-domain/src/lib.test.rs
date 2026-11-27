@@ -1289,6 +1289,7 @@ fn test_a_purge_tombstone_in_either_stream_is_no_run_or_mutant_event_and_is_skip
     assert!(mutant_event(&closed).is_none());
 }
 
+#[cfg(feature = "purge")]
 #[test]
 fn test_a_run_stream_purged_to_a_tombstone_is_planned_again_not_refused_as_already_planned() {
     let mut core = run_harness();

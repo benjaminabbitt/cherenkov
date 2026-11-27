@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use angzarr_embedded::angzarr_bus::{Credit, Scope, Subscription};
 use angzarr_embedded::angzarr_ports::memory::MemoryStore;
+#[cfg(feature = "purge")]
 use angzarr_embedded::angzarr_ports::tombstone;
 use angzarr_embedded::angzarr_router::error::CodedError;
 use angzarr_embedded::angzarr_router::hpb::{ProjectRequest, ProjectResponse};
@@ -202,6 +203,7 @@ async fn a_window_of_a_stream_is_the_pages_between_two_sequences() {
     assert!(edge.window(&run(), 3, 9).await.unwrap().is_empty());
 }
 
+#[cfg(feature = "purge")]
 #[tokio::test]
 async fn a_stream_is_purged_when_it_is_still_as_long_as_the_caller_read_it() {
     let edge = edge().await;
@@ -218,6 +220,7 @@ async fn a_stream_is_purged_when_it_is_still_as_long_as_the_caller_read_it() {
     assert!(tombstone::is(&left[0]));
 }
 
+#[cfg(feature = "purge")]
 #[tokio::test]
 async fn a_purge_of_a_stream_written_since_it_was_read_is_refused_and_removes_nothing() {
     let edge = edge().await;

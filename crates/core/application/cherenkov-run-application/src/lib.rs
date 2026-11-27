@@ -24,6 +24,7 @@ pub mod live;
 pub mod policies;
 pub mod pool;
 pub mod programs;
+#[cfg(feature = "purge")]
 pub mod prune;
 pub mod reason;
 pub mod resume;
@@ -51,6 +52,6 @@ mod resumed;
 #[path = "yielding.test.rs"]
 mod yielding;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "purge"))]
 #[path = "prune.test.rs"]
 mod pruned;
