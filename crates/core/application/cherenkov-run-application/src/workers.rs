@@ -234,6 +234,11 @@ fn prepare_batch(
             settle(finished, back, report);
         }
         cancel_unfinished(&cancels, back);
+        // A cancelled program may send after the drain above and before
+        // this returns: its Finished would be buffered and dropped with the
+        // receiver, its session never closed. The reaper owns the receiver
+        // and closes whatever arrives; it ends when the last thread has sent.
+        std::thread::spawn(move || close_abandoned(done));
     }
     failed
 }
@@ -292,13 +297,17 @@ fn refused(prepared: &Result<Preparation, Report>) -> bool {
 /// moment it finishes, whether its thread sent before or after the batch
 /// stopped listening.
 fn close_abandoned(done: std::sync::mpsc::Receiver<Finished>) {
-    drop(done);
+    for abandoned in done {
+        let mut executor = abandoned.executor;
+        executor.close_session();
+    }
 }
 
 /// Prepare program `program` on a thread of its own, sending it back with
 /// its executor. When nobody waits any more (the run failed), the batch has
 /// cancelled the program (its call returns an error soon), and the thread
-/// closes the executor's session itself as soon as the call returns.
+/// closes the executor's session itself as soon as the call returns (when
+/// the send fails) or the batch's reaper does (when it succeeds).
 fn spawn_preparation(
     program: usize,
     mut executor: Box<dyn MutantExecutor + Send>,
