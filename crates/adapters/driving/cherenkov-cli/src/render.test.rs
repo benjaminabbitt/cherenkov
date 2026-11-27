@@ -103,7 +103,7 @@ fn test_every_document_names_its_event_its_run_and_when_it_was_recorded() {
         json!({
             "event": "run.started", "run": "07070707-0707-0707-0707-070707070707", "at": "2025-11-18T15:00:00Z",
             "root": "/p", "jobs": 4, "fast": false, "mutants": 12,
-            "operators": [{"language": "rust", "set": "breadth"}],
+            "operators": [{"language": "rust", "set": "breadth"}], "skipped_tests": [],
         })
     );
 }

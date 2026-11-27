@@ -52,6 +52,9 @@ message Started {
   uint32 mutants = 8;
   // The operator set each language of the run was planned with.
   repeated OperatorSet operators = 9;
+  // The tests left out of judging (`--skip-test`, `skip_test`), by the
+  // runner's name; empty when none were.
+  repeated string skipped_tests = 10;
 }
 
 // The operator set a language of the run was planned with.

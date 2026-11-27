@@ -521,6 +521,8 @@ fn run_readers(asked: &Asked, log: Option<Box<dyn std::io::Write + Send>>) -> Re
     if in_diff {
         sink = Box::new(output::InDiff::new(sink, asked.say.clone()));
     }
+    let skipped = asked.tools.selection.skip_tests.clone();
+    let sink = Box::new(output::SkippedTests::new(sink, skipped));
     let sink = Box::new(Phases::new(sink, asked.say.clone()));
     Readers::new(
         output::printing(sink, asked.say.catalog()),

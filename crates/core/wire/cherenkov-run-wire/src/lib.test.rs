@@ -814,6 +814,20 @@ fn output_operators() -> Vec<output::OperatorSet> {
 
 /// One document of every kind, the run's documents of a killed and a
 /// surviving mutant among them.
+/// A `run.started` that left two tests out of judging.
+fn started_skipping(run: Option<Uuid>, at: Option<Timestamp>) -> output::document::Event {
+    output::document::Event::Started(output::Started {
+        run,
+        at,
+        root: "/work/calc".to_string(),
+        operators: output_operators(),
+        jobs: 4,
+        fast: false,
+        mutants: 2,
+        skipped_tests: vec!["bus::slow".to_string(), "bus::tail".to_string()],
+    })
+}
+
 fn documents() -> Vec<output::Document> {
     use output::document::Event;
     let (run, at) = (Some(uuid()), recorded());
@@ -898,7 +912,7 @@ fn documents() -> Vec<output::Document> {
             ..decided(Verdict::Unsupported)
         }),
         Event::Finished(output::Finished {
-            run,
+            run: run.clone(),
             at,
             counts: [("killed".to_string(), 3), ("not-called".to_string(), 1)].into(),
             took_ms: 9_876,
@@ -906,16 +920,7 @@ fn documents() -> Vec<output::Document> {
             status: RunStatus::Failed.into(),
             deficiencies: [("inlined".to_string(), 1)].into(),
         }),
-        Event::Started(output::Started {
-            run: run.clone(),
-            at,
-            root: "/work/calc".to_string(),
-            operators: output_operators(),
-            jobs: 4,
-            fast: false,
-            mutants: 2,
-            skipped_tests: vec!["bus::slow".to_string(), "bus::tail".to_string()],
-        }),
+        started_skipping(run.clone(), at),
     ]
     .into_iter()
     .map(|event| output::Document { event: Some(event) })

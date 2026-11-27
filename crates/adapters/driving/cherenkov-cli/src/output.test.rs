@@ -141,6 +141,7 @@ fn started(language: &str, mutants: u32) -> Started {
         jobs: 1,
         fast: false,
         mutants,
+        skipped_tests: Vec::new(),
     }
 }
 
@@ -630,7 +631,7 @@ fn test_the_verdict_file_of_an_in_diff_run_has_no_not_called_line() {
     assert!(!text.contains("\"b\""), "{text}");
 }
 
-fn started(skipped: &[&str]) -> Document {
+fn started_with(skipped: &[&str]) -> Document {
     Document {
         event: Some(Event::Started(Started {
             root: "/w".into(),
@@ -659,7 +660,7 @@ fn test_run_started_carries_the_tests_left_out_of_judging() {
         Box::new(kept.clone()),
         vec!["bus::slow".into(), "bus::tail".into()],
     );
-    sink.document(&started(&[]));
+    sink.document(&started_with(&[]));
     sink.document(&mutant(Verdict::Killed, |_| {}));
     assert_eq!(started_skips(&kept), [["bus::slow", "bus::tail"]]);
     assert_eq!(kept.0.lock().unwrap().len(), 2, "other documents pass on");
@@ -669,7 +670,7 @@ fn test_run_started_carries_the_tests_left_out_of_judging() {
 fn test_run_started_carries_an_empty_list_when_no_test_is_left_out() {
     let kept = Gathered::default();
     let mut sink = SkippedTests::new(Box::new(kept.clone()), Vec::new());
-    sink.document(&started(&[]));
+    sink.document(&started_with(&[]));
     assert_eq!(started_skips(&kept), [Vec::<String>::new()]);
 }
 
@@ -677,7 +678,7 @@ fn test_run_started_carries_an_empty_list_when_no_test_is_left_out() {
 fn test_run_started_under_json_says_skipped_tests() {
     let kept = Gathered::default();
     let mut sink = SkippedTests::new(Box::new(kept.clone()), vec!["a".into()]);
-    sink.document(&started(&[]));
+    sink.document(&started_with(&[]));
     let text = serde_json::to_string(&kept.0.lock().unwrap()[0]).unwrap();
     assert!(text.contains(r#""skipped_tests":["a"]"#), "{text}");
 }
