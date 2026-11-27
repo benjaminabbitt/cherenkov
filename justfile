@@ -2,7 +2,12 @@ default: check
 
 # Format, lint and test the workspace. Needs protoc on PATH and access to
 # github.com.
-check: fmt-check lint lint-arch test
+check: fmt-check lint lint-arch test-hooks test
+
+# The pre-push gate's own test: push-check fed synthetic pushes, its check a
+# stub (scripts/test-push-check.sh). It guards main, so it runs in every check.
+test-hooks:
+    scripts/test-push-check.sh
 
 # The purge flavour (`--features purge`, the build that can delete: `store
 # prune`); `check` is the default one, append-only. CI runs both. The arch and
