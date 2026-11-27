@@ -64,3 +64,21 @@ fn test_outside_a_git_repository_there_is_no_snapshot() {
     let dir = test_dir::TestDir::new("checkout-outside");
     assert_eq!(Snapshot::take(dir.path()), None);
 }
+
+#[test]
+fn test_a_file_created_in_a_git_checkout_between_two_snapshots_is_written() {
+    let dir = test_dir::TestDir::new("checkout-take");
+    let init = std::process::Command::new("git")
+        .arg("init")
+        .arg("--quiet")
+        .arg(dir.path())
+        .status()
+        .unwrap();
+    assert!(init.success());
+    std::fs::write(dir.join("dirty.txt"), "one").unwrap();
+    let before = Snapshot::take(dir.path()).unwrap();
+    std::fs::write(dir.join("marker"), "x").unwrap();
+    std::fs::write(dir.join("dirty.txt"), "two").unwrap();
+    let after = Snapshot::take(dir.path()).unwrap();
+    assert_eq!(written_since(&before, &after), ["dirty.txt", "marker"]);
+}

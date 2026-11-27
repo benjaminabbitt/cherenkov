@@ -41,6 +41,18 @@ NAME --exact` to libtest; Go passes `-test.skip`. It is for tests that fail
 only under the debugger. The run says which tests were left out
 (`cherenkov-cli-notice-skipped-tests`, on stderr, under JSON too).
 
+## Writes into the checkout
+
+Cherenkov mutates in place and runs each test program with its package
+directory as cwd, as cargo does, so a mutant of path-building code can make
+a test write, or delete, relative to the real checkout. A run takes `git
+status` of the project's directory (untracked files included; ignored ones
+excluded) when it starts and when it ends, and names every path new or
+changed in between (`cherenkov-cli-notice-checkout-written`, on stderr,
+under JSON too). A path already dirty at the start is named only if its
+status or content hash changed. Nothing is restored or removed. Outside a git
+repository, or without git, it says nothing; `--ephemeral` still checks.
+
 ## What Cherenkov does with them
 
 - It builds only the test programs of the packages that judge a planned
