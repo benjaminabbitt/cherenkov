@@ -766,8 +766,8 @@ has it; no bump was needed). What was done:
   (each step is a transaction); and the earlier runs' streams are read at each
   start. See the open question on retention.
 - **Ruled (owner), built**: retention keeps every run; `cherenkov store
-  prune --keep N [--dry-run]` removes the older finished runs and keeps the
-  last N. The verdict file stays opt-in (`--verdicts FILE`, unchanged from
+  prune --keep N [--dry-run]` (only in the cherenkov-purge build) removes the
+  older finished runs and keeps the last N. The verdict file stays opt-in (`--verdicts FILE`, unchanged from
   5.6). Concurrent runs take an exclusive lock on the store file; a second
   `cherenkov run` refuses with a diagnostic naming the holder, and `cherenkov
   store unlock` clears what a holder left. What was built:
@@ -787,7 +787,7 @@ has it; no bump was needed). What was done:
     (declined, as every request the state forbids), a coded document on
     stderr under JSON. A run takes the lock before any work (before the
     toolchain is touched), a prune before it opens the store.
-  - **Prune** (`cherenkov-run-application`'s `prune`, on a new `Purging`
+  - **Prune**, only in the cherenkov-purge build (`cherenkov-run-application`'s `prune`, on a new `Purging`
     port served by the edge over angzarr's `Purge`, which the SQLite store
     implements): the newest N finished runs stay (a run's id is a UUIDv7,
     ordered by when it was made), every unfinished run stays and is not
@@ -981,7 +981,7 @@ angzarr's `FaultyStore`).
   all three.
 - **Wire churn after 5.7** needs upcasters or new package versions; the
   enums and facts are cheapest to get right in 5.2 to 5.4.
-- **A durable store grows**: every run is kept unless `cherenkov store prune` is run, and
+- **A durable store grows**: every run is kept unless `cherenkov store prune` (cherenkov-purge build only) is run, and
   each start reads the earlier runs' streams (5.7's measurement).
 - **Generated serde** keeps pbjson's traps unless 5.1 closes them.
 - **Speed**: more facts per mutant, the fan-out and fan-in hops and durable

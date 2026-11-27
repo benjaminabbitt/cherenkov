@@ -75,13 +75,8 @@ enum Command {
     /// print each verdict as it is decided.
     Run(Box<RunArgs>),
     /// Keep up the store the runs are kept in: clear what a killed run left
-    /// of its hold on it.
-    #[cfg_attr(
-        feature = "purge",
-        command(
-            about = "Keep up the store the runs are kept in: prune it, or clear what a killed run left of its hold on it"
-        )
-    )]
+    /// of its hold on it, or prune it (prune is only in the cherenkov-purge
+    /// build).
     Store(store::StoreArgs),
     /// List the named operator sets, their sources, and what each does not cover yet.
     Sets,
