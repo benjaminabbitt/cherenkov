@@ -266,6 +266,22 @@ async fn test_a_run_after_a_prune_leaves_the_purged_runs_alone_and_plans_the_mut
     );
 }
 
+#[tokio::test]
+async fn test_a_dry_prune_of_a_stream_purged_and_written_again_counts_only_the_events_it_holds() {
+    let core = Arc::new(new_core().await);
+    let plans = many(2);
+    finished(&core, &plans).await;
+    prune(&*core, 0, false).await.unwrap();
+    finished(&core, &plans).await;
+    let dry = prune(&*core, 0, true).await.unwrap();
+    let real = prune(&*core, 0, false).await.unwrap();
+    assert!(real.events > 0);
+    assert_eq!(
+        dry.events, real.events,
+        "the erased events and the tombstone are not counted"
+    );
+}
+
 /// A core whose first `races` purges lose to a writer, as the store says it:
 /// refused, retryable, nothing removed.
 struct Racing<'a> {
