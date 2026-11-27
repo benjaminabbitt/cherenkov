@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use angzarr_embedded::angzarr_bus::{Credit, Scope, Subscription};
 use angzarr_embedded::angzarr_ports::memory::MemoryStore;
+use angzarr_embedded::angzarr_ports::tombstone;
 use angzarr_embedded::angzarr_router::error::CodedError;
 use angzarr_embedded::angzarr_router::hpb::{ProjectRequest, ProjectResponse};
 use angzarr_embedded::angzarr_router::router::DynProjectorHandler;
@@ -208,7 +209,13 @@ async fn a_stream_is_purged_when_it_is_still_as_long_as_the_caller_read_it() {
     let head = edge.streams(RUN_DOMAIN).await.unwrap()[0].head;
     let removed = edge.purge(&run(), head).await.unwrap();
     assert_eq!(removed, head);
-    assert!(edge.events(&run(), 0).await.unwrap().is_empty());
+    let left = edge.events(&run(), 0).await.unwrap();
+    assert_eq!(
+        left.len(),
+        1,
+        "a purge keeps the stream, closed by its tombstone"
+    );
+    assert!(tombstone::is(&left[0]));
 }
 
 #[tokio::test]

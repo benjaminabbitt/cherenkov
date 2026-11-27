@@ -8,6 +8,7 @@
 //! alone and costs a read of each run's last event and, for an unfinished
 //! one, its first two (the start and the plan): not its history.
 
+use angzarr_embedded::angzarr_ports::tombstone;
 use angzarr_embedded::v1::{Cover, Uuid};
 use cherenkov_run_domain::events::{RunEvent, run_event};
 use cherenkov_run_domain::{Abandoned, MutantsPlanned, PlanRun, RUN_DOMAIN, RunStarted};
@@ -48,6 +49,12 @@ pub(crate) fn ended(last: &[angzarr_embedded::v1::EventPage]) -> bool {
         .any(|page| matches!(run_event(page), Some(RunEvent::RunFinished(_))))
 }
 
+/// Whether the last page of a stream is a tombstone: a purge deleted the
+/// stream's events and kept the stream, which stays listed and is destroyed.
+pub(crate) fn destroyed(last: &[angzarr_embedded::v1::EventPage]) -> bool {
+    last.last().is_some_and(tombstone::is)
+}
+
 /// The run's start and its plan, the first two events of its stream.
 pub(crate) async fn beginning<C: Listing>(
     core: &C,
@@ -79,7 +86,7 @@ async fn unfinished<C: Listing>(core: &C) -> Result<Vec<Unfinished>, RunLayerErr
         let last = core
             .window(&listed.cover, listed.head - 1, listed.head)
             .await?;
-        if !ended(&last) {
+        if !ended(&last) && !destroyed(&last) {
             runs.push(beginning(core, &listed.cover).await?);
         }
     }
