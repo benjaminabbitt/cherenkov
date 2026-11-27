@@ -1281,3 +1281,10 @@ fn test_restoring_an_unstarted_snapshot_that_holds_nothing_is_accepted() {
     let mut run = Run::default();
     assert_eq!(run.restore(RunSnapshot::default()), Ok(()));
 }
+
+#[test]
+fn test_a_purge_tombstone_in_either_stream_is_no_run_or_mutant_event_and_is_skipped() {
+    let closed = angzarr_embedded::angzarr_ports::tombstone::page(7);
+    assert!(run_event(&closed).is_none());
+    assert!(mutant_event(&closed).is_none());
+}

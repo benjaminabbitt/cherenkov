@@ -19,7 +19,7 @@ use cherenkov_run_domain::{MUTANT_DOMAIN, RUN_DOMAIN, mutant_root};
 use cherenkov_run_ports::{Listed, Listing, Purging};
 
 use crate::error::RunLayerError;
-use crate::resume::{beginning, ended};
+use crate::resume::{beginning, destroyed, ended};
 
 /// How many times a prune reads the store and decides again after a purge
 /// lost a race.
@@ -76,7 +76,7 @@ pub async fn prune<C: Listing + Purging>(
 }
 
 /// Every run the store holds, oldest first (a run's id is ordered by when it
-/// was made).
+/// was made), but those a purge left destroyed.
 async fn held<C: Listing>(core: &C) -> Result<Vec<Held>, RunLayerError> {
     let mut runs = Vec::new();
     for listed in core.streams(RUN_DOMAIN).await? {
@@ -86,6 +86,9 @@ async fn held<C: Listing>(core: &C) -> Result<Vec<Held>, RunLayerError> {
         let last = core
             .window(&listed.cover, listed.head - 1, listed.head)
             .await?;
+        if destroyed(&last) {
+            continue;
+        }
         let finished = ended(&last);
         let mutants = planned_roots(core, &listed).await?;
         runs.push(Held {
@@ -125,13 +128,19 @@ async fn planned_roots<C: Listing>(
     Ok(roots)
 }
 
-/// The mutant streams the store holds, by root.
+/// The mutant streams the store holds, by root: not those a purge left
+/// destroyed.
 async fn mutant_streams<C: Listing>(core: &C) -> Result<BTreeMap<String, Listed>, RunLayerError> {
-    let listed = core.streams(MUTANT_DOMAIN).await?;
-    Ok(listed
-        .into_iter()
-        .map(|stream| (root_key(&stream), stream))
-        .collect())
+    let mut streams = BTreeMap::new();
+    for stream in core.streams(MUTANT_DOMAIN).await? {
+        let last = core
+            .window(&stream.cover, stream.head.saturating_sub(1), stream.head)
+            .await?;
+        if !destroyed(&last) {
+            streams.insert(root_key(&stream), stream);
+        }
+    }
+    Ok(streams)
 }
 
 /// What goes, of `runs` (oldest first) and the mutant streams `streams`.

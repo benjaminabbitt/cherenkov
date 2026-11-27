@@ -5,6 +5,7 @@
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use angzarr_embedded::angzarr_ports::tombstone;
 use angzarr_embedded::v1::{Cover, EventPage, Uuid};
 use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, Tier};
 use cherenkov_mutation::plan::MutantPlan;
@@ -82,8 +83,14 @@ async fn unfinished(core: &Core, plans: &[MutantPlan]) -> Uuid {
     run
 }
 
+/// The events a stream holds: a purge leaves its tombstone, which is none.
 async fn held(core: &Core, cover: &Cover) -> usize {
-    core.events(cover, 0).await.unwrap().len()
+    core.events(cover, 0)
+        .await
+        .unwrap()
+        .iter()
+        .filter(|page| !tombstone::is(page))
+        .count()
 }
 
 async fn has_run(core: &Core, run: &Uuid) -> bool {
@@ -218,6 +225,44 @@ async fn test_prune_of_a_store_with_no_more_finished_runs_than_asked_removes_not
             .unwrap()
             .runs
             .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn test_a_second_prune_finds_the_streams_the_first_purged_already_gone() {
+    let core = Arc::new(new_core().await);
+    let plans = many(2);
+    let old = finished(&core, &plans).await;
+    finished(&core, &plans).await;
+    let first = prune(&*core, 1, false).await.unwrap();
+    assert_eq!((first.runs, first.mutants), (vec![old], 0));
+    let again = prune(&*core, 0, false).await.unwrap();
+    assert_eq!(again.runs.len(), 1, "only the run that was kept is left");
+    let last = prune(&*core, 0, false).await.unwrap();
+    assert_eq!(last.runs, []);
+    assert_eq!((last.mutants, last.events), (0, 0));
+    assert_eq!((last.kept_finished, last.kept_unfinished), (0, 0));
+}
+
+#[tokio::test]
+async fn test_a_run_after_a_prune_leaves_the_purged_runs_alone_and_plans_the_mutants_afresh() {
+    let core = Arc::new(new_core().await);
+    let plans = many(2);
+    let old = finished(&core, &plans).await;
+    let before = held(&core, &mutant_cover(&plans[0].id.0).unwrap()).await;
+    prune(&*core, 0, false).await.unwrap();
+    assert!(!has_mutant(&core, &plans, 0).await);
+    let next = finished(&core, &plans).await;
+    let purged = core.events(&run_cover(&old), 0).await.unwrap();
+    assert!(
+        purged.last().is_some_and(tombstone::is),
+        "the run that began on the store did not abandon a run already gone"
+    );
+    assert!(has_run(&core, &next).await);
+    assert_eq!(
+        held(&core, &mutant_cover(&plans[0].id.0).unwrap()).await,
+        before,
+        "the mutant is handled as a fresh one: only the new run's events"
     );
 }
 

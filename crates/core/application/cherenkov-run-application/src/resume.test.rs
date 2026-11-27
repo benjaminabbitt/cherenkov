@@ -6,18 +6,20 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use angzarr_embedded::angzarr_ports::tombstone;
 use angzarr_embedded::v1::Uuid;
 use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, Tier};
 use cherenkov_mutation::plan::MutantPlan;
 use cherenkov_run_domain::events::{MutantEvent, RunEvent, mutant_event, run_event};
 use cherenkov_run_domain::{RunStatus, Verdict};
 use cherenkov_run_ports::executor::{ExecError, MutantExecutor};
-use cherenkov_run_ports::{Edge, Report};
+use cherenkov_run_ports::{Edge, Purging, Report};
 use cherenkov_run_wire::output::VerdictLine;
 
 use crate::covers::{mutant_cover, run_cover};
 use crate::host::Readers;
 use crate::layer::{Settings, Started, Workers, plan_run, start};
+use crate::resume::settle;
 use crate::test_plans::many;
 use crate::testing::{Core, new_core, new_run, recording, silent};
 use crate::verdicts::VerdictFile;
@@ -248,6 +250,22 @@ async fn test_a_run_killed_part_way_is_resumed_by_the_next_with_the_same_plan() 
         printed.iter().filter(|n| **n == "mutant.decided").count(),
         MUTANTS
     );
+}
+
+#[tokio::test]
+async fn test_a_run_purged_by_a_prune_is_destroyed_and_is_not_abandoned_by_the_next_run() {
+    let core = Arc::new(new_core().await);
+    let plans = many(2);
+    let gone = earlier(&core, &plans, &settings()).await;
+    let head = core.events(&run_cover(&gone), 0).await.unwrap().len() as u64;
+    core.purge(&run_cover(&gone), head).await.unwrap();
+
+    let wanted = plan_run(&plans, &settings(), 1);
+    assert_eq!(settle(&*core, &wanted).await.unwrap(), None);
+
+    let left = core.events(&run_cover(&gone), 0).await.unwrap();
+    assert_eq!(left.len(), 1, "nothing was told to a run already gone");
+    assert!(tombstone::is(&left[0]));
 }
 
 #[tokio::test]
