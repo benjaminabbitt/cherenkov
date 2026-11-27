@@ -49,7 +49,12 @@ fn test_prune_is_not_a_store_subcommand_in_the_default_build() {
     assert_eq!(help.status.code(), Some(0), "{}", stderr(&help));
     let said = stdout(&help);
     assert!(said.contains("unlock"), "{said}");
-    assert!(!said.contains("prune"), "{said}");
+    let commands = said.split("Options:").next().unwrap();
+    assert!(!commands.contains("  prune"), "no prune subcommand: {said}");
+    assert!(
+        said.contains("only in the cherenkov-purge build"),
+        "the one help text carries the purge-only note: {said}"
+    );
     let out = cherenkov(&["store", "prune", "--keep", "1"]);
     assert_ne!(out.status.code(), Some(0));
     assert!(
