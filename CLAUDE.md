@@ -99,7 +99,8 @@ stays in every build). `cherenkov --features purge` (released as
 `cherenkov-purge`) has prune; the feature is forwarded crate by crate to
 angzarr's `purge` (`angzarr-embedded`, `angzarr-store-sqlite`). The tests of
 prune are `cfg(feature = "purge")`. `just check` is the default flavour and
-`just check-purge` the other; CI runs both.
+`just check-purge` the other; CI runs both. `just mutants-purge BASE` is the
+purge flavour's own mutation run over BASE..HEAD (never part of `check` or CI).
 
 # Hooks and CI
 

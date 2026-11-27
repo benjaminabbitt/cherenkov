@@ -91,6 +91,25 @@ mutants file:
     cargo mutants -d ../.mutants-worktree --in-place --timeout 120 -f {{file}} -- --lib
     git worktree remove ../.mutants-worktree --force
 
+# Cherenkov's own mutation run on the purge build (the one that can delete),
+# over BASE..HEAD and only the purge-gated sources (scripts/purge-files.sh).
+# Its own recipe by the owner's ruling: not a step of `check`, the close-out or
+# CI. Debug `cargo run`, as `plan`: the run's time is the mutants' builds, not
+# the runner. Takes no lock of its own: serialising mutation runs is the caller's.
+mutants-purge base:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    files=$(scripts/purge-files.sh)
+    diff=$(mktemp "${TMPDIR:-/tmp}/purge.XXXXXX.diff")
+    trap 'rm -f "$diff"' EXIT
+    git diff {{base}}..HEAD -- $files > "$diff"
+    if [ ! -s "$diff" ]; then
+        echo "mutants-purge: no change to the purge-gated sources in {{base}}..HEAD; nothing to mutate."
+        exit 0
+    fi
+    cargo run -q -p cherenkov -- run . --in-diff "$diff" \
+        --cargo-arg --features --cargo-arg purge --ephemeral --format json
+
 # Pinned gitleaks image for the secrets scans. Bumps are deliberate commits.
 GITLEAKS_IMAGE := "ghcr.io/gitleaks/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854"
 
