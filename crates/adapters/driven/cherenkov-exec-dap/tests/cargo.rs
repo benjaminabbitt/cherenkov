@@ -284,12 +284,14 @@ fn test_test_programs_are_built_for_the_named_packages_and_the_workspace_without
         here,
         &["--locked".to_string()],
         &["a".to_string(), "b".to_string()],
+        &mut |_| {},
     )
     .unwrap();
     assert_eq!(named.len(), 1);
     assert_eq!(named[0].binary, PathBuf::from("/t/a-1"));
     let all =
-        build_rust_test_programs_with(&cargo.path(), here, &["--locked".to_string()]).unwrap();
+        build_rust_test_programs_with(&cargo.path(), here, &["--locked".to_string()], &mut |_| {})
+            .unwrap();
     assert_eq!(all, named);
     assert_eq!(
         cargo.log(),
@@ -304,8 +306,14 @@ fn test_test_programs_are_built_for_the_named_packages_and_the_workspace_without
 fn test_a_cargo_test_build_that_fails_is_an_error() {
     use cherenkov_exec_dap::toolchain::build_rust_test_programs_of;
     let cargo = FakeCargo::new("buildfail", false);
-    let error = build_rust_test_programs_of(&cargo.path(), std::path::Path::new("/"), &[], &[])
-        .unwrap_err();
+    let error = build_rust_test_programs_of(
+        &cargo.path(),
+        std::path::Path::new("/"),
+        &[],
+        &[],
+        &mut |_| {},
+    )
+    .unwrap_err();
     assert_eq!(error.code(), "cherenkov-exec-dap-toolchain-failed");
     assert!(error.to_string().contains("cargo test --no-run"), "{error}");
 }

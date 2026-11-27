@@ -7,6 +7,7 @@ use std::process::Command;
 use cherenkov_run_ports::executor::ExecError;
 
 use crate::error::Toolchain;
+use crate::progress::Compiling;
 use serde_json::Value;
 
 /// Build a Go package's test binary without optimization or inlining, so
@@ -92,7 +93,7 @@ pub fn build_rust_test_programs(
     cargo: &Path,
     manifest_dir: &Path,
 ) -> Result<Vec<TestProgram>, ExecError> {
-    build_rust_test_programs_with(cargo, manifest_dir, &[])
+    build_rust_test_programs_with(cargo, manifest_dir, &[], &mut |_| {})
 }
 
 /// [`build_rust_test_programs`], with arguments for cargo as the project
@@ -101,8 +102,9 @@ pub fn build_rust_test_programs_with(
     cargo: &Path,
     manifest_dir: &Path,
     cargo_args: &[String],
+    compiling: &mut dyn FnMut(Compiling),
 ) -> Result<Vec<TestProgram>, ExecError> {
-    build_rust_test_programs_of(cargo, manifest_dir, cargo_args, &[])
+    build_rust_test_programs_of(cargo, manifest_dir, cargo_args, &[], compiling)
 }
 
 /// `--package NAME` for each of `packages`: cargo's selection of the
@@ -121,7 +123,9 @@ pub fn build_rust_test_programs_of(
     manifest_dir: &Path,
     cargo_args: &[String],
     packages: &[String],
+    compiling: &mut dyn FnMut(Compiling),
 ) -> Result<Vec<TestProgram>, ExecError> {
+    let _ = compiling;
     let output = Command::new(cargo)
         .args(["test", "--no-run", "--message-format=json"])
         .args(cargo_args)

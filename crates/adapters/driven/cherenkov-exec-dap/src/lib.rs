@@ -17,6 +17,7 @@ pub mod libtest;
 pub mod lines;
 pub mod load;
 pub mod native;
+pub mod progress;
 pub mod reason;
 pub mod routing;
 pub mod rpc;

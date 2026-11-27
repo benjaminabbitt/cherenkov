@@ -17,6 +17,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crate::error::Toolchain;
+use crate::progress::Compiling;
 use crate::reason::Reason;
 use cherenkov_mutation::execution::{Budget, Observed, RawOutcome};
 use cherenkov_mutation::id::MutantId;
@@ -435,6 +436,7 @@ struct Rustc<'a> {
     /// The batch being settled, from one, and how many there are.
     batch: (usize, usize),
     progress: &'a mut dyn FnMut(Progress),
+    compiling: &'a mut dyn FnMut(Compiling),
 }
 
 impl Rustc<'_> {
@@ -566,6 +568,7 @@ pub fn check(
     cargo_args: &[String],
     candidates: &[Candidate],
     progress: &mut dyn FnMut(Progress),
+    compiling: &mut dyn FnMut(Compiling),
 ) -> Result<Checked, ExecError> {
     let started = Instant::now();
     let scratch = scratch_dir(workspace);
@@ -583,6 +586,7 @@ pub fn check(
         compiles: 0,
         batch: (0, 0),
         progress,
+        compiling,
     };
     let mut rejected = HashMap::new();
     let all = batches(candidates);
