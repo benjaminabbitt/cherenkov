@@ -843,6 +843,7 @@ fn documents() -> Vec<output::Document> {
             jobs: 4,
             fast: false,
             mutants: 2,
+            skipped_tests: Vec::new(),
         }),
         Event::Planned(output::Planned {
             run: run.clone(),
@@ -905,6 +906,16 @@ fn documents() -> Vec<output::Document> {
             status: RunStatus::Failed.into(),
             deficiencies: [("inlined".to_string(), 1)].into(),
         }),
+        Event::Started(output::Started {
+            run: run.clone(),
+            at,
+            root: "/work/calc".to_string(),
+            operators: output_operators(),
+            jobs: 4,
+            fast: false,
+            mutants: 2,
+            skipped_tests: vec!["bus::slow".to_string(), "bus::tail".to_string()],
+        }),
     ]
     .into_iter()
     .map(|event| output::Document { event: Some(event) })
@@ -932,7 +943,7 @@ fn test_every_message_encodes_to_the_bytes_it_always_has() {
 /// mapping writes them, a duration is a number, an unset field its
 /// document's choice of `null` or left out, and the enums their kebab-case
 /// names.
-const DOCUMENTS: &str = r#"{"event":"run.started","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","root":"/work/calc","jobs":4,"fast":false,"mutants":2,"operators":[{"language":"go","set":"breadth"},{"language":"rust","set":"cargo-mutants"}]}
+const DOCUMENTS: &str = r#"{"event":"run.started","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","root":"/work/calc","jobs":4,"fast":false,"mutants":2,"operators":[{"language":"go","set":"breadth"},{"language":"rust","set":"cargo-mutants"}],"skipped_tests":[]}
 {"event":"mutant.planned","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","id":"f2ba84283a346cc0","file":"src/lib.rs","line":4,"column":5,"end_line":4,"end_column":6,"function":"total","operator":"aor","description":"`+` becomes `-`","original":"+","mutated":"-"}
 {"event":"program.prepared","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","program":"target/debug/deps/calc-0123","baseline_ms":40,"prepared_ms":90,"tests":3,"selection":"recorded-with-failures","failed_tests":["calc::flaky"]}
 {"event":"program.prepared","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","program":"target/debug/deps/it-4567","baseline_ms":0,"prepared_ms":0,"tests":null,"selection":"every-test","reason":"no debug info"}
@@ -941,6 +952,7 @@ const DOCUMENTS: &str = r#"{"event":"run.started","run":"01020304-0506-0708-090a
 {"event":"mutant.decided","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","id":"f2ba84283a346cc0","file":"src/lib.rs","line":4,"column":5,"end_line":4,"end_column":6,"function":"total","operator":"aor","description":"`+` becomes `-`","original":"+","mutated":"-","verdict":"survived","tier":"p","took_ms":31,"tests_run":["calc::test_total"],"executed_by":["calc::test_total"]}
 {"event":"mutant.decided","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","id":"f2ba84283a346cc0","file":"src/lib.rs","line":4,"column":5,"end_line":4,"end_column":6,"function":"total","operator":"aor","description":"`+` becomes `-`","original":"+","mutated":"-","verdict":"unsupported","took_ms":31,"tests_run":["calc::test_total"],"reason":"inlined function","reason_code":"inlined"}
 {"event":"run.finished","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","counts":{"killed":3,"not-called":1},"took_ms":9876,"exit":10,"status":"failed","deficiencies":{"inlined":1}}
+{"event":"run.started","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","root":"/work/calc","jobs":4,"fast":false,"mutants":2,"operators":[{"language":"go","set":"breadth"},{"language":"rust","set":"cargo-mutants"}],"skipped_tests":["bus::slow","bus::tail"]}
 "#;
 
 #[test]
