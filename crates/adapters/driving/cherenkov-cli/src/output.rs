@@ -214,6 +214,35 @@ impl Sink for InDiff {
     }
 }
 
+/// The sink that names, in `run.started`, the tests the run leaves out of
+/// judging (`--skip-test`). The run layer never learns them: they are an
+/// argument of the program that prints, not part of a run's recorded
+/// events. Every other document goes on unchanged.
+pub struct SkippedTests {
+    inner: Box<dyn Sink>,
+    skipped: Vec<String>,
+}
+
+impl SkippedTests {
+    pub fn new(inner: Box<dyn Sink>, skipped: Vec<String>) -> Self {
+        SkippedTests { inner, skipped }
+    }
+}
+
+impl Sink for SkippedTests {
+    fn document(&mut self, doc: &Document) {
+        match &doc.event {
+            Some(Event::Started(started)) => self.inner.document(&Document {
+                event: Some(Event::Started(Started {
+                    skipped_tests: self.skipped.clone(),
+                    ..started.clone()
+                })),
+            }),
+            _ => self.inner.document(doc),
+        }
+    }
+}
+
 /// Accepts and logs what could not be run: counts each `unsupported`
 /// mutant's `reason_code`, writes it to the log, and adds the counts to the
 /// run's `run.finished` as `deficiencies`, with the exit code its status

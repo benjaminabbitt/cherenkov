@@ -45,6 +45,7 @@ pub fn documents(run: &Uuid, page: &EventPage, catalog: &Catalog) -> Vec<Documen
             jobs: s.jobs,
             fast: s.fast,
             mutants: s.mutants,
+            skipped_tests: Vec::new(),
         }))],
         RunEvent::MutantsPlanned(planned) => planned
             .mutants

@@ -54,6 +54,10 @@ the operator set each language was planned with, a list of
 `{"language": "go", "set": "breadth"}` entries, one for each language and set
 (a run with several sets for one language has one entry for each). It
 replaces the earlier `language` and the packed `operators` string.
+`skipped_tests`: the tests left out of judging by `--skip-test` (or the
+configuration's `skip_test`), by the runner's name, in the order given; `[]`
+when none were. Only the process that prints the run knows them: a run
+carried on by another process says the skips of that process.
 
 ### `mutant.planned`
 One per mutant, in plan order, right after `run.started`: the mutant's

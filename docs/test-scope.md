@@ -30,6 +30,17 @@ Precedence, first that applies, the command line over the file:
 `test_workspace = true` but leaves the file's `test_package` in force. The
 rules are `TestPackages::resolve` in `crates/root/bin/cherenkov/src/test_scope.rs`.
 
+## Leaving tests out (`--skip-test`)
+
+Not a cargo-mutants setting (it passes `--skip` through
+`additional_cargo_test_args`, which Cherenkov does not read): `--skip-test
+NAME` (repeatable) or `skip_test = [...]` in the configuration, the two
+added together. Named tests are left out of judging, in the unmutated
+baseline and for every mutant, in every test program. Rust passes `--skip
+NAME --exact` to libtest; Go passes `-test.skip`. It is for tests that fail
+only under the debugger. The run says which tests were left out
+(`cherenkov-cli-notice-skipped-tests`, on stderr, under JSON too).
+
 ## What Cherenkov does with them
 
 - It builds only the test programs of the packages that judge a planned

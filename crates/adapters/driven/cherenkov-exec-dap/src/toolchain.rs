@@ -175,25 +175,40 @@ pub fn test_binaries_from_cargo_json(stdout: &str) -> Vec<PathBuf> {
         .collect()
 }
 
-/// libtest arguments that run only the named tests (exact names; several
-/// filters are allowed). Empty when no test is named: every test runs.
-pub fn rust_test_args(names: &[String]) -> Vec<String> {
-    if names.is_empty() {
+/// libtest arguments that run only the named tests and leave the `skips`
+/// out (exact names, as libtest's `--exact` applies to both; several of each
+/// are allowed). Empty when no test is named or skipped: every test runs.
+pub fn rust_test_args(names: &[String], skips: &[String]) -> Vec<String> {
+    if names.is_empty() && skips.is_empty() {
         return Vec::new();
     }
     let mut args = names.to_vec();
+    for skip in skips {
+        args.push("--skip".to_string());
+        args.push(skip.clone());
+    }
     args.push("--exact".to_string());
     args
 }
 
-/// `go test` binary arguments that run only the named tests. `-test.run`
-/// takes one regex per `/`-separated level of subtest names; each name's
-/// levels are matched literally. With several names of differing depth, a
-/// level's alternation applies to every test that reaches it (Go's rule).
-pub fn go_test_args(names: &[String]) -> Vec<String> {
-    if names.is_empty() {
-        return Vec::new();
+/// `go test` binary arguments that run only the named tests and leave the
+/// `skips` out (`-test.run` and `-test.skip`). Each takes one regex per
+/// `/`-separated level of subtest names; each name's levels are matched
+/// literally. With several names of differing depth, a level's alternation
+/// applies to every test that reaches it (Go's rule).
+pub fn go_test_args(names: &[String], skips: &[String]) -> Vec<String> {
+    let mut args = Vec::new();
+    for (flag, list) in [("-test.run", names), ("-test.skip", skips)] {
+        if !list.is_empty() {
+            args.push(flag.to_string());
+            args.push(anchored_levels(list));
+        }
     }
+    args
+}
+
+/// The one pattern, a regex per level, that matches exactly `names`.
+fn anchored_levels(names: &[String]) -> String {
     let mut levels: Vec<Vec<String>> = Vec::new();
     for name in names {
         for (i, part) in name.split('/').enumerate() {
@@ -210,7 +225,7 @@ pub fn go_test_args(names: &[String]) -> Vec<String> {
         .iter()
         .map(|alts| format!("^({})$", alts.join("|")))
         .collect();
-    vec!["-test.run".to_string(), pattern.join("/")]
+    pattern.join("/")
 }
 
 /// Escape Go RE2 metacharacters.

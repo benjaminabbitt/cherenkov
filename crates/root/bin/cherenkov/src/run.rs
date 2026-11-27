@@ -135,6 +135,7 @@ pub fn run(
     });
     // A run killed with SIGKILL could not remove its scratch space.
     cherenkov_exec_dap::support_lib::sweep_stale_scratch();
+    say_skipped_tests(say, &tools.selection.skip_tests);
     let asked = Asked {
         root: &root,
         tools,
@@ -151,6 +152,15 @@ pub fn run(
         run_go(&asked)
     } else {
         run_rust(&asked)
+    }
+}
+
+/// Say which tests are left out of judging, when any are.
+fn say_skipped_tests(say: &Say, skipped: &[String]) {
+    if !skipped.is_empty() {
+        say.say(&Notice::SkippedTests {
+            tests: skipped.join(", "),
+        });
     }
 }
 
@@ -193,7 +203,7 @@ fn run_go(asked: &Asked) -> Result<(), CliError> {
             let config = DelveConfig {
                 dlv,
                 test_binary: binary,
-                test_args: go_test_args(asked.tests),
+                test_args: go_test_args(asked.tests, &tools.selection.skip_tests),
             };
             let executor: Box<dyn MutantExecutor + Send> =
                 Box::new(DelveExecutor::new(config, Isa::amd64()));
@@ -322,10 +332,11 @@ fn routed(asked: &Asked, packages: &[Package], scope: &Scope, program: &TestProg
     let (judged, only_changed) = (scope.judged_by(package), scope.only_changed(package));
     let listed = list_tests(&program.binary).unwrap_or_default();
     let changed = libtest_names(&listed, &scope.changed_in(package));
+    let skips = &asked.tools.selection.skip_tests;
     let test_args = if records_changed_tests_only(&judged, &only_changed, &changed, asked.tests) {
-        rust_test_args(&changed)
+        rust_test_args(&changed, skips)
     } else {
-        rust_test_args(asked.tests)
+        rust_test_args(asked.tests, skips)
     };
     Routed {
         judged,
@@ -510,6 +521,8 @@ fn run_readers(asked: &Asked, log: Option<Box<dyn std::io::Write + Send>>) -> Re
     if in_diff {
         sink = Box::new(output::InDiff::new(sink, asked.say.clone()));
     }
+    let skipped = asked.tools.selection.skip_tests.clone();
+    let sink = Box::new(output::SkippedTests::new(sink, skipped));
     let sink = Box::new(Phases::new(sink, asked.say.clone()));
     Readers::new(
         output::printing(sink, asked.say.catalog()),
@@ -764,6 +777,34 @@ mod tests {
             dir: PathBuf::from(format!("/w/{name}")),
             deps: Vec::new(),
         }
+    }
+
+    #[test]
+    fn test_a_program_runs_with_the_skipped_tests_left_out() {
+        let mut tools = tools();
+        tools.selection.skip_tests = vec!["bus::slow".to_string()];
+        let heard = Heard::default();
+        let say = say_into(&heard);
+        let asked = Asked {
+            root: Path::new("/w"),
+            tools: &tools,
+            sets: &[],
+            tests: &[],
+            format: Format::Text,
+            say: &say,
+        };
+        let program = TestProgram {
+            binary: PathBuf::from("/t/missing"),
+            package_dir: PathBuf::from("/w/a"),
+        };
+        let scope = Scope::of(
+            &TestPackages::Mutated,
+            &[],
+            &[package("a")],
+            Path::new("/w"),
+        );
+        let routed = routed(&asked, &[package("a")], &scope, &program);
+        assert_eq!(routed.test_args, ["--skip", "bus::slow", "--exact"]);
     }
 
     #[test]

@@ -397,3 +397,19 @@ fn test_a_program_records_the_changed_tests_alone_only_when_nothing_else_is_judg
         "the user chose the tests"
     );
 }
+
+#[test]
+fn test_skip_test_on_the_command_line_and_in_the_configuration_are_added_together() {
+    let args = SelectArgs {
+        skip_test: named(&["bus::slow"]),
+        ..SelectArgs::default()
+    };
+    let selection = loaded("skip_test = [\"bus::tail\"]\n", args);
+    assert_eq!(selection.skip_tests, ["bus::slow", "bus::tail"]);
+}
+
+#[test]
+fn test_no_skip_test_leaves_every_test_judging() {
+    let selection = loaded("", SelectArgs::default());
+    assert!(selection.skip_tests.is_empty());
+}

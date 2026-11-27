@@ -67,6 +67,13 @@ pub struct SelectArgs {
     /// its own package's tests.
     #[arg(long = "test-package", value_delimiter = ',', value_name = "PACKAGE")]
     pub test_package: Vec<String>,
+    /// Leave this test out of judging, in the baseline and for every mutant,
+    /// by the runner's own name for it (repeatable), as `--test` names one.
+    /// For tests that fail only under the debugger, as ones with wall-clock
+    /// deadlines do. Rust: the libtest name, matched exactly; Go: `TestName`
+    /// or `TestName/subtest`. The run says which were left out.
+    #[arg(long = "skip-test", value_name = "NAME")]
+    pub skip_test: Vec<String>,
     /// Judge every mutant by the whole workspace's tests (true); false
     /// keeps the default and the configuration's `test_package`, as
     /// cargo-mutants does. Takes priority over `--test-package`.
@@ -87,6 +94,8 @@ pub struct Selection {
     pub cargo_args: Vec<String>,
     /// Which packages' tests judge a mutant.
     pub test_packages: TestPackages,
+    /// Tests left out of judging (`--skip-test`, `skip_test`).
+    pub skip_tests: Vec<String>,
     examine_globs: Option<GlobSet>,
     examine_re: Option<RegexSet>,
     exclude_re: Option<RegexSet>,
@@ -100,6 +109,7 @@ impl Default for Selection {
             skip_calls: DEFAULT_SKIP_CALLS.map(String::from).to_vec(),
             cargo_args: Vec::new(),
             test_packages: TestPackages::default(),
+            skip_tests: Vec::new(),
             examine_globs: None,
             examine_re: None,
             exclude_re: None,
@@ -184,6 +194,7 @@ impl Selection {
             skip_calls,
             cargo_args: config.additional_cargo_args.clone(),
             test_packages,
+            skip_tests: both(&args.skip_test, &config.skip_test),
             examine_globs: if examine.is_empty() {
                 None
             } else {

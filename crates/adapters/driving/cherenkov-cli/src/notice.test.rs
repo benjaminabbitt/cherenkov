@@ -230,6 +230,21 @@ fn test_a_json_notice_carrying_a_cause_nests_its_envelope() {
 }
 
 #[test]
+fn test_skipped_tests_are_said_under_text_and_under_json() {
+    let notice = Notice::SkippedTests {
+        tests: "bus::slow, bus::tail".into(),
+    };
+    assert_eq!(
+        text(&notice),
+        "cherenkov: tests left out of judging (--skip-test): bus::slow, bus::tail\n"
+    );
+    let envelope: serde_json::Value =
+        serde_json::from_str(said(Format::Json, &notice).trim()).unwrap();
+    assert_eq!(envelope["code"], "cherenkov-cli-notice-skipped-tests");
+    assert_eq!(envelope["args"]["tests"], "bus::slow, bus::tail");
+}
+
+#[test]
 fn test_the_notices_the_stream_or_the_terminal_already_carries_are_left_out_of_json() {
     for notice in [
         Notice::Operators { label: "l".into() },
