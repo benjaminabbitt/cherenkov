@@ -23,7 +23,8 @@ enum StoreCommand {
     /// Remove the older finished runs of the store, keeping the last N
     /// (`cherenkov run` keeps every run). An unfinished run is never
     /// removed, and a mutant's history is removed only when no run that
-    /// stays plans the mutant. Refused while a run holds the store.
+    /// stays plans the mutant. Refused while a run holds the store. Only in
+    /// the cherenkov-purge build.
     #[cfg(feature = "purge")]
     Prune(PruneArgs),
     /// Clear what a run that was killed left of its hold on the store. The
