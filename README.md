@@ -181,7 +181,17 @@ target/release/cherenkov run path/to/project --operators cargo-mutants
 
 # Only what one test calls (libtest name; repeatable).
 target/release/cherenkov run path/to/project --test calc::test_total
+
+# Leave tests out of judging, in the baseline and for every mutant (repeatable):
+# for tests that fail only under the debugger, such as ones with wall-clock deadlines.
+target/release/cherenkov run path/to/project --skip-test bus::slow_deadline
 ```
+
+`--skip-test NAME` (or `skip_test = ["NAME"]` in `.cargo/mutants.toml`, added to the
+command line's) names tests by the runner's own name, as `--test` does: Rust matches the
+libtest name exactly (`--skip NAME --exact`), Go passes `-test.skip`. The run says
+which tests were left out on stderr (`cherenkov: tests left out of judging (--skip-test): ...`),
+so a verdict is read as judged without them.
 
 `--operators` defaults to `cargo-mutants` for Rust and `breadth` for Go and Python. `--exclude GLOB` skips more files.
 

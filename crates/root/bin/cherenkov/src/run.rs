@@ -135,6 +135,7 @@ pub fn run(
     });
     // A run killed with SIGKILL could not remove its scratch space.
     cherenkov_exec_dap::support_lib::sweep_stale_scratch();
+    say_skipped_tests(say, &tools.selection.skip_tests);
     let asked = Asked {
         root: &root,
         tools,
@@ -151,6 +152,15 @@ pub fn run(
         run_go(&asked)
     } else {
         run_rust(&asked)
+    }
+}
+
+/// Say which tests are left out of judging, when any are.
+fn say_skipped_tests(say: &Say, skipped: &[String]) {
+    if !skipped.is_empty() {
+        say.say(&Notice::SkippedTests {
+            tests: skipped.join(", "),
+        });
     }
 }
 
@@ -193,7 +203,7 @@ fn run_go(asked: &Asked) -> Result<(), CliError> {
             let config = DelveConfig {
                 dlv,
                 test_binary: binary,
-                test_args: go_test_args(asked.tests),
+                test_args: go_test_args(asked.tests, &tools.selection.skip_tests),
             };
             let executor: Box<dyn MutantExecutor + Send> =
                 Box::new(DelveExecutor::new(config, Isa::amd64()));
@@ -322,10 +332,11 @@ fn routed(asked: &Asked, packages: &[Package], scope: &Scope, program: &TestProg
     let (judged, only_changed) = (scope.judged_by(package), scope.only_changed(package));
     let listed = list_tests(&program.binary).unwrap_or_default();
     let changed = libtest_names(&listed, &scope.changed_in(package));
+    let skips = &asked.tools.selection.skip_tests;
     let test_args = if records_changed_tests_only(&judged, &only_changed, &changed, asked.tests) {
-        rust_test_args(&changed)
+        rust_test_args(&changed, skips)
     } else {
-        rust_test_args(asked.tests)
+        rust_test_args(asked.tests, skips)
     };
     Routed {
         judged,

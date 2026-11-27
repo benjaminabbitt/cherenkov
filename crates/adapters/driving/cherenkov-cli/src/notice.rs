@@ -151,6 +151,9 @@ pub enum Notice {
     },
     /// What an `--in-diff` run did not list.
     InDiff { skipped: u64 },
+    /// The tests (`--skip-test`) left out of judging, so a reader knows it
+    /// was narrowed.
+    SkippedTests { tests: String },
 }
 
 impl Notice {
@@ -189,6 +192,7 @@ impl Diagnostic for Notice {
             Notice::Workers { .. } => code!("notice-workers"),
             Notice::WorkersSized { .. } => code!("notice-workers-sized"),
             Notice::InDiff { .. } => code!("notice-in-diff"),
+            Notice::SkippedTests { .. } => code!("notice-skipped-tests"),
         }
     }
 
@@ -259,6 +263,7 @@ impl Diagnostic for Notice {
                 ("per_worker_mib", (*per_worker_mib).into()),
             ],
             Notice::InDiff { skipped } => vec![("skipped", (*skipped).into())],
+            Notice::SkippedTests { tests } => vec![("tests", tests.as_str().into())],
         }
     }
 }
@@ -385,6 +390,9 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
             per_worker_mib: 512,
         }),
         Box::new(Notice::InDiff { skipped: 3 }),
+        Box::new(Notice::SkippedTests {
+            tests: "a, b".into(),
+        }),
     ]
 }
 

@@ -35,6 +35,10 @@ pub struct Config {
     pub test_package: Vec<String>,
     /// Judge every mutant by the whole workspace's tests.
     pub test_workspace: Option<bool>,
+    /// Leave these tests (by the runner's name) out of judging; the key of
+    /// `--skip-test`. cargo-mutants has none: it passes `--skip` through
+    /// `additional_cargo_test_args`, which is not read here.
+    pub skip_test: Vec<String>,
     /// Scale test timeouts. Cherenkov sets its own timeouts, so this is
     /// read and not used.
     pub timeout_multiplier: Option<f64>,

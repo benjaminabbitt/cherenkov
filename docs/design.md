@@ -763,6 +763,9 @@ coverage tool and reports no coverage.
    (libtest `--list`, `go test -list`, pytest collection). The user or agent
    names any subset; `cherenkov run --test NAME` (repeatable) passes the
    runner's selection flags (libtest exact filters, an anchored `-test.run`).
+   `--skip-test NAME` (repeatable; `skip_test` in `.cargo/mutants.toml`)
+   leaves named tests out of the baseline and every mutant (libtest
+   `--skip` with `--exact`, `-test.skip`), and the run says which on stderr.
 2. **The code they drive.** The code under test is what a non-test build
    compiles: for Rust, the sources rustc's dep-info lists for `cargo check`
    (`toolchain::rust_code_files`). Test modules, inline or in their own
