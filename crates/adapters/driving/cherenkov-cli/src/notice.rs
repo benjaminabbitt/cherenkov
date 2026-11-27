@@ -157,6 +157,10 @@ pub enum Notice {
     /// The tests (`--skip-test`) left out of judging, so a reader knows it
     /// was narrowed.
     SkippedTests { tests: String },
+    /// Files a run created or changed in the checkout it ran in (`files`,
+    /// comma-separated): a mutant of path-building code can write beside
+    /// the source. Nothing was changed or removed.
+    CheckoutWritten { files: String },
 }
 
 impl Notice {
@@ -197,6 +201,7 @@ impl Diagnostic for Notice {
             Notice::WorkersSized { .. } => code!("notice-workers-sized"),
             Notice::InDiff { .. } => code!("notice-in-diff"),
             Notice::SkippedTests { .. } => code!("notice-skipped-tests"),
+            Notice::CheckoutWritten { .. } => code!("notice-checkout-written"),
         }
     }
 
@@ -271,6 +276,7 @@ impl Diagnostic for Notice {
             ],
             Notice::InDiff { skipped } => vec![("skipped", (*skipped).into())],
             Notice::SkippedTests { tests } => vec![("tests", tests.as_str().into())],
+            Notice::CheckoutWritten { files } => vec![("files", files.as_str().into())],
         }
     }
 }
@@ -403,6 +409,9 @@ pub fn diagnostic_samples() -> Vec<Box<dyn Diagnostic>> {
         Box::new(Notice::InDiff { skipped: 3 }),
         Box::new(Notice::SkippedTests {
             tests: "a, b".into(),
+        }),
+        Box::new(Notice::CheckoutWritten {
+            files: "a, b".into(),
         }),
     ]
 }

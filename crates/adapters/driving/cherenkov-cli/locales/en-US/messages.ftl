@@ -52,3 +52,4 @@ cherenkov-cli-notice-workers = { $cpus } workers (cores; available memory unknow
 cherenkov-cli-notice-workers-sized = { $jobs } workers ({ $cpus } cores; { $available_mib } MiB available, about { $per_worker_mib } MiB per worker)
 cherenkov-cli-notice-in-diff = --in-diff: { $skipped } not-called mutants not listed (counted above); changed-test mutants are judged by the changed tests alone, so a survivor means those tests do not catch it
 cherenkov-cli-notice-skipped-tests = tests left out of judging (--skip-test): { $tests }
+cherenkov-cli-notice-checkout-written = the run wrote to the checkout (left as they are): { $files }
