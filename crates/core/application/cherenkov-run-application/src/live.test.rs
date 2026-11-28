@@ -159,3 +159,74 @@ async fn test_the_programs_a_run_prepared_are_known_once_it_is_ready_and_not_bef
     live.dispatch(&request(&run, pages)).await.unwrap();
     assert_eq!(live.programs(&run).unwrap().len(), 1);
 }
+
+/// A reader that fails every dispatch.
+struct Failing;
+
+impl ProjectorHandler for Failing {
+    fn name(&self) -> &str {
+        "failing"
+    }
+
+    async fn dispatch(&self, _: &ProjectRequest) -> Result<ProjectResponse, CodedError> {
+        Err(CodedError::unhandled())
+    }
+}
+
+/// A finished run's whole stream, and the same run's stream before its end.
+async fn finished_run() -> (Uuid, Vec<EventPage>, Vec<EventPage>) {
+    let (run, _, core) = ready_run().await;
+    decide(&core, &run, "a").await;
+    decide(&core, &run, "b").await;
+    let all = core.events(&run_cover(&run), 0).await.unwrap();
+    let before = core.events(&run_cover(&run), 0).await.unwrap();
+    let before = before[..before.len() - 1].to_vec();
+    (run, all, before)
+}
+
+#[tokio::test]
+async fn test_a_run_has_not_ended_for_the_bus_until_every_watched_reader_has_handled_its_finish() {
+    let (run, all, before) = finished_run().await;
+    let live = LiveRuns::default();
+    let slow = crate::host::watching(&live, crate::testing::silent());
+    let quick = crate::host::watching(&live, crate::testing::silent());
+    live.dispatch(&request(&run, all.clone())).await.unwrap();
+    assert_eq!(live.status(&run), Some(RunStatus::Complete));
+    assert!(!live.ended(&run), "no reader has handled the finish");
+    quick.dispatch(&request(&run, all.clone())).await.unwrap();
+    assert!(!live.ended(&run), "one reader has not");
+    slow.dispatch(&request(&run, before)).await.unwrap();
+    assert!(!live.ended(&run), "the events before the finish are not it");
+    slow.dispatch(&request(&run, all)).await.unwrap();
+    assert!(live.ended(&run));
+}
+
+#[tokio::test]
+async fn test_a_reader_whose_handling_of_the_finish_failed_has_not_handled_it() {
+    let (run, all, _) = finished_run().await;
+    let live = LiveRuns::default();
+    let failing = crate::host::watching(&live, Box::new(Failing));
+    live.dispatch(&request(&run, all.clone())).await.unwrap();
+    assert!(failing.dispatch(&request(&run, all)).await.is_err());
+    assert!(!live.ended(&run));
+}
+
+#[tokio::test]
+async fn test_a_reader_that_handled_another_runs_finish_has_not_handled_this_one() {
+    let (run, all, _) = finished_run().await;
+    let (other, other_all, _) = finished_run().await;
+    let live = LiveRuns::default();
+    let reader = crate::host::watching(&live, crate::testing::silent());
+    live.dispatch(&request(&run, all)).await.unwrap();
+    reader.dispatch(&request(&other, other_all)).await.unwrap();
+    assert!(!live.ended(&run));
+}
+
+#[tokio::test]
+async fn test_a_run_with_no_watched_readers_has_ended_with_its_finish() {
+    let (run, all, _) = finished_run().await;
+    let live = LiveRuns::default();
+    assert!(!live.ended(&run), "not seen");
+    live.dispatch(&request(&run, all)).await.unwrap();
+    assert!(live.ended(&run));
+}

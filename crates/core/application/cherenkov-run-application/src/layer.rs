@@ -220,7 +220,7 @@ impl Progress {
     }
 
     /// Whether the bus is to go on, idle as it is. It is, until the run
-    /// ends (the live runs model has seen `RunFinished`): a delivery the bus
+    /// ends (the live runs model has seen `RunFinished` and every reader has): a delivery the bus
     /// holds for its retry is served again after its delay, and a step to
     /// come is committed by a handler that has finished. It is not once the
     /// bus has given up on a delivery (`given_up`: a dead letter, which the
@@ -229,7 +229,7 @@ impl Progress {
         if self.aborted.load(Ordering::SeqCst) || given_up {
             return false;
         }
-        !self.done.load(Ordering::SeqCst) || live.status(run).is_none()
+        !self.done.load(Ordering::SeqCst) || !live.ended(run)
     }
 }
 

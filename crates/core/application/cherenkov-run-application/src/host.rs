@@ -39,11 +39,12 @@ use angzarr_embedded::angzarr_router::hpb::{ProjectRequest, ProjectResponse};
 use angzarr_embedded::angzarr_router::router::DynProjectorHandler;
 use angzarr_embedded::v1::Uuid;
 use angzarr_embedded::{BusPolicy, ProjectorHandler};
+use cherenkov_run_domain::events::{RunEvent, run_event};
 use cherenkov_run_domain::{MUTANT_DOMAIN, RUN_DOMAIN};
 use cherenkov_run_ports::{Serving, Subscriptions};
 
 use crate::error::RunLayerError;
-use crate::live::LiveRuns;
+use crate::live::{Handled, LiveRuns};
 use crate::policies::{FanIn, FanOut};
 use crate::verdicts::{VerdictFile, VerdictProjection};
 
@@ -139,6 +140,49 @@ impl ProjectorHandler for OfRun {
     }
 }
 
+/// `reader`, watched: `live` does not call a run ended until the reader
+/// has handled the run's `RunFinished` (the handling completed, without
+/// failing). The bus asks whether to go on when every subscription has been
+/// idle since its last delivery, and a reader idle before the run's last
+/// commit counts, so the run's own model having seen the finish is not
+/// enough for a stop.
+pub fn watching(
+    live: &LiveRuns,
+    reader: Box<dyn DynProjectorHandler>,
+) -> Box<dyn DynProjectorHandler> {
+    Box::new(Watched {
+        handled: live.watch(),
+        reader,
+    })
+}
+
+/// A reader that records the finishes it has handled.
+struct Watched {
+    handled: Handled,
+    reader: Box<dyn DynProjectorHandler>,
+}
+
+impl ProjectorHandler for Watched {
+    fn name(&self) -> &str {
+        DynProjectorHandler::name(&*self.reader)
+    }
+
+    async fn dispatch(&self, request: &ProjectRequest) -> Result<ProjectResponse, CodedError> {
+        let response = DynProjectorHandler::dispatch(&*self.reader, request).await?;
+        if let Some(book) = request.events.as_ref()
+            && let Some(root) = book.cover.as_ref().and_then(|cover| cover.root.as_ref())
+            && book
+                .pages
+                .iter()
+                .filter_map(run_event)
+                .any(|event| matches!(event, RunEvent::RunFinished(_)))
+        {
+            self.handled.record(root);
+        }
+        Ok(response)
+    }
+}
+
 /// The runner and the instances it is subscribed with.
 pub type Runners = (Box<dyn DynProjectorHandler>, NonZeroUsize);
 
@@ -152,13 +196,13 @@ pub fn subscriptions(live: &LiveRuns, readers: Readers, runners: Option<Runners>
         verdicts,
         only,
     } = readers;
-    let output = scoped(&only, output);
+    let output = watching(live, scoped(&only, output));
     let mut subscriptions = vec![
         projector(RUN_DOMAIN, NonZeroUsize::MIN, Box::new(live.clone())).ephemeral(),
         projector(RUN_DOMAIN, NonZeroUsize::MIN, output).ephemeral(),
     ];
     if let Some(file) = verdicts {
-        let projection = scoped(&only, Box::new(VerdictProjection::new(file)));
+        let projection = watching(live, scoped(&only, Box::new(VerdictProjection::new(file))));
         subscriptions.push(projector(RUN_DOMAIN, NonZeroUsize::MIN, projection).ephemeral());
     }
     if let Some((runner, instances)) = runners {

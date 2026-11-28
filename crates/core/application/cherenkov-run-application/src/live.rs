@@ -74,6 +74,33 @@ impl Live {
 #[derive(Clone, Debug, Default)]
 pub struct LiveRuns {
     runs: Arc<Mutex<BTreeMap<String, Live>>>,
+    /// The readers the run is not over without: each has the runs whose
+    /// `RunFinished` it has handled.
+    watched: Arc<Mutex<Vec<Handled>>>,
+}
+
+/// The runs whose `RunFinished` one reader has handled, as its wrapper
+/// ([`crate::host::watching`]) records them and [`LiveRuns::ended`] asks.
+#[derive(Clone, Debug, Default)]
+pub struct Handled {
+    finished: Arc<Mutex<BTreeSet<String>>>,
+}
+
+impl Handled {
+    /// The reader has handled `run`'s `RunFinished`.
+    pub(crate) fn record(&self, run: &Uuid) {
+        self.finished
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(run.to_string());
+    }
+
+    fn has(&self, run: &Uuid) -> bool {
+        self.finished
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(&run.to_string())
+    }
 }
 
 impl LiveRuns {
@@ -84,6 +111,29 @@ impl LiveRuns {
     /// How `run` ended; none while it is live, and for a run not seen.
     pub fn status(&self, run: &Uuid) -> Option<RunStatus> {
         self.lock().get(&run.to_string())?.status
+    }
+
+    /// Register a reader the run is not over without.
+    pub(crate) fn watch(&self) -> Handled {
+        let handled = Handled::default();
+        self.watched
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(handled.clone());
+        handled
+    }
+
+    /// Whether `run` is over for the bus: it has finished and every reader
+    /// watched has handled its `RunFinished`. The bus may be idle, and
+    /// ask, before a reader has been handed the last commit.
+    pub fn ended(&self, run: &Uuid) -> bool {
+        self.status(run).is_some()
+            && self
+                .watched
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .iter()
+                .all(|handled| handled.has(run))
     }
 
     /// How many of `run`'s mutants are planned and not decided: what it

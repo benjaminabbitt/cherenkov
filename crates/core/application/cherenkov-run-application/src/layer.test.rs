@@ -732,3 +732,50 @@ fn test_a_run_that_has_failed_ends_while_another_program_is_still_preparing() {
     );
     assert!(matches!(ran.status, Err(RunLayerError::Workers { .. })));
 }
+
+/// What the bus is asked, idle as it is, when the run model has seen the
+/// run finish and a reader has not yet been handed the last commit: it goes
+/// on, and stops once the reader has handled it. (The bus may ask in the
+/// gap, for a reader that went idle before the commit is quiet.)
+#[tokio::test]
+async fn test_the_bus_goes_on_while_a_reader_has_not_handled_the_runs_finish() {
+    use angzarr_embedded::ProjectorHandler;
+    use angzarr_embedded::angzarr_router::hpb::ProjectRequest;
+    use angzarr_embedded::v1::EventBook;
+
+    let core = Arc::new(new_core().await);
+    let run_id = new_run();
+    let runs = Arc::new(AtomicUsize::new(0));
+    let status = super::run(
+        &core,
+        run_id.clone(),
+        &plans(),
+        &settings(),
+        Some(workers(&runs)),
+        Readers::printing(crate::testing::silent()),
+    )
+    .await;
+    assert_eq!(status, Ok(Some(RunStatus::Complete)));
+    let pages = core.events(&run_cover(&run_id), 0).await.unwrap();
+    let request = ProjectRequest {
+        events: Some(EventBook {
+            cover: Some(run_cover(&run_id)),
+            next_sequence: u64::try_from(pages.len()).unwrap(),
+            pages,
+            snapshot: None,
+        }),
+    };
+    let live = LiveRuns::default();
+    let reader = host::watching(&live, crate::testing::silent());
+    live.dispatch(&request).await.unwrap();
+    let progress = Progress::default();
+    progress.prepared::<()>(&Ok(()));
+    assert!(progress.more(&live, &run_id, false), "reader behind");
+    angzarr_embedded::angzarr_router::router::DynProjectorHandler::dispatch(&*reader, &request)
+        .await
+        .unwrap();
+    assert!(
+        !progress.more(&live, &run_id, false),
+        "every reader caught up"
+    );
+}
