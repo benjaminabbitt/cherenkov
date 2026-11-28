@@ -52,6 +52,7 @@ const UNSUPPORTED: &[(&str, &[&str])] = &[
         &[
             "cherenkov-exec-dap-unpatchable-conditional-jumps",
             "cherenkov-exec-dap-unpatchable-arithmetic-instructions",
+            "cherenkov-exec-dap-unpatchable-no-code-at",
         ],
     ),
     (

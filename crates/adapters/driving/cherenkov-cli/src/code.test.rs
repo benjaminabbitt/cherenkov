@@ -82,7 +82,7 @@ fn unsupported() -> Vec<(&'static str, Report)> {
         ("no-patch-rule", no_rule()),
         ("no-patch-rule", leaf("unpatchable-condition-mismatch")),
         ("other", leaf("something-new")),
-        ("other", leaf("unpatchable-no-code-at")),
+        ("no-breakpoint-site", leaf("unpatchable-no-code-at")),
     ]
 }
 

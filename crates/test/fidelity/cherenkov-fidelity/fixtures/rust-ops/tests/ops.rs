@@ -711,3 +711,24 @@ fn test_above_compares_floats() {
 fn test_guarded_true_applies_the_assignment() {
     assert_eq!(guarded(true), 3);
 }
+
+#[test]
+fn test_urlish_builds_the_url_of_each_class_and_declines_the_rest() {
+    assert_eq!(urlish(0, "h", "/p").as_deref(), Some("https://h/p"));
+    assert_eq!(urlish(1, "h", "/p").as_deref(), Some("file:///p"));
+    assert_eq!(urlish(2, "h", "/p"), None);
+}
+
+#[test]
+fn test_ordered_sorts_only_the_keys_that_ask_for_it() {
+    assert_eq!(ordered("up", &[3, 1, 2]), vec![1, 2, 3]);
+    assert_eq!(ordered("sorted", &[2, 1]), vec![1, 2]);
+    assert_eq!(ordered("other", &[3, 1]), vec![3, 1]);
+}
+
+#[test]
+fn test_bound_hands_out_the_list() {
+    let mut v = Some(vec![1]);
+    bound(&mut v).push(2);
+    assert_eq!(v, Some(vec![1, 2]));
+}

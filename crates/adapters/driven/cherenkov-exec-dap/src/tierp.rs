@@ -466,7 +466,9 @@ fn derive_in_context(
     let mut ours: Vec<&Insn> = insns.iter().filter(|i| i.file == file).collect();
     ours.sort_by_key(|i| i.pc);
     match (&plan.action, &plan.edit) {
-        (Action::Redirect { from, to }, Edit::DeleteMatch) => redirect_arm(from, to, &ours, isa),
+        (Action::Redirect { from, to }, Edit::DeleteMatch) => {
+            redirect_arm(plan, from, to, &ours, insns, isa)
+        }
         (
             Action::EvalBranch {
                 if_true: Target::BlockStart(then),
@@ -548,23 +550,29 @@ fn is_arithmetic(t: Token) -> bool {
     )
 }
 
-/// A deleted match arm: its body's first instructions become a jump to the
-/// catch-all arm's body (positions need the line table's columns; arms
-/// share lines with their patterns).
-fn redirect_arm(from: &Span, to: &Span, ours: &[&Insn], isa: &Isa) -> Result<Patch, Unpatchable> {
-    let at = |pos: &Pos| {
-        ours.iter()
-            .copied()
-            .filter(|i| i.column != 0 && (i.line, i.column) == (pos.line, pos.col))
-            .min_by_key(|i| i.pc)
-    };
+/// A deleted match arm: the first instruction of its body becomes a jump
+/// to the first instruction of the catch-all arm's body. A body is found by
+/// its span, never by the exact position of its first character: rustc
+/// gives a body its first row at the first expression that makes code (the
+/// `None` of `return None`, the first statement of a block).
+fn redirect_arm(
+    plan: &MutantPlan,
+    from: &Span,
+    to: &Span,
+    ours: &[&Insn],
+    all: &[Insn],
+    isa: &Isa,
+) -> Result<Patch, Unpatchable> {
     let none = |pos: &Pos| Unpatchable::NoCodeAt {
         line: pos.line,
         col: pos.col,
     };
-    let start = at(&from.start).ok_or_else(|| none(&from.start))?;
-    let target = at(&to.start).ok_or_else(|| none(&to.start))?;
-    // Room: the run of instructions from the body's start in its row.
+    let start = body_entry(from, ours)
+        .or_else(|| binding_entry(&plan.site, from, ours))
+        .ok_or_else(|| none(&from.start))?;
+    let target = body_entry(to, ours).ok_or_else(|| none(&to.start))?;
+    let target = block_start(target.pc, all);
+    // Room: the run of instructions from the entry in its row.
     let mut original = Vec::new();
     for i in ours.iter().filter(|i| i.pc >= start.pc) {
         if i.pc != start.pc + original.len() as u64
@@ -575,11 +583,81 @@ fn redirect_arm(from: &Span, to: &Span, ours: &[&Insn], isa: &Isa) -> Result<Pat
         original.extend_from_slice(&i.bytes);
     }
     let mut bytes = isa
-        .encode_jmp(start.pc, target.pc, original.len())
-        .ok_or(Unpatchable::UnknownDestination(target.pc))?;
+        .encode_jmp(start.pc, target, original.len())
+        .ok_or(Unpatchable::UnknownDestination(target))?;
     // Past the jump, the body's old bytes are never executed.
     bytes.extend_from_slice(&original[bytes.len()..]);
     Ok(Patch::single(start.pc, original, bytes))
+}
+
+/// Where the basic block holding the instruction at `pc` is entered: the
+/// code before a body's first row in its block (the out-pointer a `return`
+/// reloads, the operands a value is built from) is attributed to the rows
+/// before it, and a jump to the body's first row would skip it. A block
+/// starts at the nearest address downward that is a jump's destination, or
+/// follows an instruction that ends a block.
+fn block_start(pc: u64, all: &[Insn]) -> u64 {
+    let mut sorted: Vec<&Insn> = all.iter().collect();
+    sorted.sort_by_key(|i| i.pc);
+    let decoded: Vec<Option<x86::Instr>> =
+        sorted.iter().map(|i| x86::decode(i.pc, &i.bytes)).collect();
+    let targets: Vec<u64> = decoded
+        .iter()
+        .flatten()
+        .filter_map(|d| d.jump().map(|j| j.target))
+        .collect();
+    let Some(mut k) = sorted.iter().position(|i| i.pc == pc) else {
+        return pc;
+    };
+    while k > 0 && !targets.contains(&sorted[k].pc) {
+        let before = &decoded[k - 1];
+        let adjoins = sorted[k - 1].pc + sorted[k - 1].bytes.len() as u64 == sorted[k].pc;
+        if !adjoins || before.as_ref().is_none_or(x86::Instr::ends_block) {
+            break;
+        }
+        k -= 1;
+    }
+    sorted[k].pc
+}
+
+/// The instructions of `ours` that have a column and lie in `span`.
+fn in_span<'a>(span: &Span, ours: &[&'a Insn]) -> Vec<&'a Insn> {
+    let (from, to) = (
+        (span.start.line, span.start.col),
+        (span.end.line, span.end.col),
+    );
+    ours.iter()
+        .copied()
+        .filter(|i| i.column != 0 && (from..to).contains(&(i.line, i.column)))
+        .collect()
+}
+
+/// Where the code of an arm body (or any span) is entered: its
+/// lowest-address instruction.
+fn body_entry<'a>(body: &Span, ours: &[&'a Insn]) -> Option<&'a Insn> {
+    in_span(body, ours).into_iter().min_by_key(|i| i.pc)
+}
+
+/// Where an arm whose body makes no code (it only names a value the
+/// pattern bound) is entered: the first instruction of its pattern, when
+/// the pattern's code never jumps conditionally (a test of the value that
+/// matched is the match's, and runs before the arm is entered).
+fn binding_entry<'a>(arm: &Span, body: &Span, ours: &[&'a Insn]) -> Option<&'a Insn> {
+    let pattern = Span {
+        start: arm.start,
+        end: body.start,
+    };
+    let code = in_span(&pattern, ours);
+    if code.iter().any(|i| !runs_straight(i)) {
+        return None;
+    }
+    code.into_iter().min_by_key(|i| i.pc)
+}
+
+/// Whether an instruction decodes and leaves by falling through, a call or
+/// an unconditional jump, never by a choice (a conditional or indirect jump).
+fn runs_straight(i: &Insn) -> bool {
+    x86::decode(i.pc, &i.bytes).is_some_and(|d| !d.branches_by_choice())
 }
 
 /// A condition replaced by the constant `value`: the jump always or never

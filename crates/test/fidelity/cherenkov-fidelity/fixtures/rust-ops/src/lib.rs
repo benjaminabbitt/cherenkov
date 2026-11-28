@@ -740,3 +740,34 @@ pub fn above(a: f64, b: f64) -> i64 {
 pub fn same_len(v: &Vec<u32>, w: &Vec<u32>) -> i64 {
     if v.len() == w.len() { 1 } else { 2 }
 }
+
+// Deleted match arms, as deps' `RemoteRef::parse`, `sorted` and
+// `remotes_mut` have them: a catch-all whose body's first character has no
+// code (`return None` makes its code at `None`), a block body whose first
+// code is on a later line, a body that is only a name the pattern bound.
+pub fn urlish(class: u8, host: &str, path: &str) -> Option<String> {
+    let url = match class {
+        0 => format!("https://{host}{path}"),
+        1 => format!("file://{path}"),
+        _ => return None,
+    };
+    Some(url)
+}
+
+pub fn ordered(key: &str, v: &[u32]) -> Vec<u32> {
+    match (key, v) {
+        ("up" | "sorted", items) => {
+            let mut out = items.to_vec();
+            out.sort();
+            out
+        }
+        _ => v.to_vec(),
+    }
+}
+
+pub fn bound(v: &mut Option<Vec<u32>>) -> &mut Vec<u32> {
+    match v {
+        Some(entries) => entries,
+        _ => unreachable!("a list is there"),
+    }
+}

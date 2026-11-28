@@ -508,3 +508,35 @@ fn test_trivial_values_without_a_shape_are_declined_by_tier_p_and_stay_faithful(
         );
     }
 }
+
+/// Deleted match arms whose body or catch-all has no code at its first
+/// character, or no code at all: each must run on tier P, and give the
+/// verdict of the source build.
+const ARM_DELETIONS: &[(&str, &str)] = &[
+    ("urlish", "match-arm/delete"),
+    ("ordered", "match-arm/delete"),
+    ("bound", "match-arm/delete"),
+];
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_deleted_match_arms_run_on_tier_p_and_are_faithful_to_their_source() {
+    let checked = check_rust_tiers(&fixture("rust-ops"), "cargo-mutants");
+    for &(function, mutation) in ARM_DELETIONS {
+        let found: Vec<_> = checked
+            .iter()
+            .filter(|(p, _, _)| {
+                p.function.as_deref() == Some(function) && p.mutation == Some(mutation)
+            })
+            .collect();
+        assert!(!found.is_empty(), "no {mutation} in {function}");
+        for (plan, c, tier) in found {
+            assert_eq!(
+                (c, tier),
+                (&Checked::Judged(Judgement::Faithful), &Some(Tier::P)),
+                "{}",
+                plan.describe()
+            );
+        }
+    }
+}

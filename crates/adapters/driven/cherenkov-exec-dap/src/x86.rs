@@ -54,6 +54,24 @@ impl Instr {
         )
     }
 
+    /// Whether control never simply goes on to the next instruction after
+    /// this one: a jump, a return, a trap.
+    pub fn ends_block(&self) -> bool {
+        !matches!(
+            self.inner.flow_control(),
+            FlowControl::Next | FlowControl::Call | FlowControl::IndirectCall
+        )
+    }
+
+    /// Whether the instruction chooses where to go next: a conditional or
+    /// an indirect jump.
+    pub fn branches_by_choice(&self) -> bool {
+        matches!(
+            self.inner.flow_control(),
+            FlowControl::ConditionalBranch | FlowControl::IndirectBranch
+        )
+    }
+
     pub fn jump(&self) -> Option<Jump> {
         let conditional = self.inner.is_jcc_short_or_near();
         if !(conditional || self.inner.is_jmp_short_or_near()) {
