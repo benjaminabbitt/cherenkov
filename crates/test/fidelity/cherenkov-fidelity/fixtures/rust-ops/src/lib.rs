@@ -782,3 +782,17 @@ pub fn unlisted(configured: &[(String, u8)], built_in: &[&str]) -> Vec<String> {
         .map(|label| label.to_string())
         .collect()
 }
+
+// A guarded arm with an empty body (deps' `check`): the guard decides
+// between going on past the match and the next arm, with no code in the arm
+// to land on.
+pub fn kinds_ok(kinds: &[Option<&str>], built_in: &[&str]) -> Result<(), String> {
+    for kind in kinds {
+        match kind {
+            None => {}
+            Some(k) if k.is_empty() || built_in.contains(k) => {}
+            Some(k) => return Err(k.to_string()),
+        }
+    }
+    Ok(())
+}

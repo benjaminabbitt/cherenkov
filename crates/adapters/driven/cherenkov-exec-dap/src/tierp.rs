@@ -1195,17 +1195,64 @@ pub fn branch_exits(
         })
     };
     let (yes, no): (Vec<u64>, Vec<u64>) = exits.iter().partition(|&&pc| enters_then(pc));
-    let ([if_true], [if_false]) = (&yes[..], &no[..]) else {
-        return Err(Unpatchable::UnsupportedEdit(format!(
-            "condition code with exits {:x?} into the then-target and {:x?} elsewhere",
-            yes, no
-        )));
+    let at = |pc: u64| index(pc).and_then(position);
+    let (if_true, if_false) = match (&yes[..], &no[..]) {
+        ([t], [f]) => (*t, *f),
+        ([], [_, _]) if arm.is_some_and(|a| empty_body(then, a, &ours)) => arm
+            .and_then(|a| past_the_arm(&no, a, at))
+            .ok_or_else(|| refused_exits(&yes, &no))?,
+        _ => return Err(refused_exits(&yes, &no)),
     };
     Ok(BranchExits {
         stop: ours[stop].pc,
-        if_true: *if_true,
-        if_false: *if_false,
+        if_true,
+        if_false,
     })
+}
+
+fn refused_exits(yes: &[u64], no: &[u64]) -> Unpatchable {
+    Unpatchable::UnsupportedEdit(format!(
+        "condition code with exits {yes:x?} into the then-target and {no:x?} elsewhere"
+    ))
+}
+
+/// Whether a guarded arm's body makes no code (`=> {}`): nothing positioned
+/// in the body or the arm after its guard is entered by either exit.
+fn empty_body(then: &Span, arm: &Span, ours: &[&Insn]) -> bool {
+    !ours.iter().any(|i| {
+        i.column != 0
+            && within(
+                i,
+                (then.start.line, then.start.col),
+                (arm.end.line, arm.end.col),
+            )
+    })
+}
+
+/// The two exits of a guard whose arm has no code to land on, as
+/// `(if_true, if_false)`: the guard failing falls to the next arm, which is
+/// positioned just past this arm's end; the guard holding goes on past the
+/// match. `None` when no exit is past the arm, or one is not placed.
+fn past_the_arm(
+    exits: &[u64],
+    arm: &Span,
+    at: impl Fn(u64) -> Option<(u32, u32)>,
+) -> Option<(u64, u64)> {
+    let end = (arm.end.line, arm.end.col);
+    let placed: Vec<(u64, (u32, u32))> = exits
+        .iter()
+        .map(|&pc| at(pc).map(|p| (pc, p)))
+        .collect::<Option<_>>()?;
+    let next_arm = placed
+        .iter()
+        .filter(|(_, p)| *p > end)
+        .min_by_key(|(_, p)| *p)?
+        .0;
+    let other: Vec<u64> = exits.iter().copied().filter(|&pc| pc != next_arm).collect();
+    let [if_true] = other[..] else {
+        return None;
+    };
+    Some((if_true, next_arm))
 }
 
 /// A constant stored to a stack slot (`[rsp+disp]`, `size` bytes): how a

@@ -739,3 +739,10 @@ fn test_unlisted_keeps_the_built_ins_that_are_not_configured() {
     assert_eq!(unlisted(&configured, &["a", "b", "c"]), vec!["a", "c"]);
     assert_eq!(unlisted(&[], &["a"]), vec!["a"]);
 }
+
+#[test]
+fn test_kinds_ok_accepts_empty_and_built_in_kinds_and_names_the_rest() {
+    assert_eq!(kinds_ok(&[None, Some(""), Some("git")], &["git"]), Ok(()));
+    assert_eq!(kinds_ok(&[Some("git"), Some("odd")], &["git"]), Err("odd".to_string()));
+    assert_eq!(kinds_ok(&[Some("odd")], &["git"]), Err("odd".to_string()));
+}

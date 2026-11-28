@@ -510,13 +510,17 @@ fn test_trivial_values_without_a_shape_are_declined_by_tier_p_and_stay_faithful(
 }
 
 /// A mutation in a closure that has another closure inside it on its line,
-/// or code of the function around it in its operands: each must run on tier
-/// P, and give the verdict of the source build.
-const NESTED_CLOSURES: &[(&str, &str)] = &[("unlisted", "unary/delete-not")];
+/// and a match guard whose arm has an empty body: each must give the verdict
+/// of the source build.
+const NESTED_CLOSURES: &[(&str, &str)] = &[
+    ("unlisted", "unary/delete-not"),
+    ("kinds_ok", "match-guard/true"),
+    ("kinds_ok", "match-guard/false"),
+];
 
 #[test]
 #[ignore = "slow: needs gdb and cargo"]
-fn test_a_mutation_in_a_closure_with_a_closure_inside_is_faithful_to_its_source() {
+fn test_nested_closures_and_guards_of_empty_arms_are_faithful_to_their_source() {
     let checked = check_rust_tiers(&fixture("rust-ops"), "cargo-mutants");
     for &(function, mutation) in NESTED_CLOSURES {
         let found: Vec<_> = checked
