@@ -1356,7 +1356,7 @@ pub fn at_site_all(candidates: &[&Vec<Insn>], site: &Span) -> Vec<usize> {
 }
 
 /// How many instructions with a column are positioned inside `site`.
-fn code_inside(insns: &[Insn], site: &Span) -> usize {
+pub(crate) fn code_inside(insns: &[Insn], site: &Span) -> usize {
     let (from, to) = (
         (site.start.line, site.start.col),
         (site.end.line, site.end.col),

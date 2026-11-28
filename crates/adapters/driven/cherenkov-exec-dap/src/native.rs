@@ -546,21 +546,24 @@ fn calls_program(built: &crate::layouts::Built) -> bool {
 
 /// A body replacement in an `async fn`.
 /// The lines to ask for the functions that hold a plan's site, as
-/// `(line, last)` for [`NativeSession::function_codes`]. An async fn's
+/// `(line, last)` for [`NativeSession::function_codes`], and the site's own
+/// line when it is a later one than the statement's. An async fn's
 /// signature has only the code that makes its future; its body's first line
-/// has the poll's. Otherwise the plan's statement line, and the site's own
-/// when it is on a later one: a closure in a multi-line expression has no
-/// code on the statement's first line.
-fn locate_lines(async_fn: bool, stop_line: u32, site: &Span) -> Vec<(u32, u32)> {
+/// has the poll's.
+fn locate_lines(async_fn: bool, stop_line: u32, site: &Span) -> ((u32, u32), Option<(u32, u32)>) {
     let last = site.end.line;
     if async_fn {
-        return vec![(site.start.line, last)];
+        return ((site.start.line, last), None);
     }
-    let mut lines = vec![(stop_line, last)];
-    if site.start.line != stop_line {
-        lines.push((site.start.line, last));
-    }
-    lines
+    let later = (site.start.line != stop_line).then_some((site.start.line, last));
+    ((stop_line, last), later)
+}
+
+/// Whether any of the functions has code positioned inside `span`.
+fn holds_site(codes: &[FunctionCode], span: &Span) -> bool {
+    codes
+        .iter()
+        .any(|c| crate::tierp::code_inside(&c.insns, span) > 0)
 }
 
 /// Where a function's code starts: its lowest address.
@@ -1113,11 +1116,21 @@ impl<L: Launcher> TierPExecutor<L> {
         session: &mut L::Session,
         plan: &MutantPlan,
     ) -> Result<Vec<FunctionCode>, ExecError> {
-        let mut candidates: Vec<FunctionCode> = Vec::new();
-        for (line, last) in locate_lines(is_async_fn(plan), plan.stop_at.line, &plan.site) {
-            for code in session.function_codes(&self.source(plan), line, last)? {
-                let code = self.with_columns(code);
-                // The same function found by another line is kept once.
+        let mut span = plan.site;
+        for o in &plan.operands {
+            span.start = span.start.min(o.start);
+            span.end = span.end.max(o.end);
+        }
+        let (first, later) = locate_lines(is_async_fn(plan), plan.stop_at.line, &plan.site);
+        let source = self.source(plan);
+        let mut candidates = self.codes_at(session, &source, first)?;
+        // A closure in a multi-line expression has no code on the
+        // statement's first line: where nothing found has code in the site,
+        // the functions on the site's own line are asked for too.
+        if let Some(line) = later
+            && !holds_site(&candidates, &span)
+        {
+            for code in self.codes_at(session, &source, line)? {
                 if !candidates.iter().any(|c| entry_of(c) == entry_of(&code)) {
                     candidates.push(code);
                 }
@@ -1128,11 +1141,6 @@ impl<L: Launcher> TierPExecutor<L> {
         if is_async_fn(plan) && candidates.iter().any(|c| self.future_poll(c)) {
             candidates.retain(|c| self.future_poll(c));
         }
-        let mut span = plan.site;
-        for o in &plan.operands {
-            span.start = span.start.min(o.start);
-            span.end = span.end.max(o.end);
-        }
         let insns: Vec<&Vec<Insn>> = candidates.iter().map(|c| &c.insns).collect();
         let keep = crate::tierp::at_site_all(&insns, &span);
         let mut k = 0;
@@ -1141,6 +1149,20 @@ impl<L: Launcher> TierPExecutor<L> {
             keep.contains(&(k - 1))
         });
         Ok(candidates)
+    }
+
+    /// The functions with code on `(line, last)`, with their columns.
+    fn codes_at(
+        &self,
+        session: &mut L::Session,
+        source: &Path,
+        (line, last): (u32, u32),
+    ) -> Result<Vec<FunctionCode>, ExecError> {
+        Ok(session
+            .function_codes(source, line, last)?
+            .into_iter()
+            .map(|c| self.with_columns(c))
+            .collect())
     }
 
     /// Whether the function is a future's poll.
@@ -1688,19 +1710,43 @@ mod tests {
         // A `!` in a closure inside a multi-line expression statement: the
         // statement's line has the function, the site's line the closure.
         let site = span((270, 14), (270, 15));
-        assert_eq!(locate_lines(false, 264, &site), [(264, 270), (270, 270)]);
+        assert_eq!(
+            locate_lines(false, 264, &site),
+            ((264, 270), Some((270, 270)))
+        );
     }
 
     #[test]
     fn test_a_site_on_its_statements_line_is_located_by_that_line_only() {
         let site = span((264, 14), (265, 15));
-        assert_eq!(locate_lines(false, 264, &site), [(264, 265)]);
+        assert_eq!(locate_lines(false, 264, &site), ((264, 265), None));
     }
 
     #[test]
     fn test_an_async_fn_is_located_by_the_line_of_its_site() {
         let site = span((12, 5), (12, 9));
-        assert_eq!(locate_lines(true, 10, &site), [(12, 12)]);
+        assert_eq!(locate_lines(true, 10, &site), ((12, 12), None));
+    }
+
+    #[test]
+    fn test_a_function_with_code_in_the_site_holds_it_and_one_without_does_not() {
+        let at = |line, column| Insn {
+            column,
+            ..insn(0x10, line, column)
+        };
+        let function = FunctionCode {
+            file: "a.rs".into(),
+            insns: vec![at(9, 12), at(9, 64)],
+        };
+        let site = span((9, 5), (9, 73));
+        assert!(holds_site(std::slice::from_ref(&function), &site));
+        // The code is on another line, or at no column.
+        let elsewhere = FunctionCode {
+            file: "a.rs".into(),
+            insns: vec![at(8, 12), at(9, 0)],
+        };
+        assert!(!holds_site(&[elsewhere], &site));
+        assert!(!holds_site(&[], &site));
     }
 
     fn budget_of(secs: u64) -> Budget {
