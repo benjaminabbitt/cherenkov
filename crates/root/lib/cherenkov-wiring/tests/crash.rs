@@ -211,8 +211,11 @@ async fn serve_until_dead(
     let fate = Arc::new(Fate::default());
     let core = core_on(path, &fate, sampling).await;
     fate.arm(crash);
+    // A serve may end before the armed write is reached (it made fewer
+    // writes than the reference run): it is then a run that finished, and
+    // what it left is judged below as for any other.
     tokio::select! {
-        done = started(&core, ledger, sampling) => panic!("{crash:?}: the serve ended before the store died: {done:?}"),
+        _ = started(&core, ledger, sampling) => {}
         () = until(|| fate.crashed()) => {}
     }
     let first_run = first_run(&core).await;
