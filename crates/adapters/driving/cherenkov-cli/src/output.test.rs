@@ -542,50 +542,74 @@ fn says(format: Format, note: &Note) -> Say {
     Say::to(format, std::sync::Arc::new(catalog), note.clone())
 }
 
-fn verdicts_of(kept: &Gathered) -> Vec<Verdict> {
-    kept.0
-        .lock()
-        .unwrap()
-        .iter()
-        .filter_map(|d| match &d.event {
-            Some(Event::Decided(d)) => Some(d.verdict()),
-            _ => None,
-        })
-        .collect()
+/// A decided mutant of `verdict` with the id `id`.
+fn mutant_named(verdict: Verdict, id: &str) -> Document {
+    mutant(verdict, |d| d.mutant.as_mut().unwrap().id = id.to_string())
 }
 
+/// The ids of the diff's own mutants.
+fn own(ids: &[&str]) -> std::collections::BTreeSet<String> {
+    ids.iter().map(|s| (*s).to_string()).collect()
+}
+
+/// Four mutants (`k` killed, `x` not called by an expansion, `m` not called
+/// on the diff's own lines, `s` survived), then the run's end.
 fn feed(sink: &mut dyn Sink) {
-    sink.document(&mutant(Verdict::Killed, |_| {}));
-    sink.document(&mutant(Verdict::NotCalled, |_| {}));
-    sink.document(&mutant(Verdict::Survived, |_| {}));
+    sink.document(&mutant_named(Verdict::Killed, "k"));
+    sink.document(&mutant_named(Verdict::NotCalled, "x"));
+    sink.document(&mutant_named(Verdict::NotCalled, "m"));
+    sink.document(&mutant_named(Verdict::Survived, "s"));
     sink.document(&Document {
         event: Some(Event::Finished(finished(
-            &[("killed", 1), ("not-called", 1), ("survived", 1)],
+            &[("killed", 1), ("not-called", 2), ("survived", 1)],
             &[],
         ))),
     });
 }
 
+fn ids_of(kept: &Gathered) -> Vec<String> {
+    kept.0
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|d| match &d.event {
+            Some(Event::Decided(d)) => Some(d.mutant.as_ref().unwrap().id.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 #[test]
-fn test_an_in_diff_run_lists_no_not_called_mutant_and_the_run_finished_count_is_intact() {
+fn test_an_in_diff_run_lists_the_not_called_mutant_of_the_diffs_own_lines_and_not_the_expansions() {
     let kept = Gathered::default();
-    let mut sink = InDiff::new(Box::new(kept.clone()), says(Format::Json, &Note::default()));
+    let mut sink = InDiff::new(
+        Box::new(kept.clone()),
+        says(Format::Json, &Note::default()),
+        own(&["k", "m", "s"]),
+    );
     feed(&mut sink);
-    assert_eq!(verdicts_of(&kept), [Verdict::Killed, Verdict::Survived]);
+    assert_eq!(ids_of(&kept), ["k", "m", "s"]);
     let docs = kept.0.lock().unwrap();
     let Some(Event::Finished(done)) = &docs.last().unwrap().event else {
         panic!("no run.finished");
     };
-    assert_eq!(done.counts.get("not-called"), Some(&1));
+    assert_eq!(done.counts.get("not-called"), Some(&2));
 }
 
 #[test]
 fn test_a_text_in_diff_run_says_who_judged_changed_test_mutants_and_how_many_were_not_listed() {
     let note = Note::default();
-    let mut sink = InDiff::new(Box::new(Gathered::default()), says(Format::Text, &note));
+    let mut sink = InDiff::new(
+        Box::new(Gathered::default()),
+        says(Format::Text, &note),
+        own(&["m"]),
+    );
     feed(&mut sink);
     let text = String::from_utf8(note.0.lock().unwrap().clone()).unwrap();
-    assert!(text.contains("1 not-called mutants not listed"), "{text}");
+    assert!(
+        text.contains("1 not-called mutants of the changed tests' expansion not listed"),
+        "{text}"
+    );
     assert!(
         text.contains("changed-test mutants are judged by the changed tests alone"),
         "{text}"
@@ -595,7 +619,11 @@ fn test_a_text_in_diff_run_says_who_judged_changed_test_mutants_and_how_many_wer
 #[test]
 fn test_a_json_in_diff_run_writes_no_note() {
     let note = Note::default();
-    let mut sink = InDiff::new(Box::new(Gathered::default()), says(Format::Json, &note));
+    let mut sink = InDiff::new(
+        Box::new(Gathered::default()),
+        says(Format::Json, &note),
+        own(&[]),
+    );
     feed(&mut sink);
     assert!(note.0.lock().unwrap().is_empty());
 }
@@ -618,7 +646,8 @@ fn test_the_verdict_file_directory_of_a_test_that_panics_is_removed() {
 }
 
 #[test]
-fn test_the_verdict_file_of_an_in_diff_run_has_no_not_called_line() {
+fn test_the_verdict_file_of_an_in_diff_run_keeps_the_diffs_own_not_called_line_and_drops_the_expansions()
+ {
     let dir = verdict_file_dir();
     let line = |id: &str, verdict: Verdict| VerdictLine {
         id: id.to_string(),
@@ -628,19 +657,21 @@ fn test_the_verdict_file_of_an_in_diff_run_has_no_not_called_line() {
     let lines = [
         line("a", Verdict::Killed),
         line("b", Verdict::NotCalled),
-        line("c", Verdict::Survived),
+        line("c", Verdict::NotCalled),
+        line("d", Verdict::Survived),
     ];
     let all = dir.join("all.jsonl");
     JsonVerdictFile::new(all.clone()).write(&lines).unwrap();
-    assert_eq!(std::fs::read_to_string(&all).unwrap().lines().count(), 3);
+    assert_eq!(std::fs::read_to_string(&all).unwrap().lines().count(), 4);
     let some = dir.join("some.jsonl");
     JsonVerdictFile::new(some.clone())
-        .without_not_called()
+        .without_expansions_not_called(own(&["a", "c", "d"]))
         .write(&lines)
         .unwrap();
     let text = std::fs::read_to_string(&some).unwrap();
-    assert_eq!(text.lines().count(), 2, "{text}");
+    assert_eq!(text.lines().count(), 3, "{text}");
     assert!(!text.contains("\"b\""), "{text}");
+    assert!(text.contains("\"c\""), "{text}");
 }
 
 fn started_with(skipped: &[&str]) -> Document {

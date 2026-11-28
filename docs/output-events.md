@@ -144,9 +144,10 @@ cargo-mutants does, and keeps the mutants whose span touches a line the
 diff adds. Paths in the diff are from the repository's root. On a Rust
 workspace only the test programs of the packages that judge those mutants
 are built and recorded (`docs/test-scope.md`). In such a run no
-`mutant.decided` line, and no verdict-file line, is written for a mutant
-that was `not-called`; `run.finished`'s `counts["not-called"]` still says how
-many there were.
+`mutant.decided` line, and no verdict-file line, is written for a `not-called`
+mutant that only the changed-test expansion added; one on the diff's own
+lines is written (changed code no test reaches). `run.finished`'s
+`counts["not-called"]` counts both.
 
 ## Text mode
 The same events rendered for a person on stdout, one line per mutant as

@@ -135,7 +135,10 @@ struct PlanArgs {
     #[arg(long)]
     names: bool,
     /// Judge only the lines a unified diff adds (as cargo-mutants'
-    /// `--in-diff`): a mutant stays when its span touches one.
+    /// `--in-diff`): a mutant stays when its span touches one. A diff that
+    /// changes tests also plans every function of their packages, judged by
+    /// the changed tests alone (a run lists those not-called mutants only
+    /// as a count).
     #[arg(long = "in-diff", value_name = "FILE")]
     in_diff: Option<PathBuf>,
 }
@@ -211,7 +214,10 @@ struct RunArgs {
     #[arg(long)]
     ephemeral: bool,
     /// Judge only the lines a unified diff adds (as cargo-mutants'
-    /// `--in-diff`): a mutant stays when its span touches one.
+    /// `--in-diff`): a mutant stays when its span touches one. A diff that
+    /// changes tests also plans every function of their packages, judged by
+    /// the changed tests alone (a run lists those not-called mutants only
+    /// as a count).
     #[arg(long = "in-diff", value_name = "FILE")]
     in_diff: Option<PathBuf>,
     /// Do not ask rustc which function-body replacements do not compile

@@ -7,6 +7,7 @@
 //! (`<id> <listing>`); progress (each program prepared, the run's counts)
 //! goes to stderr.
 
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -86,23 +87,30 @@ impl ProjectorHandler for Printing {
 /// reader never sees half a file.
 pub struct JsonVerdictFile {
     path: PathBuf,
-    /// Leave out the mutants no test called (an `--in-diff` run's file).
-    without_not_called: bool,
+    /// An `--in-diff` run's file: the ids of the diff's own mutants. A mutant
+    /// no test called is left out unless its id is here (it is an
+    /// expansion's, not changed code no test reaches).
+    own: Option<BTreeSet<String>>,
 }
 
 impl JsonVerdictFile {
     pub fn new(path: PathBuf) -> JsonVerdictFile {
-        JsonVerdictFile {
-            path,
-            without_not_called: false,
-        }
+        JsonVerdictFile { path, own: None }
     }
 
     /// The file of an `--in-diff` run: no line for a mutant that was not
-    /// called.
-    pub fn without_not_called(mut self) -> JsonVerdictFile {
-        self.without_not_called = true;
+    /// called unless it is one of `own`, the mutants on the diff's own lines.
+    pub fn without_expansions_not_called(mut self, own: BTreeSet<String>) -> JsonVerdictFile {
+        self.own = Some(own);
         self
+    }
+
+    /// Whether the file has a line for `line`.
+    fn lists(&self, line: &VerdictLine) -> bool {
+        match &self.own {
+            Some(own) if line.verdict() == Verdict::NotCalled => own.contains(&line.id),
+            _ => true,
+        }
     }
 
     fn unwritable(&self, reason: &dyn std::fmt::Display) -> Report {
@@ -115,10 +123,7 @@ impl JsonVerdictFile {
 impl VerdictFile for JsonVerdictFile {
     fn write(&self, lines: &[VerdictLine]) -> Result<(), Report> {
         let mut text = String::new();
-        for line in lines
-            .iter()
-            .filter(|l| !(self.without_not_called && l.verdict() == Verdict::NotCalled))
-        {
+        for line in lines.iter().filter(|l| self.lists(l)) {
             text.push_str(&serde_json::to_string(line).map_err(|e| self.unwritable(&e))?);
             text.push('\n');
         }
@@ -177,32 +182,45 @@ pub fn exit_code(status: RunStatus) -> i32 {
     i32::from(exit.code(false))
 }
 
-/// The sink of an `--in-diff` run: the mutants no test called (many, since
-/// the changed tests are matched against everything they can reach) are not
-/// listed, one `mutant.decided` each; `run.finished` still counts them. A
-/// text run says so, and who judged the mutants of changed tests, after its
+/// The sink of an `--in-diff` run: the mutants no test called that the
+/// changed tests' expansion added (many, since the changed tests are matched
+/// against everything they can reach) are not listed, one `mutant.decided`
+/// each; `run.finished` still counts them. A not-called mutant on the diff's
+/// own lines (`own`) is changed code no test reaches, and is listed. A text
+/// run says so, and who judged the mutants of changed tests, after its
 /// summary.
 pub struct InDiff {
     inner: Box<dyn Sink>,
     say: Say,
+    own: BTreeSet<String>,
     skipped: u64,
 }
 
 impl InDiff {
-    /// The sink of an `--in-diff` run, its note said through `say`.
-    pub fn new(inner: Box<dyn Sink>, say: Say) -> Self {
+    /// The sink of an `--in-diff` run, its note said through `say`; `own`
+    /// holds the ids of the mutants on the diff's own lines.
+    pub fn new(inner: Box<dyn Sink>, say: Say, own: BTreeSet<String>) -> Self {
         InDiff {
             inner,
             say,
+            own,
             skipped: 0,
         }
+    }
+}
+
+impl InDiff {
+    /// Whether `d` is a not-called mutant that is not on the diff's own lines.
+    fn is_expansions_not_called(&self, d: &Decided) -> bool {
+        d.verdict() == Verdict::NotCalled
+            && d.mutant.as_ref().is_none_or(|m| !self.own.contains(&m.id))
     }
 }
 
 impl Sink for InDiff {
     fn document(&mut self, doc: &Document) {
         match &doc.event {
-            Some(Event::Decided(d)) if d.verdict() == Verdict::NotCalled => self.skipped += 1,
+            Some(Event::Decided(d)) if self.is_expansions_not_called(d) => self.skipped += 1,
             Some(Event::Finished(_)) => {
                 self.inner.document(doc);
                 self.say.say(&Notice::InDiff {

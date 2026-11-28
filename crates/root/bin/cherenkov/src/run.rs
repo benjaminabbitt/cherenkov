@@ -228,7 +228,13 @@ fn run_go(asked: &Asked) -> Result<(), CliError> {
             let executor: Box<dyn MutantExecutor + Send> =
                 Box::new(DelveExecutor::new(config, Isa::amd64()));
             // One Delve session: its server's port is fixed per run.
-            on_run_layer(asked, "go", &plans, workers_of(vec![vec![executor]], jobs))
+            on_run_layer(
+                asked,
+                "go",
+                &plans,
+                &plans,
+                workers_of(vec![vec![executor]], jobs),
+            )
         })
 }
 
@@ -277,6 +283,7 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
     // Changed tests: the mutants of what they can reach, judged by them.
     let changed_tests = diff_tests(asked)?;
     let scope = scope.with_changed_tests(&changed_tests, &every, &packages, &canonical);
+    let own = changed_code.clone();
     let plans = scope.plans_to_run(changed_code, &every);
     let mut programs = timed(asked.say, "build", || {
         build_programs(&cargo, root, tools, &scope, &mut |c| {
@@ -339,7 +346,7 @@ fn run_rust(asked: &Asked) -> Result<(), CliError> {
         .jobs
         .unwrap_or_else(|| machine_jobs(asked.say, &programs));
     let sets = (0..jobs.max(1)).map(|_| set()).collect();
-    on_run_layer(asked, "rust", &plans, workers_of(sets, jobs))
+    on_run_layer(asked, "rust", &plans, &own, workers_of(sets, jobs))
 }
 
 /// What one test program is given: the mutants it judges, those among them
@@ -508,6 +515,7 @@ fn on_run_layer(
     asked: &Asked,
     lang: &str,
     plans: &[MutantPlan],
+    own: &[MutantPlan],
     workers: Workers,
 ) -> Result<(), CliError> {
     let settings = Settings {
@@ -522,7 +530,7 @@ fn on_run_layer(
         }
         None => None,
     };
-    let readers = run_readers(asked, log);
+    let readers = run_readers(asked, log, own);
     let sampling = cherenkov_wiring::Sampling::production();
     let started = match store_file(asked)? {
         Some(path) => cherenkov_wiring::start_in_file(
@@ -555,11 +563,16 @@ fn on_run_layer(
 
 /// The readers of a run: its output through the sinks the options ask for,
 /// and the verdict file if there is one.
-fn run_readers(asked: &Asked, log: Option<Box<dyn std::io::Write + Send>>) -> Readers {
+fn run_readers(
+    asked: &Asked,
+    log: Option<Box<dyn std::io::Write + Send>>,
+    own: &[MutantPlan],
+) -> Readers {
     let in_diff = asked.tools.in_diff.is_some();
+    let own: BTreeSet<String> = own.iter().map(|p| p.id.0.clone()).collect();
     let mut sink = output::sink(asked.format, Listed::Decided, log);
     if in_diff {
-        sink = Box::new(output::InDiff::new(sink, asked.say.clone()));
+        sink = Box::new(output::InDiff::new(sink, asked.say.clone(), own.clone()));
     }
     let skipped = asked.tools.selection.skip_tests.clone();
     let sink = Box::new(output::SkippedTests::new(sink, skipped));
@@ -569,7 +582,7 @@ fn run_readers(asked: &Asked, log: Option<Box<dyn std::io::Write + Send>>) -> Re
         asked.tools.verdict_file.clone().map(|path| {
             let file = output::JsonVerdictFile::new(path);
             let file = if in_diff {
-                file.without_not_called()
+                file.without_expansions_not_called(own.clone())
             } else {
                 file
             };

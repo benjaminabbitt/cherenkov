@@ -95,10 +95,13 @@ judged too.
 
 What readers see of an `--in-diff` run:
 
-- A mutant no test called is decided `not-called` as ever, but no
-  `mutant.decided` line is printed for it, and the verdict file has no line
-  for it; `run.finished`'s `counts["not-called"]` holds how many there were.
-  A run without `--in-diff` lists them as before. `plan` and its
+- A mutant of the changed-test expansion that no test called is decided
+  `not-called` as ever, but no `mutant.decided` line is printed for it, and
+  the verdict file has no line for it; `run.finished`'s `counts["not-called"]`
+  holds how many there were. A not-called mutant on the diff's own `+` lines
+  is changed code no test reaches (cargo-mutants' MISSED): it is listed, and
+  has its verdict-file line. A run without `--in-diff` lists every one as
+  before. `plan` and its
   `mutant.planned` lines are unchanged.
 - `survived` remains the verdict of a mutant only the changed tests judge,
   and means that the changed tests do not catch it, not that the package's

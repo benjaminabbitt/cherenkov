@@ -127,7 +127,7 @@ fn test_a_text_notice_is_the_program_s_name_and_its_message_on_a_line() {
         ),
         (
             Notice::InDiff { skipped: 3 },
-            "cherenkov: --in-diff: 3 not-called mutants not listed (counted above); changed-test mutants are judged by the changed tests alone, so a survivor means those tests do not catch it\n",
+            "cherenkov: --in-diff: 3 not-called mutants of the changed tests' expansion not listed (counted above; not-called mutants on the diff's own lines are listed); changed-test mutants are judged by the changed tests alone, so a survivor means those tests do not catch it\n",
         ),
     ];
     for (notice, line) in cases {
