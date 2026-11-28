@@ -668,6 +668,7 @@ fn outcome(verdict: Verdict) -> Outcome {
         killed_by: Vec::new(),
         reason: None,
         why: None,
+        every_test: false,
         tier: Some(Tier::P),
     }
 }
@@ -749,7 +750,11 @@ fn test_a_mutant_is_decided_once_per_asking_run_as_planned_with_its_inputs() {
         decided,
         [MutantDecided {
             mutant: Some(mutant("a")),
-            verdict: Some(outcome(Verdict::Killed)),
+            // The reported program selects no tests: it ran every test.
+            verdict: Some(Outcome {
+                every_test: true,
+                ..outcome(Verdict::Killed)
+            }),
             run: Some(RunId::from(asked)),
             programs: vec!["calc-1".to_string()],
         }]

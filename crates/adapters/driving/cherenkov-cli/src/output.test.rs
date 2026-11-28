@@ -37,6 +37,7 @@ fn mutant(verdict: Verdict, fields: impl FnOnce(&mut Decided)) -> Document {
         executors: None,
         reason: None,
         reason_code: None,
+        every_test: false,
     };
     fields(&mut decided);
     Document {
@@ -87,6 +88,17 @@ fn test_a_survivor_names_the_tests_that_ran_it_unnoticed() {
         d.executors = Some(Executors::default())
     });
     assert_eq!(out(&every)[2], "  executed by every test, unnoticed");
+}
+
+#[test]
+fn test_a_survivor_flagged_every_test_says_every_test_though_other_programs_named_some() {
+    let doc = mutant(Verdict::Survived, |d| {
+        d.every_test = true;
+        d.executors = Some(Executors {
+            executed_by: vec!["test_total".to_string()],
+        });
+    });
+    assert_eq!(out(&doc)[2], "  executed by every test, unnoticed");
 }
 
 #[test]

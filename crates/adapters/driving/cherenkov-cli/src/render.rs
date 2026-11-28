@@ -143,6 +143,7 @@ fn decided(
         killed_by,
         reason,
         why,
+        every_test,
     } = d.verdict?;
     // A reason recorded as text (before reasons were coded) reads as a
     // recorded one.
@@ -171,6 +172,7 @@ fn decided(
         tests_run,
         reason,
         reason_code,
+        every_test,
     })
 }
 

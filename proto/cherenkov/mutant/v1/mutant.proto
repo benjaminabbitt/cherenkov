@@ -187,6 +187,9 @@ message Outcome {
   optional string reason = 6;
   // Why the mutant was not run, or not reached, coded.
   optional io.angzarr.v1.Diagnostic why = 7;
+  // Set when a program ran every test (it selected none): `tests_run` then
+  // lists only the tests the other programs named, not all that ran.
+  bool every_test = 8;
 }
 
 // A test that killed a mutant, and how it failed.

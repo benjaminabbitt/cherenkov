@@ -99,6 +99,7 @@ fn outcome() -> Outcome {
         ],
         reason: Some("exit 101".to_string()),
         why: None,
+        every_test: false,
     }
 }
 
@@ -437,7 +438,44 @@ fn lines() -> Vec<String> {
         .chain(verdict_lines().iter().map(line))
         .chain(nested_lines())
         .chain(output_tail_lines())
+        .chain(every_test_lines())
         .collect()
+}
+
+/// The survivor of a run in which a program ran every test: its list of
+/// tests is empty and `every_test` says why.
+fn every_test_document() -> output::Document {
+    output::Document {
+        event: Some(output::document::Event::Decided(output::Decided {
+            run: Some(uuid()),
+            at: Some(at()),
+            mutant: Some(planned()),
+            verdict: Verdict::Survived.into(),
+            tier: Some(Tier::P.into()),
+            took_ms: 31,
+            tests_run: Vec::new(),
+            killers: None,
+            executors: Some(output::Executors {
+                executed_by: Vec::new(),
+            }),
+            reason: None,
+            reason_code: None,
+            every_test: true,
+        })),
+    }
+}
+
+/// The messages that say a program ran every test (the flag the lines
+/// before it never set).
+fn every_test_lines() -> Vec<String> {
+    vec![
+        line(&Outcome {
+            tests_run: Vec::new(),
+            every_test: true,
+            ..outcome()
+        }),
+        line(&every_test_document()),
+    ]
 }
 
 /// The messages that carry a failing program's output tail.
@@ -847,6 +885,7 @@ fn documents() -> Vec<output::Document> {
         executors: None,
         reason: None,
         reason_code: None,
+        every_test: false,
     };
     [
         Event::Started(output::Started {
@@ -953,12 +992,27 @@ const DOCUMENTS: &str = r#"{"event":"run.started","run":"01020304-0506-0708-090a
 {"event":"program.prepared","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","program":"target/debug/deps/calc-0123","baseline_ms":40,"prepared_ms":90,"tests":3,"selection":"recorded-with-failures","failed_tests":["calc::flaky"]}
 {"event":"program.prepared","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","program":"target/debug/deps/it-4567","baseline_ms":0,"prepared_ms":0,"tests":null,"selection":"every-test","reason":"no debug info"}
 {"event":"program.failed","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","program":null,"reason":"build failed","output_tail":null}
-{"event":"mutant.decided","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","id":"f2ba84283a346cc0","file":"src/lib.rs","line":4,"column":5,"end_line":4,"end_column":6,"function":"total","operator":"aor","description":"`+` becomes `-`","original":"+","mutated":"-","verdict":"killed","tier":"p","took_ms":31,"tests_run":["calc::test_total"],"killed_by":[{"test":"calc::test_total","location":"tests/calc.rs:5:5","message":"assertion failed","got":"-1","expected":"5"}],"complete":true}
-{"event":"mutant.decided","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","id":"f2ba84283a346cc0","file":"src/lib.rs","line":4,"column":5,"end_line":4,"end_column":6,"function":"total","operator":"aor","description":"`+` becomes `-`","original":"+","mutated":"-","verdict":"survived","tier":"p","took_ms":31,"tests_run":["calc::test_total"],"executed_by":["calc::test_total"]}
-{"event":"mutant.decided","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","id":"f2ba84283a346cc0","file":"src/lib.rs","line":4,"column":5,"end_line":4,"end_column":6,"function":"total","operator":"aor","description":"`+` becomes `-`","original":"+","mutated":"-","verdict":"unsupported","took_ms":31,"tests_run":["calc::test_total"],"reason":"inlined function","reason_code":"inlined"}
+{"event":"mutant.decided","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","id":"f2ba84283a346cc0","file":"src/lib.rs","line":4,"column":5,"end_line":4,"end_column":6,"function":"total","operator":"aor","description":"`+` becomes `-`","original":"+","mutated":"-","verdict":"killed","tier":"p","took_ms":31,"tests_run":["calc::test_total"],"killed_by":[{"test":"calc::test_total","location":"tests/calc.rs:5:5","message":"assertion failed","got":"-1","expected":"5"}],"complete":true,"every_test":false}
+{"event":"mutant.decided","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","id":"f2ba84283a346cc0","file":"src/lib.rs","line":4,"column":5,"end_line":4,"end_column":6,"function":"total","operator":"aor","description":"`+` becomes `-`","original":"+","mutated":"-","verdict":"survived","tier":"p","took_ms":31,"tests_run":["calc::test_total"],"executed_by":["calc::test_total"],"every_test":false}
+{"event":"mutant.decided","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","id":"f2ba84283a346cc0","file":"src/lib.rs","line":4,"column":5,"end_line":4,"end_column":6,"function":"total","operator":"aor","description":"`+` becomes `-`","original":"+","mutated":"-","verdict":"unsupported","took_ms":31,"tests_run":["calc::test_total"],"reason":"inlined function","reason_code":"inlined","every_test":false}
 {"event":"run.finished","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","counts":{"killed":3,"not-called":1},"took_ms":9876,"exit":10,"status":"failed","deficiencies":{"inlined":1}}
 {"event":"run.started","run":"01020304-0506-0708-090a-0b0c0d0e0f10","at":"2025-11-18T15:00:00.500Z","root":"/work/calc","jobs":4,"fast":false,"mutants":2,"operators":[{"language":"go","set":"breadth"},{"language":"rust","set":"cargo-mutants"}],"skipped_tests":["bus::slow","bus::tail"]}
 "#;
+
+#[test]
+fn test_a_survivor_of_every_test_is_json_with_empty_lists_and_the_flag_set() {
+    let json = serde_json::to_value(every_test_document()).unwrap();
+    assert_eq!(json["tests_run"], serde_json::json!([]));
+    assert_eq!(json["executed_by"], serde_json::json!([]));
+    assert_eq!(json["every_test"], true);
+}
+
+#[test]
+fn test_a_survivor_of_every_test_reads_back_with_the_flag_set() {
+    let json = serde_json::to_string(&every_test_document()).unwrap();
+    let back: output::Document = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, every_test_document());
+}
 
 #[test]
 fn test_every_document_is_the_json_the_output_schema_says() {

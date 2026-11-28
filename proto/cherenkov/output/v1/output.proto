@@ -149,6 +149,11 @@ message Decided {
   // machine-readable form.
   optional string reason = 10;
   optional string reason_code = 11;
+  // Set when at least one test program ran every test (it selected none):
+  // `tests_run`, and a survivor's `executed_by`, then list only the tests
+  // the other programs named (none, if every program ran every test), so an
+  // empty list beside this flag reads "every test", not "no test".
+  bool every_test = 12;
 }
 
 // The tests that killed a mutant, and whether that is all of them: a run

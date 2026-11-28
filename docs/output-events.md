@@ -95,12 +95,20 @@ One per mutant, in completion order. Self-contained:
   run), `not-reached` (its function is called but no test reaches the
   site), `error`; `tier` (`p` or `b`) when it ran;
 - `took_ms`;
-- `tests_run`: the tests the mutant ran with;
+- `tests_run`: the tests the mutant ran with, as the test programs named
+  them; and `every_test`, true when at least one program ran every test
+  (it selected none: the run did not narrow its tests). With `every_test` set, `tests_run` (and a
+  survivor's `executed_by`) lists only the tests the other programs named,
+  and is empty when every program ran every test: an empty list beside
+  `every_test: true` reads "every test", never "no test". `every_test` is
+  false, and the lists are complete, when every program named its tests;
 - for `killed`: `killed_by`, one entry per killing test, each with `test`,
   `location` (`file:line:col`), `message`, and `got`/`expected` for
   equality assertions; and `complete` (false under `--fast`);
 - for `survived`: `executed_by`, the tests that executed the mutated code
-  and did not notice — where a new or stronger assertion belongs;
+  and did not notice — where a new or stronger assertion belongs (see
+  `every_test` above for a list that is empty or partial because a program
+  ran every test);
 - for `unsupported`, `unviable`, `not-reached`, `error`: `reason`, and
   `reason_code`, its short machine-readable form. The `reason` is said in
   the catalog's words from the diagnostic the run recorded; the

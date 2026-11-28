@@ -145,6 +145,7 @@ fn test_a_killed_mutant_s_document_holds_the_mutant_and_every_test_that_killed_i
             }],
             reason: None,
             why: None,
+            every_test: false,
         }),
         ..MutantDecided::default()
     }));
@@ -182,6 +183,7 @@ fn refused(verdict: Verdict, why: Option<&Report>, reason: Option<&str>) -> Muta
             killed_by: Vec::new(),
             reason: reason.map(String::from),
             why: why.map(cherenkov_run_domain::why::encode),
+            every_test: false,
         }),
         ..MutantDecided::default()
     }
@@ -400,4 +402,38 @@ fn test_a_failed_program_document_carries_the_output_tail_or_an_explicit_null() 
         failed(Some("thread 'a' panicked\n"))["output_tail"],
         "thread 'a' panicked\n"
     );
+}
+
+/// A survivor decided with `tests_run`, from a run that `every_test` says
+/// ran every test.
+fn survivor(tests_run: &[&str], every_test: bool) -> serde_json::Value {
+    let mut decided = refused(Verdict::Survived, None, None);
+    let outcome = decided.verdict.as_mut().unwrap();
+    outcome.tests_run = tests_run.iter().map(ToString::to_string).collect();
+    outcome.every_test = every_test;
+    one(recorded(decided))
+}
+
+#[test]
+fn test_a_survivor_that_ran_under_every_test_says_so_beside_its_empty_executed_by() {
+    let survived = survivor(&[], true);
+    assert_eq!(survived["executed_by"], json!([]));
+    assert_eq!(survived["tests_run"], json!([]));
+    assert_eq!(survived["every_test"], true);
+}
+
+#[test]
+fn test_a_survivor_that_ran_with_named_tests_does_not_say_every_test() {
+    assert_eq!(survivor(&["test_total"], false)["every_test"], false);
+}
+
+#[test]
+fn test_a_killed_mutant_that_ran_under_every_test_says_so() {
+    let mut decided = refused(Verdict::Killed, None, None);
+    let outcome = decided.verdict.as_mut().unwrap();
+    outcome.tests_run = Vec::new();
+    outcome.every_test = true;
+    let doc = one(recorded(decided));
+    assert_eq!(doc["tests_run"], json!([]));
+    assert_eq!(doc["every_test"], true);
 }

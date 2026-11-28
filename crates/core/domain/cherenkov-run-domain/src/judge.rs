@@ -55,6 +55,8 @@ struct Folded {
     seen: u32,
     outcomes: Vec<RawOutcome>,
     tests_run: Vec<String>,
+    /// Whether a program that ran selected no tests: it ran every test.
+    every_test: bool,
     programs: Vec<String>,
     took_ms: u64,
 }
@@ -94,6 +96,7 @@ impl Folded {
     /// The program `run` ran in, with the tests it ran with.
     fn ran_in(&mut self, run: &ProgramRun) {
         self.tests_run.extend(run.tests.iter().cloned());
+        self.every_test |= run.tests.is_empty();
         if !run.program_name.is_empty() {
             self.programs.push(run.program_name.clone());
         }
@@ -163,6 +166,7 @@ impl Folded {
                 killed_by: killers.to_vec(),
                 reason: None,
                 why: why.as_ref().map(why::encode),
+                every_test: self.every_test,
             },
             programs: self.programs.clone(),
         }

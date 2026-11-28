@@ -184,6 +184,47 @@ fn test_a_mutant_every_program_passes_survives_with_the_time_of_them_all() {
 }
 
 #[test]
+fn test_a_program_that_ran_every_test_flags_the_outcome_though_it_lists_none() {
+    let mut harness = harness();
+    harness.given([planned(1)]);
+    let events = told(&mut harness, ran(0, &exited(0, 10), 10, &[]));
+    let decided = outcome(&events);
+    assert!(decided.tests_run.is_empty());
+    assert!(
+        decided.every_test,
+        "an empty list is every test: {decided:?}"
+    );
+}
+
+#[test]
+fn test_a_program_that_named_its_tests_does_not_flag_the_outcome() {
+    let mut harness = harness();
+    harness.given([planned(1)]);
+    let events = told(&mut harness, ran(0, &exited(0, 10), 10, &["it::test_b"]));
+    assert!(!outcome(&events).every_test);
+}
+
+#[test]
+fn test_a_program_that_ran_every_test_flags_the_outcome_beside_a_program_that_named_some() {
+    let mut harness = harness();
+    harness.given([planned(2)]);
+    told(&mut harness, ran(0, &exited(0, 10), 10, &[]));
+    let second = told(&mut harness, ran(1, &exited(0, 20), 20, &["it::test_b"]));
+    let decided = outcome(&second);
+    assert_eq!(decided.tests_run, ["it::test_b"]);
+    assert!(decided.every_test, "program 0 ran every test: {decided:?}");
+}
+
+#[test]
+fn test_a_program_that_did_not_call_the_mutant_does_not_flag_the_outcome() {
+    let mut harness = harness();
+    harness.given([planned(2)]);
+    told(&mut harness, not_called(0));
+    let second = told(&mut harness, ran(1, &exited(0, 20), 20, &["it::test_b"]));
+    assert!(!outcome(&second).every_test);
+}
+
+#[test]
 fn test_a_run_that_hangs_times_the_mutant_out_at_once() {
     let mut harness = harness();
     harness.given([planned(2)]);

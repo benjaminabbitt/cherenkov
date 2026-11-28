@@ -388,7 +388,9 @@ fn decided(d: &Decided) -> Vec<String> {
     }
     if let Some(executors) = &d.executors {
         let tests = &executors.executed_by;
-        lines.push(match tests.is_empty() {
+        // A program that ran every test makes the list a part of them; an
+        // empty list is every test too, as a decision before the flag read.
+        lines.push(match d.every_test || tests.is_empty() {
             true => "  executed by every test, unnoticed".to_string(),
             false => format!("  executed by {}, unnoticed", tests.join(", ")),
         });
