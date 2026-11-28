@@ -384,30 +384,10 @@ fn negate_value(plan: &MutantPlan, file: &str, insns: &[Insn]) -> Result<Patch, 
         |insn: &Insn, bytes: Vec<u8>| Ok(Patch::single(insn.pc, insn.bytes.clone(), bytes));
     // Deleting a `!`: its own negation (`xor al, 1` or `0xff`) becomes the
     // plain normalisation (`and al, 1`).
-    if matches!(plan.edit, Edit::DeleteToken { .. }) {
-        // A bool's `!`: `xor al, 1`, or `xor al, 0xff` normalised by the
-        // `and al, 1` after it. Without one, `xor al, 0xff` is an
-        // integer's bitwise not, which deleting `!` does not undo this way.
-        let bool_not = |k: usize| {
-            let undone = decoded(ours[k]).and_then(|d| d.undone_not())?;
-            let normalised = ours[k].bytes == [0x34, 0x01]
-                || ours
-                    .get(k + 1)
-                    .is_some_and(|n| n.pc == ours[k].pc + 2 && n.bytes == [0x24, 0x01]);
-            normalised.then_some(undone)
-        };
-        // The deleted `!`'s own: positioned at it, else the first.
-        let at_not = |k: &&usize| (ours[**k].line, ours[**k].column) == (from.line, from.col);
-        let candidates: Vec<usize> = region
-            .iter()
-            .copied()
-            .filter(|&k| bool_not(k).is_some())
-            .collect();
-        if let Some(&k) = candidates.iter().find(at_not).or(candidates.first())
-            && let Some(b) = bool_not(k)
-        {
-            return single(ours[k], b);
-        }
+    if matches!(plan.edit, Edit::DeleteToken { .. })
+        && let Some(patch) = delete_not(&ours, &region, last, (from.line, from.col))
+    {
+        return Ok(patch);
     }
     // The bool tested and branched on inside the expression's own code
     // (rustc folds `!` into the branch it decides): that jump inverted. The
@@ -455,6 +435,67 @@ fn negate_value(plan: &MutantPlan, file: &str, insns: &[Insn]) -> Result<Patch, 
         "negation consumed by {:02x?}",
         next.bytes
     )))
+}
+
+/// A deleted `!` on a bool: its negation is among the expression's code
+/// (positioned at the `!`, else the first) or the instruction right after
+/// it (rustc may place it at the parenthesised expression).
+fn delete_not(ours: &[&Insn], region: &[usize], last: usize, at: (u32, u32)) -> Option<Patch> {
+    let after = Some(last + 1).filter(|&k| adjoins(ours, last, k));
+    let candidates: Vec<(usize, Vec<u8>)> = region
+        .iter()
+        .copied()
+        .chain(after)
+        .filter_map(|k| Some((k, bool_not(ours, k)?)))
+        .collect();
+    let (k, undone) = candidates
+        .iter()
+        .find(|(k, _)| (ours[*k].line, ours[*k].column) == at)
+        .or(candidates.first())?;
+    Some(Patch::single(
+        ours[*k].pc,
+        ours[*k].bytes.clone(),
+        undone.clone(),
+    ))
+}
+
+/// Whether instruction `k` directly follows instruction `before`.
+fn adjoins(ours: &[&Insn], before: usize, k: usize) -> bool {
+    ours.get(k)
+        .is_some_and(|i| i.pc == ours[before].pc + ours[before].bytes.len() as u64)
+}
+
+/// The bytes that undo the bool `!` that instruction `k` computes: a
+/// bool's `xor al, 1`, or `xor al, 0xff` normalised by the `and` that
+/// follows (directly, or after the byte was copied to the register the
+/// next call takes). Without one, `xor al, 0xff` is an integer's bitwise
+/// not, which deleting `!` does not undo this way.
+fn bool_not(ours: &[&Insn], k: usize) -> Option<Vec<u8>> {
+    let undone = x86::decode(ours[k].pc, &ours[k].bytes)?.undone_not()?;
+    let normalised = ours[k].bytes == [0x34, 0x01]
+        || ours
+            .get(k + 1)
+            .is_some_and(|n| adjoins(ours, k, k + 1) && n.bytes == [0x24, 0x01])
+        || normalised_later(ours, k);
+    normalised.then_some(undone)
+}
+
+/// Whether the instructions that follow instruction `k` normalise its
+/// result with an `and ..., 1`.
+fn normalised_later(ours: &[&Insn], k: usize) -> bool {
+    let mut following = Vec::new();
+    let mut before = k;
+    for next in k + 1..ours.len() {
+        if !adjoins(ours, before, next) {
+            break;
+        }
+        let Some(decoded) = x86::decode(ours[next].pc, &ours[next].bytes) else {
+            break;
+        };
+        following.push(decoded);
+        before = next;
+    }
+    x86::normalised_by_and_one(&following)
 }
 
 fn derive_in_context(

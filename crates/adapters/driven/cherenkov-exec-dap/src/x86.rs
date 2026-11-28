@@ -3,7 +3,10 @@
 //! P makes are few and written by hand at the instruction's own length:
 //! a jump inverted or retargeted, a bool normalisation negated.
 
-use iced_x86::{Decoder, DecoderOptions, FlowControl, Instruction, Mnemonic, OpKind, Register};
+use iced_x86::{
+    Decoder, DecoderOptions, FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAccess,
+    OpKind, Register,
+};
 
 /// One decoded instruction, with its bytes.
 #[derive(Debug, Clone)]
@@ -282,4 +285,68 @@ fn is_setcc(m: Mnemonic) -> bool {
             | Setle
             | Setg
     )
+}
+
+/// How many instructions after a negation are looked through for the
+/// normalisation of its result.
+const NORMALISATION_REACH: usize = 8;
+
+/// Whether the byte `al` holds before `after` runs is normalised to a bool
+/// by an `and r, 1` in `after`, and nothing reads the byte whole first: it
+/// may be copied to other registers (`movzx esi, al`), and anything else
+/// may run between, but not a jump, a call, or a read of a register that
+/// holds it. A negation (`xor al, 0xff`) of such a byte is a bool's `!`.
+pub fn normalised_by_and_one(after: &[Instr]) -> bool {
+    let mut factory = InstructionInfoFactory::new();
+    let mut held = vec![Register::RAX];
+    for i in after.iter().take(NORMALISATION_REACH) {
+        if i.is_call() || i.ends_block() {
+            return false;
+        }
+        if ands_one(&i.inner, &held) {
+            return true;
+        }
+        if let Some(copy) = copy_of(&i.inner, &held) {
+            held.push(copy);
+            continue;
+        }
+        let mut written = Vec::new();
+        for used in factory.info(&i.inner).used_registers() {
+            let register = used.register().full_register();
+            if !held.contains(&register) {
+                continue;
+            }
+            match used.access() {
+                OpAccess::Write => written.push(register),
+                _ => return false,
+            }
+        }
+        held.retain(|r| !written.contains(r));
+        if held.is_empty() {
+            return false;
+        }
+    }
+    false
+}
+
+/// `and r, 1` on one of the `held` registers.
+fn ands_one(i: &Instruction, held: &[Register]) -> bool {
+    i.mnemonic() == Mnemonic::And
+        && i.op0_kind() == OpKind::Register
+        && held.contains(&i.op0_register().full_register())
+        && i.op_count() == 2
+        && i.immediate(1) == 1
+}
+
+/// The register a move copies one of the `held` registers to.
+fn copy_of(i: &Instruction, held: &[Register]) -> Option<Register> {
+    let is_copy = matches!(
+        i.mnemonic(),
+        Mnemonic::Mov | Mnemonic::Movzx | Mnemonic::Movsx
+    );
+    (is_copy
+        && i.op0_kind() == OpKind::Register
+        && i.op1_kind() == OpKind::Register
+        && held.contains(&i.op1_register().full_register()))
+    .then(|| i.op0_register().full_register())
 }

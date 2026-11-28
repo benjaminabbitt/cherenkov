@@ -796,3 +796,26 @@ pub fn kinds_ok(kinds: &[Option<&str>], built_in: &[&str]) -> Result<(), String>
     }
     Ok(())
 }
+
+// A `!` deleted in a closure that is on later lines of a multi-line
+// expression statement (deps' `constraint_changes`): the closure has no code
+// on the statement's first line, and rustc normalises the negated bool after
+// copying it to the register the next call takes.
+#[derive(Debug, PartialEq)]
+pub struct Change {
+    pub id: String,
+    pub note: String,
+}
+
+pub fn dropped(entries: &[(String, bool)], limit: usize) -> Vec<Change> {
+    entries
+        .iter()
+        .filter_map(|(id, held)| {
+            let kept = *held || id.len() > limit || id.is_empty();
+            (!kept).then(|| Change {
+                id: id.clone(),
+                note: id.to_uppercase(),
+            })
+        })
+        .collect()
+}

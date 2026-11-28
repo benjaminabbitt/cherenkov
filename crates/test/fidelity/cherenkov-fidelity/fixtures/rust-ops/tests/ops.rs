@@ -746,3 +746,21 @@ fn test_kinds_ok_accepts_empty_and_built_in_kinds_and_names_the_rest() {
     assert_eq!(kinds_ok(&[Some("git"), Some("odd")], &["git"]), Err("odd".to_string()));
     assert_eq!(kinds_ok(&[Some("odd")], &["git"]), Err("odd".to_string()));
 }
+
+#[test]
+fn test_dropped_lists_the_entries_that_are_neither_held_nor_over_the_limit() {
+    let entries = vec![
+        ("held".to_string(), true),
+        ("toolong".to_string(), false),
+        ("".to_string(), false),
+        ("ab".to_string(), false),
+    ];
+    assert_eq!(
+        dropped(&entries, 3),
+        vec![Change {
+            id: "ab".to_string(),
+            note: "AB".to_string()
+        }]
+    );
+    assert_eq!(dropped(&[], 3), vec![]);
+}

@@ -11,7 +11,7 @@ use crate::error::{NotRecorded, Session, Toolchain};
 use cherenkov_mutation::edit::Edit;
 use cherenkov_mutation::execution::{Budget, Observed, RawOutcome, TestReport, Tier};
 use cherenkov_mutation::plan::{Action, MutantPlan};
-use cherenkov_mutation::syntax::Pos;
+use cherenkov_mutation::syntax::{Pos, Span};
 use cherenkov_mutation::token::Token;
 use cherenkov_run_ports::executor::{
     Cancel, Driven, ExecError, MutantExecutor, Recording, Selection,
@@ -545,6 +545,29 @@ fn calls_program(built: &crate::layouts::Built) -> bool {
 }
 
 /// A body replacement in an `async fn`.
+/// The lines to ask for the functions that hold a plan's site, as
+/// `(line, last)` for [`NativeSession::function_codes`]. An async fn's
+/// signature has only the code that makes its future; its body's first line
+/// has the poll's. Otherwise the plan's statement line, and the site's own
+/// when it is on a later one: a closure in a multi-line expression has no
+/// code on the statement's first line.
+fn locate_lines(async_fn: bool, stop_line: u32, site: &Span) -> Vec<(u32, u32)> {
+    let last = site.end.line;
+    if async_fn {
+        return vec![(site.start.line, last)];
+    }
+    let mut lines = vec![(stop_line, last)];
+    if site.start.line != stop_line {
+        lines.push((site.start.line, last));
+    }
+    lines
+}
+
+/// Where a function's code starts: its lowest address.
+fn entry_of(code: &FunctionCode) -> Option<u64> {
+    code.insns.iter().map(|i| i.pc).min()
+}
+
 fn is_async_fn(plan: &MutantPlan) -> bool {
     matches!(plan.action, Action::ReturnDefault { async_fn: true, .. })
 }
@@ -1090,18 +1113,16 @@ impl<L: Launcher> TierPExecutor<L> {
         session: &mut L::Session,
         plan: &MutantPlan,
     ) -> Result<Vec<FunctionCode>, ExecError> {
-        // An async fn's signature has only the code that makes its future;
-        // its body's first line has the poll's.
-        let line = if is_async_fn(plan) {
-            plan.site.start.line
-        } else {
-            plan.stop_at.line
-        };
-        let mut candidates: Vec<FunctionCode> = session
-            .function_codes(&self.source(plan), line, plan.site.end.line)?
-            .into_iter()
-            .map(|c| self.with_columns(c))
-            .collect();
+        let mut candidates: Vec<FunctionCode> = Vec::new();
+        for (line, last) in locate_lines(is_async_fn(plan), plan.stop_at.line, &plan.site) {
+            for code in session.function_codes(&self.source(plan), line, last)? {
+                let code = self.with_columns(code);
+                // The same function found by another line is kept once.
+                if !candidates.iter().any(|c| entry_of(c) == entry_of(&code)) {
+                    candidates.push(code);
+                }
+            }
+        }
         // The body of an async fn runs in a future's poll, not in a closure
         // that shares its first line.
         if is_async_fn(plan) && candidates.iter().any(|c| self.future_poll(c)) {
@@ -1653,6 +1674,33 @@ mod tests {
         assert_eq!(checked_operator(&swap(Token::Mul)), Some("*"));
         assert_eq!(checked_operator(&swap(Token::Div)), None);
         assert_eq!(checked_operator(&Edit::DeleteStatement), None);
+    }
+
+    fn span(from: (u32, u32), to: (u32, u32)) -> cherenkov_mutation::syntax::Span {
+        cherenkov_mutation::syntax::Span {
+            start: pos(from.0, from.1),
+            end: pos(to.0, to.1),
+        }
+    }
+
+    #[test]
+    fn test_a_site_on_a_later_line_than_its_statement_is_located_by_its_own_line_too() {
+        // A `!` in a closure inside a multi-line expression statement: the
+        // statement's line has the function, the site's line the closure.
+        let site = span((270, 14), (270, 15));
+        assert_eq!(locate_lines(false, 264, &site), [(264, 270), (270, 270)]);
+    }
+
+    #[test]
+    fn test_a_site_on_its_statements_line_is_located_by_that_line_only() {
+        let site = span((264, 14), (265, 15));
+        assert_eq!(locate_lines(false, 264, &site), [(264, 265)]);
+    }
+
+    #[test]
+    fn test_an_async_fn_is_located_by_the_line_of_its_site() {
+        let site = span((12, 5), (12, 9));
+        assert_eq!(locate_lines(true, 10, &site), [(12, 12)]);
     }
 
     fn budget_of(secs: u64) -> Budget {
