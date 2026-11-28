@@ -732,3 +732,10 @@ fn test_bound_hands_out_the_list() {
     bound(&mut v).push(2);
     assert_eq!(v, Some(vec![1, 2]));
 }
+
+#[test]
+fn test_unlisted_keeps_the_built_ins_that_are_not_configured() {
+    let configured = vec![("b".to_string(), 1)];
+    assert_eq!(unlisted(&configured, &["a", "b", "c"]), vec!["a", "c"]);
+    assert_eq!(unlisted(&[], &["a"]), vec!["a"]);
+}

@@ -1559,6 +1559,100 @@ fn test_copies_of_a_generic_with_different_code_at_the_site_are_all_kept() {
     assert_eq!(at_site_all(&[&inline, &calls, &closure], &site), [0, 1]);
 }
 
+/// Rows of one function on `line`: `(pc, column)`, the first with column 0
+/// (a function's prologue is on its first line, at no column).
+fn rows_on(line: u32, rows: &[(u64, u32)]) -> Vec<Insn> {
+    rows.iter()
+        .map(|&(pc, column)| Insn {
+            pc,
+            bytes: hex_bytes("90"),
+            file: "src/lib.rs".into(),
+            line,
+            column,
+        })
+        .collect()
+}
+
+fn span_on(line: u32, from: u32, to: u32) -> cherenkov_mutation::syntax::Span {
+    use cherenkov_mutation::syntax::{Pos, Span};
+    let at = |col| Pos { byte: 0, line, col };
+    Span {
+        start: at(from),
+        end: at(to),
+    }
+}
+
+#[test]
+fn test_a_closure_nested_in_a_closure_is_no_copy_of_it() {
+    use cherenkov_exec_dap::tierp::at_site_all;
+    // deps `Registry::forges`: `.filter(|label| !configured.iter().any(|(key, _)| key == *label))`.
+    // Both closures have a prologue at the line's column 0, and rows inside
+    // the operand of the `!`; the outer one has the `!`'s own.
+    let outer = rows_on(
+        229,
+        &[(0x10, 0), (0x11, 30), (0x12, 41), (0x13, 48), (0x14, 29)],
+    );
+    let inner = rows_on(229, &[(0x20, 0), (0x21, 54), (0x22, 70), (0x23, 63)]);
+    assert_eq!(at_site_all(&[&outer, &inner], &span_on(229, 29, 80)), [0]);
+}
+
+#[test]
+fn test_the_function_is_chosen_over_a_closure_in_the_operand_of_its_operator() {
+    use cherenkov_exec_dap::tierp::{at_site, at_site_all};
+    // deps `looks_like_commit`: `(7..=40).contains(&s.len()) && s.bytes().all(|b| matches!(..))`.
+    // The closure has more rows inside the operands than the function has,
+    // but starts after the `&&`: the mutated operator is the function's.
+    let function = rows_on(
+        61,
+        &[
+            (0x10, 0),
+            (0x11, 26),
+            (0x12, 14),
+            (0x13, 5),
+            (0x14, 38),
+            (0x15, 46),
+        ],
+    );
+    let closure = rows_on(
+        61,
+        &[
+            (0x20, 0),
+            (0x21, 66),
+            (0x22, 80),
+            (0x23, 66),
+            (0x24, 54),
+            (0x25, 80),
+            (0x26, 92),
+        ],
+    );
+    let site = span_on(61, 5, 97);
+    assert_eq!(at_site(&[&function, &closure], &site), 0);
+    assert_eq!(at_site_all(&[&function, &closure], &site), [0]);
+}
+
+#[test]
+fn test_the_closure_is_chosen_over_its_function_when_the_site_starts_inside_its_code() {
+    use cherenkov_exec_dap::tierp::at_site_all;
+    // The function has more rows in the span, but the span begins at the
+    // closure's own code.
+    let function = rows_on(
+        7,
+        &[
+            (0x10, 0),
+            (0x11, 5),
+            (0x12, 14),
+            (0x13, 25),
+            (0x14, 27),
+            (0x15, 29),
+        ],
+    );
+    let closure = rows_on(7, &[(0x20, 0), (0x21, 22), (0x22, 24)]);
+    assert_eq!(
+        at_site_all(&[&function, &closure], &span_on(7, 22, 40)),
+        [1]
+    );
+}
+
 // --- Deleting a statement that branches: `note(s.parse()?);` decides at run
 // time whether it returns early, so no straight path through it skips it.
 // A jump to a panic block (an overflow check) is no such branch.

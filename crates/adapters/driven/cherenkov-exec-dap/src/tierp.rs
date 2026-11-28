@@ -1243,50 +1243,82 @@ pub struct Steer {
 }
 
 /// Of the functions with code on a line (each its instructions), the one
-/// with the most instructions positioned inside `site`: a closure's body
-/// shares its line with the function around it. The first when none is.
+/// the mutated `site` is in: a closure's body shares its line with the
+/// function around it. The first when none has code in the site.
 pub fn at_site(candidates: &[&Vec<Insn>], site: &Span) -> usize {
     at_site_all(candidates, site).first().copied().unwrap_or(0)
 }
 
-/// The candidates that are copies of the function with the most
-/// instructions inside `site`: each copy of a generic function (`pick<u8>`,
-/// `pick<u32>`) starts at the same source position as the others, and a
-/// mutant changes them all, however much code each has inside `site` (a
-/// comparison is inline for one type and a call for another). A closure on
-/// the line starts elsewhere. Only the first when none has any code there.
+/// The candidates that are copies of the function the mutated `site` is
+/// in: each copy of a generic function (`pick<u8>`, `pick<u32>`) starts at
+/// the same source position as the others, and a mutant changes them all,
+/// however much code each has inside `site` (a comparison is inline for
+/// one type and a call for another). A closure on the line, one inside
+/// another included, starts elsewhere. Only the first when none has any
+/// code there.
 pub fn at_site_all(candidates: &[&Vec<Insn>], site: &Span) -> Vec<usize> {
+    let scores: Vec<usize> = candidates.iter().map(|c| code_inside(c, site)).collect();
+    let Some(best) = site_owner(candidates, &scores, site) else {
+        return vec![0];
+    };
+    let start = first_code(candidates[best]);
+    (0..scores.len())
+        .filter(|&k| scores[k] > 0 && first_code(candidates[k]) == start)
+        .collect()
+}
+
+/// How many instructions with a column are positioned inside `site`.
+fn code_inside(insns: &[Insn], site: &Span) -> usize {
     let (from, to) = (
         (site.start.line, site.start.col),
         (site.end.line, site.end.col),
     );
-    let inside = |insns: &Vec<Insn>| {
-        insns
-            .iter()
-            .filter(|i| i.column != 0 && (from..to).contains(&(i.line, i.column)))
-            .count()
-    };
-    let scores: Vec<usize> = candidates.iter().map(|c| inside(c)).collect();
-    let Some((best, &top)) = scores
+    insns
         .iter()
-        .enumerate()
-        .max_by_key(|&(k, &n)| (n, usize::MAX - k))
-    else {
-        return Vec::new();
-    };
-    if top == 0 {
-        return vec![0];
-    }
-    let entry = |insns: &Vec<Insn>| {
-        insns
+        .filter(|i| i.column != 0 && (from..to).contains(&(i.line, i.column)))
+        .count()
+}
+
+/// Where a function's own code starts: its first instruction with a column
+/// (the prologue is at the line's column 0, a closure's and the closure
+/// nested in it alike).
+fn first_code(insns: &[Insn]) -> Option<(u32, u32)> {
+    insns
+        .iter()
+        .filter(|i| i.column != 0)
+        .min_by_key(|i| i.pc)
+        .map(|i| (i.line, i.column))
+}
+
+/// The first and last positions of a function's code.
+fn code_range(insns: &[Insn]) -> Option<((u32, u32), (u32, u32))> {
+    let at = insns
+        .iter()
+        .filter(|i| i.column != 0)
+        .map(|i| (i.line, i.column));
+    Some((at.clone().min()?, at.max()?))
+}
+
+/// The function that owns the mutated expression: of those with code in it,
+/// the innermost whose code spans the start of `site`; a closure inside an
+/// operand has more code there than the function, but starts after the
+/// operator. With none spanning it, the one with the most code in the site.
+fn site_owner(candidates: &[&Vec<Insn>], scores: &[usize], site: &Span) -> Option<usize> {
+    let start = (site.start.line, site.start.col);
+    let spanning = (0..candidates.len())
+        .filter(|&k| scores[k] > 0)
+        .filter_map(|k| Some((k, code_range(candidates[k])?)))
+        .filter(|(_, (first, last))| *first <= start && start <= *last)
+        .min_by_key(|&(k, (first, last))| (std::cmp::Reverse(first), last, k))
+        .map(|(k, _)| k);
+    spanning.or_else(|| {
+        scores
             .iter()
-            .min_by_key(|i| i.pc)
-            .map(|i| (i.line, i.column))
-    };
-    let start = entry(candidates[best]);
-    (0..scores.len())
-        .filter(|&k| scores[k] > 0 && entry(candidates[k]) == start)
-        .collect()
+            .enumerate()
+            .filter(|&(_, &n)| n > 0)
+            .max_by_key(|&(k, &n)| (n, usize::MAX - k))
+            .map(|(k, _)| k)
+    })
 }
 
 /// Whether the plan swaps `&&` and `||`.

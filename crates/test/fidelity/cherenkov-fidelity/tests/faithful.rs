@@ -509,6 +509,34 @@ fn test_trivial_values_without_a_shape_are_declined_by_tier_p_and_stay_faithful(
     }
 }
 
+/// A mutation in a closure that has another closure inside it on its line,
+/// or code of the function around it in its operands: each must run on tier
+/// P, and give the verdict of the source build.
+const NESTED_CLOSURES: &[(&str, &str)] = &[("unlisted", "unary/delete-not")];
+
+#[test]
+#[ignore = "slow: needs gdb and cargo"]
+fn test_a_mutation_in_a_closure_with_a_closure_inside_is_faithful_to_its_source() {
+    let checked = check_rust_tiers(&fixture("rust-ops"), "cargo-mutants");
+    for &(function, mutation) in NESTED_CLOSURES {
+        let found: Vec<_> = checked
+            .iter()
+            .filter(|(p, _, _)| {
+                p.function.as_deref() == Some(function) && p.mutation == Some(mutation)
+            })
+            .collect();
+        assert!(!found.is_empty(), "no {mutation} in {function}");
+        for (plan, c, _) in found {
+            assert_eq!(
+                c,
+                &Checked::Judged(Judgement::Faithful),
+                "{}",
+                plan.describe()
+            );
+        }
+    }
+}
+
 /// Deleted match arms whose body or catch-all has no code at its first
 /// character, or no code at all: each must run on tier P, and give the
 /// verdict of the source build.

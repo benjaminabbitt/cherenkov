@@ -771,3 +771,14 @@ pub fn bound(v: &mut Option<Vec<u32>>) -> &mut Vec<u32> {
         _ => unreachable!("a list is there"),
     }
 }
+
+// A closure inside a closure on one line, the `!` deleted from the outer
+// one (deps' `Registry::forges`): the inner closure starts on the same line
+// and is no copy of the outer.
+pub fn unlisted(configured: &[(String, u8)], built_in: &[&str]) -> Vec<String> {
+    built_in
+        .iter()
+        .filter(|label| !configured.iter().any(|(key, _)| key == *label))
+        .map(|label| label.to_string())
+        .collect()
+}
